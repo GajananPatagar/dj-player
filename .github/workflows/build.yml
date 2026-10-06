@@ -28,25 +28,12 @@ jobs:
       - name: Create Android Scaffold
         run: flutter create . --platforms=android --org com.djplayer.app
 
-      - name: Inject Permissions & Force SDK 36
+      - name: Inject Permissions & Set SDK 34
         run: |
           sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <application/g' android/app/src/main/AndroidManifest.xml
           sed -i 's/<application/<application android:usesCleartextTraffic="true"/g' android/app/src/main/AndroidManifest.xml
-          mkdir -p ~/.gradle
-          cat << 'INIT' > ~/.gradle/init.gradle
-          allprojects {
-              afterEvaluate { project ->
-                  if (project.hasProperty("android")) {
-                      project.android {
-                          compileSdkVersion 36
-                      }
-                  }
-              }
-              tasks.matching { it.name.contains("AarMetadata") }.all {
-                  enabled = false
-              }
-          }
-          INIT
+          # Standard way to override flutter compile version
+          echo "flutter.compileSdkVersion=34" >> android/local.properties
 
       - name: Install Dependencies
         run: flutter pub get

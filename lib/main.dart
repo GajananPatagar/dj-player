@@ -70,7 +70,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
   double _playbackSpeed = 1.0;
-  String _selectedQuality = '_320'; // 320kbps
+  String _selectedQuality = '_320';
 
   // Tap-to-BPM State
   final List<DateTime> _tapTimestamps = [];
@@ -173,7 +173,6 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
       try {
         final filePath = await task.filePath();
         
-        // Inject ID3 Tags
         Tag tag = Tag(
           title: title,
           trackArtist: subtitle,

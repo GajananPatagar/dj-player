@@ -13,7 +13,7 @@ dependencies:
   dart_des: ^1.0.2
   just_audio: ^0.9.36
   background_downloader: ^9.6.3
-  metadata_god: ^1.1.0
+  audiotags: ^1.4.5
   shared_preferences: ^2.2.3
 
 dev_dependencies:

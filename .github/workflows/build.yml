@@ -28,10 +28,10 @@ jobs:
       - name: Create Android Scaffold
         run: flutter create . --platforms=android --org com.djplayer.app
 
-      - name: Upgrade Android API to 34
+      - name: Upgrade Android API to 36
         run: |
-          sed -i 's/flutter.compileSdkVersion/34/g' android/app/build.gradle.kts
-          sed -i 's/flutter.targetSdkVersion/34/g' android/app/build.gradle.kts
+          sed -i 's/flutter.compileSdkVersion/36/g' android/app/build.gradle.kts
+          sed -i 's/flutter.targetSdkVersion/36/g' android/app/build.gradle.kts
 
       - name: Install Dependencies
         run: flutter pub get

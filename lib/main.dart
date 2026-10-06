@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:encrypt/encrypt.dart' as encrypt_lib;
+import 'package:dart_des/dart_des.dart';
 import 'dart:convert';
 import 'package:just_audio/just_audio.dart';
 import 'package:background_downloader/background_downloader.dart';
@@ -42,29 +42,40 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   String _decryptMediaUrl(String encryptedUrl) {
-    final key = encrypt_lib.Key.fromUtf8('38346591');
-    final encrypter = encrypt_lib.Encrypter(encrypt_lib.DES(key, mode: encrypt_lib.DESMode.ecb));
+    final key = utf8.encode('38346591');
     final decodedBytes = base64.decode(encryptedUrl);
-    final decrypted = encrypter.decrypt(encrypt_lib.Encrypted(decodedBytes), iv: encrypt_lib.IV.fromLength(0));
-    return decrypted.replaceAll('_96', '_320').replaceAll('.mp4', '.mp3'); 
+    
+    final des = DES(key: key, mode: DESMode.ECB, paddingType: DESPaddingType.PKCS7);
+    final decryptedBytes = des.decrypt(decodedBytes);
+    final decryptedUrl = utf8.decode(decryptedBytes);
+    
+    return decryptedUrl.replaceAll('_96', '_320').replaceAll('.mp4', '.mp3'); 
   }
 
   Future<void> _playSong(String encryptedUrl) async {
-    final decryptedUrl = _decryptMediaUrl(encryptedUrl);
-    await _audioPlayer.setUrl(decryptedUrl);
-    _audioPlayer.play();
+    try {
+      final decryptedUrl = _decryptMediaUrl(encryptedUrl);
+      await _audioPlayer.setUrl(decryptedUrl);
+      _audioPlayer.play();
+    } catch (e) {
+      debugPrint("Error playing song: $e");
+    }
   }
 
   Future<void> _downloadSong(String encryptedUrl, String title) async {
-    final decryptedUrl = _decryptMediaUrl(encryptedUrl);
-    final task = DownloadTask(
-      url: decryptedUrl,
-      filename: '$title.mp3',
-      directory: 'Music',
-      updates: Updates.statusAndProgress,
-      allowPause: true,
-    );
-    await FileDownloader().enqueue(task);
+    try {
+      final decryptedUrl = _decryptMediaUrl(encryptedUrl);
+      final task = DownloadTask(
+        url: decryptedUrl,
+        filename: '$title.mp3',
+        directory: 'Music',
+        updates: Updates.statusAndProgress,
+        allowPause: true,
+      );
+      await FileDownloader().enqueue(task);
+    } catch (e) {
+      debugPrint("Error downloading song: $e");
+    }
   }
 
   @override
@@ -100,11 +111,11 @@ class _SearchScreenState extends State<SearchScreen> {
                     children: [
                       IconButton(
                         icon: const Icon(Icons.play_arrow),
-                        onPressed: () => _playSong(mediaUrl),
+                        onPressed: mediaUrl != null ? () => _playSong(mediaUrl) : null,
                       ),
                       IconButton(
                         icon: const Icon(Icons.download),
-                        onPressed: () => _downloadSong(mediaUrl, song['title']),
+                        onPressed: mediaUrl != null ? () => _downloadSong(mediaUrl, song['title']) : null,
                       ),
                     ],
                   ),

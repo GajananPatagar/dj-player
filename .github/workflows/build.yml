@@ -28,10 +28,10 @@ jobs:
       - name: Create Android Scaffold
         run: flutter create . --platforms=android --org com.djplayer.app
 
-      - name: Upgrade Android API to 36
+      - name: Force SDK 36 Override
         run: |
-          sed -i 's/flutter.compileSdkVersion/36/g' android/app/build.gradle.kts
-          sed -i 's/flutter.targetSdkVersion/36/g' android/app/build.gradle.kts
+          echo "flutter.compileSdkVersion=36" >> android/local.properties
+          echo "flutter.targetSdkVersion=36" >> android/local.properties
 
       - name: Install Dependencies
         run: flutter pub get

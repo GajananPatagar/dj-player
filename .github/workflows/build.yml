@@ -28,6 +28,11 @@ jobs:
       - name: Create Android Scaffold
         run: flutter create . --platforms=android --org com.djplayer.app
 
+      - name: Inject Internet & Cleartext Permissions
+        run: |
+          sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <application/g' android/app/src/main/AndroidManifest.xml
+          sed -i 's/<application/<application android:usesCleartextTraffic="true"/g' android/app/src/main/AndroidManifest.xml
+
       - name: Install Dependencies
         run: flutter pub get
 

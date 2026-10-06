@@ -5,7 +5,6 @@ import 'dart:convert';
 import 'package:just_audio/just_audio.dart';
 import 'package:background_downloader/background_downloader.dart';
 
-// Global variable to control the theme instantly
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.dark);
 
 void main() async {
@@ -30,7 +29,7 @@ class DJPlayerApp extends StatelessWidget {
           ),
           darkTheme: ThemeData(
             brightness: Brightness.dark,
-            scaffoldBackgroundColor: Colors.black, // Pure AMOLED Black
+            scaffoldBackgroundColor: Colors.black,
             appBarTheme: const AppBarTheme(backgroundColor: Colors.black),
           ),
           themeMode: currentMode,
@@ -62,24 +61,42 @@ class _SearchScreenState extends State<SearchScreen> {
     });
 
     try {
-      // URL Encoding prevents errors when searching with spaces
       final url = Uri.parse(
           'https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&ctx=web6dot0&api_version=4&q=${Uri.encodeComponent(query)}');
       
-      // Bypasses the API block by pretending to be a Windows Chrome browser
       final response = await http.get(url, headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Accept': 'application/json'
       });
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body.trim());
+        
+        List<dynamic> parsedResults = [];
+        if (data is Map) {
+          if (data['results'] != null) {
+            parsedResults = data['results'];
+          } else if (data['songs'] != null && data['songs']['data'] != null) {
+            parsedResults = data['songs']['data'];
+          }
+        }
+
         setState(() {
-          _searchResults = data['results'] ?? [];
+          _searchResults = parsedResults;
         });
+
+        if (parsedResults.isEmpty && mounted) {
+           ScaffoldMessenger.of(context).showSnackBar(
+             const SnackBar(content: Text('No songs found.')),
+           );
+        }
       }
     } catch (e) {
-      debugPrint("Search error: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Network Error: App missing internet. $e')),
+        );
+      }
     } finally {
       setState(() {
         _isLoading = false;
@@ -98,7 +115,6 @@ class _SearchScreenState extends State<SearchScreen> {
       
       return decryptedUrl.replaceAll('_96', '_320').replaceAll('.mp4', '.mp3');
     } catch (e) {
-      debugPrint("Decryption error: $e");
       return "";
     }
   }
@@ -111,7 +127,7 @@ class _SearchScreenState extends State<SearchScreen> {
         _audioPlayer.play();
       }
     } catch (e) {
-      debugPrint("Error playing song: $e");
+      debugPrint("Error playing: $e");
     }
   }
 
@@ -119,7 +135,6 @@ class _SearchScreenState extends State<SearchScreen> {
     try {
       final decryptedUrl = _decryptMediaUrl(encryptedUrl);
       if (decryptedUrl.isNotEmpty) {
-        // Removes illegal characters so the Android file system doesn't crash
         final safeTitle = title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
         final task = DownloadTask(
           url: decryptedUrl,
@@ -137,7 +152,7 @@ class _SearchScreenState extends State<SearchScreen> {
         }
       }
     } catch (e) {
-      debugPrint("Error downloading song: $e");
+      debugPrint("Error downloading: $e");
     }
   }
 
@@ -154,7 +169,6 @@ class _SearchScreenState extends State<SearchScreen> {
       appBar: AppBar(
         title: const Text('DJ High-Res Player'),
         actions: [
-          // Theme Toggle Button
           IconButton(
             icon: Icon(themeNotifier.value == ThemeMode.light 
                 ? Icons.dark_mode 
@@ -181,7 +195,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 ),
                 border: const OutlineInputBorder(),
               ),
-              onSubmitted: (value) => _searchSongs(value), // Allows searching by pressing Enter/Return on keyboard
+              onSubmitted: (value) => _searchSongs(value),
             ),
           ),
           if (_isLoading) 
@@ -195,11 +209,10 @@ class _SearchScreenState extends State<SearchScreen> {
               itemBuilder: (context, index) {
                 final song = _searchResults[index];
                 
-                // JioSaavn often sends HTML tags like &quot; in titles, this cleans them
-                final title = song['title']?.replaceAll(RegExp(r'<[^>]*>'), '') ?? 'Unknown';
-                final subtitle = song['subtitle']?.replaceAll(RegExp(r'<[^>]*>'), '') ?? 'Unknown Artist';
+                final title = song['title']?.toString().replaceAll(RegExp(r'<[^>]*>'), '') ?? 'Unknown';
+                final subtitle = song['subtitle']?.toString().replaceAll(RegExp(r'<[^>]*>'), '') ?? 'Unknown Artist';
                 final mediaUrl = song['media_preview_url'] ?? song['encrypted_media_url'];
-                final imageUrl = song['image']?.replaceAll('150x150', '50x50');
+                final imageUrl = song['image']?.toString().replaceAll('150x150', '50x50');
 
                 return ListTile(
                   leading: imageUrl != null 

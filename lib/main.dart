@@ -157,10 +157,10 @@ class _SearchScreenState extends State<SearchScreen> {
       try {
         final filePath = await task.filePath();
         
-        // Inject Custom Metadata and Copyright
+        // Inject Custom Metadata and Copyright (Syntax Fixed)
         Tag tag = Tag(
           title: title,
-          artist: subtitle,
+          trackArtist: subtitle,
           album: "DJ High-Res Downloads",
           copyright: "Downloaded By Gajanan P",
           trackOwner: "Gajanan P",
@@ -170,7 +170,9 @@ class _SearchScreenState extends State<SearchScreen> {
         // Fetch User Settings for Storage Location
         final prefs = await SharedPreferences.getInstance();
         final saveLocation = prefs.getString('save_location') ?? 'Music';
-        final sharedDir = saveLocation == 'Downloads' ? SharedStorage.downloads : SharedStorage.music;
+        
+        // Android 14 compliant shared folder selection (Syntax Fixed)
+        final sharedDir = saveLocation == 'Downloads' ? SharedStorage.downloads : SharedStorage.audio;
 
         // Move the tagged file to public storage
         await FileDownloader().moveToSharedStorage(task, sharedDir, directory: 'DJ_Downloads');
@@ -180,6 +182,13 @@ class _SearchScreenState extends State<SearchScreen> {
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Download processing error: $e'), backgroundColor: Colors.red));
       }
     }
+  }
+
+  @override
+  void dispose() {
+    _audioPlayer.dispose();
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
@@ -227,7 +236,9 @@ class _SearchScreenState extends State<SearchScreen> {
                 return ListTile(
                   leading: ClipRRect(
                     borderRadius: BorderRadius.circular(8),
-                    child: imageUrl.isNotEmpty ? Image.network(imageUrl, width: 50, height: 50, fit: BoxFit.cover) : const Icon(Icons.music_note, size: 50),
+                    child: imageUrl.isNotEmpty 
+                      ? Image.network(imageUrl, width: 50, height: 50, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.music_note, size: 50)) 
+                      : const Icon(Icons.music_note, size: 50),
                   ),
                   title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
                   subtitle: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -255,7 +266,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 children: [
                   Row(
                     children: [
-                      if (_currentImage != null) ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(_currentImage!, width: 40, height: 40)),
+                      if (_currentImage != null) ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(_currentImage!, width: 40, height: 40, errorBuilder: (c, e, s) => const Icon(Icons.music_note))),
                       const SizedBox(width: 12),
                       Expanded(child: Text(_currentTitle!, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white))),
                       IconButton(

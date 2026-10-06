@@ -13,7 +13,7 @@ dependencies:
   dart_des: ^1.0.2
   just_audio: ^0.9.36
   audio_service: ^0.18.12
-  background_downloader: ^7.11.1
+  background_downloader: ^9.6.3
 
 dev_dependencies:
   flutter_test:

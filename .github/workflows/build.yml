@@ -28,11 +28,6 @@ jobs:
       - name: Create Android Scaffold
         run: flutter create . --platforms=android --org com.djplayer.app
 
-      - name: Force SDK 36 Override
-        run: |
-          echo "flutter.compileSdkVersion=36" >> android/local.properties
-          echo "flutter.targetSdkVersion=36" >> android/local.properties
-
       - name: Install Dependencies
         run: flutter pub get
 

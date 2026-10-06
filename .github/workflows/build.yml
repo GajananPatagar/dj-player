@@ -28,10 +28,25 @@ jobs:
       - name: Create Android Scaffold
         run: flutter create . --platforms=android --org com.djplayer.app
 
-      - name: Inject Internet & Cleartext Permissions
+      - name: Inject Permissions & Bypass AarMetadata
         run: |
           sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <application/g' android/app/src/main/AndroidManifest.xml
           sed -i 's/<application/<application android:usesCleartextTraffic="true"/g' android/app/src/main/AndroidManifest.xml
+          mkdir -p ~/.gradle
+          cat << 'INIT' > ~/.gradle/init.gradle
+          allprojects {
+              afterEvaluate { project ->
+                  if (project.hasProperty("android")) {
+                      project.android {
+                          compileSdkVersion 34
+                      }
+                  }
+              }
+              tasks.matching { it.name.contains("AarMetadata") }.all {
+                  enabled = false
+              }
+          }
+          INIT
 
       - name: Install Dependencies
         run: flutter pub get

@@ -4,13 +4,14 @@ import 'package:dart_des/dart_des.dart';
 import 'dart:convert';
 import 'package:just_audio/just_audio.dart';
 import 'package:background_downloader/background_downloader.dart';
-import 'package:audiotags/audiotags.dart';
+import 'package:metadata_god/metadata_god.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.dark);
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  MetadataGod.initialize();
   runApp(const DJPlayerApp());
 }
 
@@ -154,13 +155,16 @@ class _SearchScreenState extends State<SearchScreen> {
       try {
         final filePath = await task.filePath();
         
-        // Strict audiotags syntax mapping
-        Tag tag = Tag(
-          title: title,
-          trackArtist: subtitle,
-          album: "DJ High-Res Downloads | By Gajanan P",
+        // Inject Metadata using the stable metadata_god package
+        await MetadataGod.writeMetadata(
+          file: filePath,
+          metadata: Metadata(
+            title: title,
+            artist: subtitle,
+            album: "DJ High-Res Downloads | By Gajanan P",
+            albumArtist: "Downloaded By Gajanan P",
+          ),
         );
-        await AudioTags.write(filePath, tag);
 
         final prefs = await SharedPreferences.getInstance();
         final saveLocation = prefs.getString('save_location') ?? 'Music';

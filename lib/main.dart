@@ -4,6 +4,8 @@ import 'package:dart_des/dart_des.dart';
 import 'dart:convert';
 import 'package:just_audio/just_audio.dart';
 import 'package:background_downloader/background_downloader.dart';
+import 'package:audiotags/audiotags.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.dark);
 
@@ -22,15 +24,17 @@ class DJPlayerApp extends StatelessWidget {
       builder: (_, ThemeMode currentMode, __) {
         return MaterialApp(
           title: 'DJ Pro Player',
+          debugShowCheckedModeBanner: false,
           theme: ThemeData(
             brightness: Brightness.light,
-            primarySwatch: Colors.blue,
-            scaffoldBackgroundColor: Colors.white,
+            primaryColor: Colors.deepPurple,
+            scaffoldBackgroundColor: Colors.grey[100],
           ),
           darkTheme: ThemeData(
             brightness: Brightness.dark,
+            primaryColor: Colors.deepPurpleAccent,
             scaffoldBackgroundColor: Colors.black,
-            appBarTheme: const AppBarTheme(backgroundColor: Colors.black),
+            appBarTheme: const AppBarTheme(backgroundColor: Colors.black87),
           ),
           themeMode: currentMode,
           home: const SearchScreen(),
@@ -51,10 +55,30 @@ class _SearchScreenState extends State<SearchScreen> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   List<dynamic> _searchResults = [];
   bool _isLoading = false;
+  
+  // Professional Player State
+  String? _currentTitle;
+  String? _currentImage;
+  bool _isPlaying = false;
+  Duration _duration = Duration.zero;
+  Duration _position = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _audioPlayer.playerStateStream.listen((state) {
+      if (mounted) setState(() => _isPlaying = state.playing);
+    });
+    _audioPlayer.durationStream.listen((d) {
+      if (mounted) setState(() => _duration = d ?? Duration.zero);
+    });
+    _audioPlayer.positionStream.listen((p) {
+      if (mounted) setState(() => _position = p);
+    });
+  }
 
   Future<void> _searchSongs(String query) async {
     if (query.trim().isEmpty) return;
-    
     setState(() {
       _isLoading = true;
       _searchResults = [];
@@ -65,42 +89,23 @@ class _SearchScreenState extends State<SearchScreen> {
           'https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&ctx=web6dot0&api_version=4&q=${Uri.encodeComponent(query)}');
       
       final response = await http.get(url, headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'User-Agent': 'Mozilla/5.0',
         'Accept': 'application/json'
       });
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body.trim());
-        
-        List<dynamic> parsedResults = [];
+        List<dynamic> parsed = [];
         if (data is Map) {
-          if (data['results'] != null) {
-            parsedResults = data['results'];
-          } else if (data['songs'] != null && data['songs']['data'] != null) {
-            parsedResults = data['songs']['data'];
-          }
+          if (data['results'] != null) parsed = data['results'];
+          else if (data['songs']?['data'] != null) parsed = data['songs']['data'];
         }
-
-        setState(() {
-          _searchResults = parsedResults;
-        });
-
-        if (parsedResults.isEmpty && mounted) {
-           ScaffoldMessenger.of(context).showSnackBar(
-             const SnackBar(content: Text('No songs found.')),
-           );
-        }
+        setState(() => _searchResults = parsed);
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Network Error: App missing internet. $e')),
-        );
-      }
+      debugPrint("Search failed: $e");
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
     }
   }
 
@@ -108,134 +113,219 @@ class _SearchScreenState extends State<SearchScreen> {
     try {
       final key = utf8.encode('38346591');
       final decodedBytes = base64.decode(encryptedUrl);
-      
       final des = DES(key: key, mode: DESMode.ECB, paddingType: DESPaddingType.PKCS7);
-      final decryptedBytes = des.decrypt(decodedBytes);
-      final decryptedUrl = utf8.decode(decryptedBytes);
-      
-      return decryptedUrl.replaceAll('_96', '_320').replaceAll('.mp4', '.mp3');
+      final decryptedUrl = utf8.decode(des.decrypt(decodedBytes));
+      // Keep it as .mp4/.m4a to prevent format corruption in playback
+      return decryptedUrl.replaceAll('_96', '_320');
     } catch (e) {
       return "";
     }
   }
 
-  Future<void> _playSong(String encryptedUrl) async {
-    try {
-      final decryptedUrl = _decryptMediaUrl(encryptedUrl);
-      if (decryptedUrl.isNotEmpty) {
-        await _audioPlayer.setUrl(decryptedUrl);
-        _audioPlayer.play();
-      }
-    } catch (e) {
-      debugPrint("Error playing: $e");
+  Future<void> _playSong(String encryptedUrl, String title, String imageUrl) async {
+    final decryptedUrl = _decryptMediaUrl(encryptedUrl);
+    if (decryptedUrl.isNotEmpty) {
+      setState(() {
+        _currentTitle = title;
+        _currentImage = imageUrl;
+      });
+      await _audioPlayer.setUrl(decryptedUrl);
+      _audioPlayer.play();
     }
   }
 
-  Future<void> _downloadSong(String encryptedUrl, String title) async {
-    try {
-      final decryptedUrl = _decryptMediaUrl(encryptedUrl);
-      if (decryptedUrl.isNotEmpty) {
-        final safeTitle = title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
-        final task = DownloadTask(
-          url: decryptedUrl,
-          filename: '$safeTitle.mp3',
-          directory: 'Music',
-          updates: Updates.statusAndProgress,
-          allowPause: true,
-        );
-        await FileDownloader().enqueue(task);
+  Future<void> _downloadSong(String encryptedUrl, String title, String subtitle) async {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Starting Download: $title')));
+    
+    final decryptedUrl = _decryptMediaUrl(encryptedUrl);
+    if (decryptedUrl.isEmpty) return;
+
+    final safeTitle = title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
+    
+    // Download to internal hidden folder first to allow metadata injection
+    final task = DownloadTask(
+      url: decryptedUrl,
+      filename: '$safeTitle.m4a',
+      directory: 'temp_dj',
+      baseDirectory: BaseDirectory.applicationDocuments,
+      updates: Updates.statusAndProgress,
+    );
+
+    final result = await FileDownloader().download(task);
+    
+    if (result.status == TaskStatus.complete) {
+      try {
+        final filePath = await task.filePath();
         
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Downloading: $safeTitle')),
-          );
-        }
-      }
-    } catch (e) {
-      debugPrint("Error downloading: $e");
-    }
-  }
+        // Inject Custom Metadata and Copyright
+        Tag tag = Tag(
+          title: title,
+          artist: subtitle,
+          album: "DJ High-Res Downloads",
+          copyright: "Downloaded By Gajanan P",
+          trackOwner: "Gajanan P",
+        );
+        await AudioTags.write(filePath, tag);
 
-  @override
-  void dispose() {
-    _audioPlayer.dispose();
-    _searchController.dispose();
-    super.dispose();
+        // Fetch User Settings for Storage Location
+        final prefs = await SharedPreferences.getInstance();
+        final saveLocation = prefs.getString('save_location') ?? 'Music';
+        final sharedDir = saveLocation == 'Downloads' ? SharedStorage.downloads : SharedStorage.music;
+
+        // Move the tagged file to public storage
+        await FileDownloader().moveToSharedStorage(task, sharedDir, directory: 'DJ_Downloads');
+        
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Saved to $saveLocation: $safeTitle'), backgroundColor: Colors.green));
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Download processing error: $e'), backgroundColor: Colors.red));
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('DJ High-Res Player'),
+        title: const Text('DJ Pro Player'),
         actions: [
           IconButton(
-            icon: Icon(themeNotifier.value == ThemeMode.light 
-                ? Icons.dark_mode 
-                : Icons.light_mode),
-            onPressed: () {
-              themeNotifier.value = themeNotifier.value == ThemeMode.light 
-                  ? ThemeMode.dark 
-                  : ThemeMode.light;
-            },
+            icon: Icon(themeNotifier.value == ThemeMode.light ? Icons.dark_mode : Icons.light_mode),
+            onPressed: () => themeNotifier.value = themeNotifier.value == ThemeMode.light ? ThemeMode.dark : ThemeMode.light,
+          ),
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())),
           )
         ],
       ),
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(8.0),
+            padding: const EdgeInsets.all(12.0),
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                labelText: 'Search Tracks...',
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.search),
-                  onPressed: () => _searchSongs(_searchController.text),
-                ),
-                border: const OutlineInputBorder(),
+                hintText: 'Search High-Res Tracks...',
+                filled: true,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
+                prefixIcon: const Icon(Icons.search),
               ),
-              onSubmitted: (value) => _searchSongs(value),
+              onSubmitted: _searchSongs,
             ),
           ),
-          if (_isLoading) 
-            const Padding(
-              padding: EdgeInsets.all(20.0),
-              child: CircularProgressIndicator(),
-            ),
+          if (_isLoading) const Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()),
           Expanded(
             child: ListView.builder(
               itemCount: _searchResults.length,
               itemBuilder: (context, index) {
                 final song = _searchResults[index];
-                
                 final title = song['title']?.toString().replaceAll(RegExp(r'<[^>]*>'), '') ?? 'Unknown';
                 final subtitle = song['subtitle']?.toString().replaceAll(RegExp(r'<[^>]*>'), '') ?? 'Unknown Artist';
                 final mediaUrl = song['media_preview_url'] ?? song['encrypted_media_url'];
-                final imageUrl = song['image']?.toString().replaceAll('150x150', '50x50');
+                final imageUrl = song['image']?.toString().replaceAll('150x150', '50x50') ?? '';
 
                 return ListTile(
-                  leading: imageUrl != null 
-                      ? Image.network(imageUrl, width: 50, height: 50, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.music_note)) 
-                      : const Icon(Icons.music_note),
-                  title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  leading: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: imageUrl.isNotEmpty ? Image.network(imageUrl, width: 50, height: 50, fit: BoxFit.cover) : const Icon(Icons.music_note, size: 50),
+                  ),
+                  title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
                   subtitle: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      IconButton(
-                        icon: const Icon(Icons.play_arrow),
-                        onPressed: mediaUrl != null ? () => _playSong(mediaUrl) : null,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.download),
-                        onPressed: mediaUrl != null ? () => _downloadSong(mediaUrl, title) : null,
-                      ),
+                      IconButton(icon: const Icon(Icons.play_circle_fill, color: Colors.deepPurpleAccent, size: 35), onPressed: mediaUrl != null ? () => _playSong(mediaUrl, title, imageUrl) : null),
+                      IconButton(icon: const Icon(Icons.download, size: 28), onPressed: mediaUrl != null ? () => _downloadSong(mediaUrl, title, subtitle) : null),
                     ],
                   ),
                 );
               },
             ),
+          ),
+          // Professional Bottom Player
+          if (_currentTitle != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Theme.of(context).primaryColorDark,
+                boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, -5))],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      if (_currentImage != null) ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(_currentImage!, width: 40, height: 40)),
+                      const SizedBox(width: 12),
+                      Expanded(child: Text(_currentTitle!, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white))),
+                      IconButton(
+                        icon: Icon(_isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled, color: Colors.white, size: 40),
+                        onPressed: () => _isPlaying ? _audioPlayer.pause() : _audioPlayer.play(),
+                      ),
+                    ],
+                  ),
+                  Slider(
+                    value: _position.inSeconds.toDouble().clamp(0.0, _duration.inSeconds.toDouble()),
+                    max: _duration.inSeconds.toDouble() > 0 ? _duration.inSeconds.toDouble() : 1.0,
+                    activeColor: Colors.white,
+                    inactiveColor: Colors.white30,
+                    onChanged: (val) => _audioPlayer.seek(Duration(seconds: val.toInt())),
+                  )
+                ],
+              ),
+            )
+        ],
+      ),
+    );
+  }
+}
+
+class SettingsScreen extends StatefulWidget {
+  const SettingsScreen({super.key});
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  String _selectedLocation = 'Music';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() => _selectedLocation = prefs.getString('save_location') ?? 'Music');
+  }
+
+  Future<void> _saveSettings(String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('save_location', value);
+    setState(() => _selectedLocation = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Settings')),
+      body: ListView(
+        children: [
+          const Padding(padding: EdgeInsets.all(16.0), child: Text("Download Location", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+          RadioListTile<String>(
+            title: const Text("Music Folder"),
+            subtitle: const Text("Internal Storage/Music/DJ_Downloads"),
+            value: 'Music',
+            groupValue: _selectedLocation,
+            onChanged: (val) => _saveSettings(val!),
+          ),
+          RadioListTile<String>(
+            title: const Text("Downloads Folder"),
+            subtitle: const Text("Internal Storage/Download/DJ_Downloads"),
+            value: 'Downloads',
+            groupValue: _selectedLocation,
+            onChanged: (val) => _saveSettings(val!),
           ),
         ],
       ),

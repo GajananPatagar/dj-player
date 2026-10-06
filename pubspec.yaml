@@ -12,8 +12,9 @@ dependencies:
   http: ^1.1.0
   dart_des: ^1.0.2
   just_audio: ^0.9.36
-  audio_service: ^0.18.12
   background_downloader: ^9.6.3
+  audiotags: ^1.2.1
+  shared_preferences: ^2.2.3
 
 dev_dependencies:
   flutter_test:

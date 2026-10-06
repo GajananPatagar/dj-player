@@ -56,7 +56,6 @@ class _SearchScreenState extends State<SearchScreen> {
   List<dynamic> _searchResults = [];
   bool _isLoading = false;
   
-  // Professional Player State
   String? _currentTitle;
   String? _currentImage;
   bool _isPlaying = false;
@@ -115,7 +114,6 @@ class _SearchScreenState extends State<SearchScreen> {
       final decodedBytes = base64.decode(encryptedUrl);
       final des = DES(key: key, mode: DESMode.ECB, paddingType: DESPaddingType.PKCS7);
       final decryptedUrl = utf8.decode(des.decrypt(decodedBytes));
-      // Keep it as .mp4/.m4a to prevent format corruption in playback
       return decryptedUrl.replaceAll('_96', '_320');
     } catch (e) {
       return "";
@@ -142,7 +140,6 @@ class _SearchScreenState extends State<SearchScreen> {
 
     final safeTitle = title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
     
-    // Download to internal hidden folder first to allow metadata injection
     final task = DownloadTask(
       url: decryptedUrl,
       filename: '$safeTitle.m4a',
@@ -157,24 +154,18 @@ class _SearchScreenState extends State<SearchScreen> {
       try {
         final filePath = await task.filePath();
         
-        // Inject Custom Metadata and Copyright (Syntax Fixed)
+        // Strict audiotags syntax mapping
         Tag tag = Tag(
           title: title,
           trackArtist: subtitle,
-          album: "DJ High-Res Downloads",
-          copyright: "Downloaded By Gajanan P",
-          trackOwner: "Gajanan P",
+          album: "DJ High-Res Downloads | By Gajanan P",
         );
         await AudioTags.write(filePath, tag);
 
-        // Fetch User Settings for Storage Location
         final prefs = await SharedPreferences.getInstance();
         final saveLocation = prefs.getString('save_location') ?? 'Music';
-        
-        // Android 14 compliant shared folder selection (Syntax Fixed)
         final sharedDir = saveLocation == 'Downloads' ? SharedStorage.downloads : SharedStorage.audio;
 
-        // Move the tagged file to public storage
         await FileDownloader().moveToSharedStorage(task, sharedDir, directory: 'DJ_Downloads');
         
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Saved to $saveLocation: $safeTitle'), backgroundColor: Colors.green));
@@ -253,7 +244,6 @@ class _SearchScreenState extends State<SearchScreen> {
               },
             ),
           ),
-          // Professional Bottom Player
           if (_currentTitle != null)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

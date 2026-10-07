@@ -32,7 +32,6 @@ jobs:
         run: |
           sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <application/g' android/app/src/main/AndroidManifest.xml
           sed -i 's/<application/<application android:usesCleartextTraffic="true"/g' android/app/src/main/AndroidManifest.xml
-          # Standard way to override flutter compile version
           echo "flutter.compileSdkVersion=34" >> android/local.properties
 
       - name: Install Dependencies

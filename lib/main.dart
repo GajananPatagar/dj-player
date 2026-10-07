@@ -61,7 +61,6 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
   final List<Map<String, dynamic>> _djFavorites = [];
   bool _isLoading = false;
 
-  // Track & Playback State
   String? _currentTitle;
   String? _currentArtist;
   String? _currentImage;
@@ -72,7 +71,6 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
   double _playbackSpeed = 1.0;
   String _selectedQuality = '_320';
 
-  // Tap-to-BPM State
   final List<DateTime> _tapTimestamps = [];
   int _calculatedBpm = 0;
 
@@ -173,12 +171,12 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
       try {
         final filePath = await task.filePath();
         
+        // Use v1.2.1 specific syntax
         Tag tag = Tag(
           title: title,
-          trackArtist: subtitle,
+          artist: subtitle,
           album: "DJ High-Res Downloads",
-          albumArtist: "Downloaded By Gajanan P",
-          pictures: const [],
+          trackOwner: "Downloaded By Gajanan P",
         );
         await AudioTags.write(filePath, tag);
 

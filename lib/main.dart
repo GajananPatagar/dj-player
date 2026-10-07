@@ -10,6 +10,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
+import 'package:dart_des/dart_des.dart';
 
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.dark);
 final ValueNotifier<MaterialColor> colorNotifier = ValueNotifier(Colors.deepPurple);
@@ -95,7 +96,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
   Timer? _speedDebounce; 
   double _volume = 1.0;
   LoopMode _loopMode = LoopMode.off;
-  Timer? _sleepTimer; // FIX: Added missing sleep timer declaration
+  Timer? _sleepTimer;
 
   final List<DateTime> _tapTimestamps = [];
   int _calculatedBpm = 0;
@@ -141,16 +142,6 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     });
   }
 
-  Future<void> _loadOfflineLibrary() async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? saved = prefs.getString('offline_library');
-    if (saved != null) {
-      setState(() {
-        _offlineSongs = List<Map<String, dynamic>>.from(json.decode(saved));
-      });
-    }
-  }
-
   Future<void> _saveToOfflineLibrary(Map<String, dynamic> track, String localPath) async {
     track['localPath'] = localPath;
     track['source'] = 'Offline';
@@ -164,31 +155,47 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
   }
 
   Future<void> _scanDownloadedFiles() async {
-    final dir = Directory('/storage/emulated/0/Download/DJ_Downloads');
-    if (await dir.exists()) {
-      final files = dir.listSync();
+    try {
+      final List<Directory> searchDirectories = [
+        Directory('/storage/emulated/0/Download/DJ_Downloads'),
+        Directory('/storage/emulated/0/Download/DJ_Workstation'),
+        Directory('/storage/emulated/0/Music/DJ_Downloads'),
+      ];
+      
       Set<String> foundIds = {};
       List<Map<String, dynamic>> loadedOffline = [];
       
-      for (var file in files) {
-        if (file is File && file.path.endsWith('.m4a')) {
-          String filename = file.path.split('/').last.replaceAll('.m4a', '');
-          String trackName = filename.replaceAll('Gajanan Patkar - ', '');
-          foundIds.add(trackName);
-          loadedOffline.add({
-            'title': trackName,
-            'artist': 'Local Audio',
-            'id': trackName,
-            'image': '',
-            'localPath': file.path,
-            'source': 'Offline'
-          });
+      for (var dir in searchDirectories) {
+        if (await dir.exists()) {
+          final files = dir.listSync();
+          for (var file in files) {
+            if (file is File && file.path.endsWith('.m4a')) {
+              String filename = file.path.split('/').last.replaceAll('.m4a', '');
+              // Universal scanner retrieves files regardless of naming history
+              String trackName = filename.replaceAll('Gajanan Patkar - ', '').replaceAll('Gajanan P - ', '');
+              
+              if (!foundIds.contains(trackName)) {
+                foundIds.add(trackName);
+                loadedOffline.add({
+                  'title': trackName,
+                  'artist': 'Local Audio',
+                  'id': trackName,
+                  'image': '',
+                  'localPath': file.path,
+                  'source': 'Offline'
+                });
+              }
+            }
+          }
         }
       }
+      
       setState(() {
         _downloadedFileIds = foundIds;
         _offlineSongs = loadedOffline;
       });
+    } catch (e) {
+      debugPrint("Scanner bypassed permission lock: $e");
     }
   }
 
@@ -234,9 +241,10 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     });
     
     try {
-      String query = "Top 50 $language Hit Songs Audio";
+      String query = "Top 50 $language Hit Songs";
       final res = await _yt.search.search(query);
-      final List<Map<String, dynamic>> results = res.take(50).map((v) => {
+      // Capped to 20 to prevent pagination timeout errors
+      final List<Map<String, dynamic>> results = res.take(20).map((v) => {
         'title': v.title,
         'artist': v.author,
         'image': v.thumbnails.highResUrl,
@@ -296,10 +304,8 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
         if (track['source'] == 'Offline') {
           await _audioPlayer.setAudioSource(AudioSource.file(streamUrl));
         } else {
-          await _audioPlayer.setAudioSource(AudioSource.uri(
-            Uri.parse(streamUrl),
-            headers: {'User-Agent': 'Mozilla/5.0'},
-          ));
+          // Native headers removed entirely to bypass 403 Forbidden firewall rejections
+          await _audioPlayer.setAudioSource(AudioSource.uri(Uri.parse(streamUrl)));
         }
         await _audioPlayer.setSpeed(_playbackSpeed);
         await _audioPlayer.setVolume(_volume);
@@ -367,10 +373,10 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
       int lastBytes = 0;
       int lastTime = DateTime.now().millisecondsSinceEpoch;
 
+      // Custom Headers stripped out to avoid 403 Forbidden CDN Blocks
       await _dio.download(
         streamUrl,
         savePath,
-        options: Options(headers: {'User-Agent': 'Mozilla/5.0'}),
         onReceiveProgress: (received, total) {
           if (total != -1) {
             int now = DateTime.now().millisecondsSinceEpoch;
@@ -404,7 +410,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     } catch (e) {
       if (mounted) {
         setState(() { _downloadProgress.remove(taskId); _downloadSpeed.remove(taskId); });
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Download Error: 403 Block Bypassed, retry.'), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Download Error. Verify Network Stability.'), backgroundColor: Colors.red));
       }
     }
   }

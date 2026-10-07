@@ -4,7 +4,6 @@ import 'package:dart_des/dart_des.dart';
 import 'dart:convert';
 import 'package:just_audio/just_audio.dart';
 import 'package:background_downloader/background_downloader.dart';
-import 'package:audiotags/audiotags.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.dark);
@@ -155,12 +154,17 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     final decryptedUrl = _decryptMediaUrl(encryptedUrl, _selectedQuality);
     if (decryptedUrl.isEmpty) return;
 
-    final safeTitle = title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
+    // Use Gajanan P prefix in filename to ensure credit without needing broken metadata packages
+    final safeTitle = "Gajanan P - " + title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
     
+    final prefs = await SharedPreferences.getInstance();
+    final saveLocation = prefs.getString('save_location') ?? 'Music';
+    final sharedDir = saveLocation == 'Downloads' ? SharedStorage.downloads : SharedStorage.audio;
+
     final task = DownloadTask(
       url: decryptedUrl,
       filename: '$safeTitle.m4a',
-      directory: 'temp_dj',
+      directory: 'DJ_Downloads',
       baseDirectory: BaseDirectory.applicationDocuments,
       updates: Updates.statusAndProgress,
     );
@@ -169,23 +173,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     
     if (result.status == TaskStatus.complete) {
       try {
-        final filePath = await task.filePath();
-        
-        // Use v1.2.1 specific syntax
-        Tag tag = Tag(
-          title: title,
-          artist: subtitle,
-          album: "DJ High-Res Downloads",
-          trackOwner: "Downloaded By Gajanan P",
-        );
-        await AudioTags.write(filePath, tag);
-
-        final prefs = await SharedPreferences.getInstance();
-        final saveLocation = prefs.getString('save_location') ?? 'Music';
-        final sharedDir = saveLocation == 'Downloads' ? SharedStorage.downloads : SharedStorage.audio;
-
         await FileDownloader().moveToSharedStorage(task, sharedDir, directory: 'DJ_Downloads');
-        
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -197,7 +185,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Tagging error: $e'), backgroundColor: Colors.red),
+            SnackBar(content: Text('Save error: $e'), backgroundColor: Colors.red),
           );
         }
       }

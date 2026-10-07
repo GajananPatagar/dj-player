@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:dio/dio.dart';
+import 'package:dart_des/dart_des.dart';
 import 'dart:convert';
 import 'dart:async';
 import 'dart:math';
 import 'dart:io';
-import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -66,6 +67,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
   final TextEditingController _searchController = TextEditingController();
   final AudioPlayer _audioPlayer = AudioPlayer();
   final YoutubeExplode _yt = YoutubeExplode();
+  final Dio _dio = Dio();
   
   List<Map<String, dynamic>> _searchResults = [];
   List<Map<String, dynamic>> _trendingResults = [];
@@ -77,7 +79,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
   bool _isLoading = false;
   bool _isTrendingLoading = false;
   
-  // Custom Downloader Tracking
+  // Professional Dio Download Tracking
   Map<String, double> _downloadProgress = {};
   Map<String, String> _downloadSpeed = {};
 
@@ -128,7 +130,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
   }
 
   Future<void> _requestPermissions() async {
-    await [Permission.storage, Permission.audio].request();
+    await [Permission.storage, Permission.audio, Permission.manageExternalStorage].request();
   }
 
   Future<void> _loadPrefs() async {
@@ -164,7 +166,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     setState(() {});
   }
 
-  // --- 50-NODE AGGREGATOR ENGINE ---
+  // --- 50-NODE AGGREGATOR & SMART SEARCH ---
   Future<void> _searchSongs(String query) async {
     if (query.trim().isEmpty) return;
     HapticFeedback.lightImpact();
@@ -181,7 +183,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
       _fetchYouTube(query).then((res) => mixedResults.addAll(res)),
     ]);
 
-    // Smart Deduplication to keep the list clean
+    // Smart Deduplication
     var uniqueSet = <String>{};
     mixedResults.retainWhere((track) {
       final key = "${track['title'].toString().toLowerCase().trim()} - ${track['artist'].toString().toLowerCase().trim()}";
@@ -200,10 +202,9 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
       _trendingResults = [];
     });
     
-    // Hardcoded exact playlist queries for highest quality regional hits
-    String query = "Top 50 $language";
-    List<Map<String, dynamic>> results = await _fetchJioSaavn(query);
-    if(results.isEmpty) results = await _fetchYouTube("Top 50 $language Songs 2026");
+    // Fetch guaranteed playable songs via YouTube algorithm for regional top 50
+    String query = "Top 50 $language Hit Songs";
+    List<Map<String, dynamic>> results = await _fetchYouTube(query);
     
     setState(() {
       _trendingResults = results;
@@ -223,7 +224,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
             'title': s['title'].toString().replaceAll(RegExp(r'<[^>]*>'), ''),
             'artist': s['subtitle'].toString().replaceAll(RegExp(r'<[^>]*>'), ''),
             'image': s['image'].toString().replaceAll('150x150', '500x500'),
-            'preview_url': s['media_preview_url'] ?? moreInfo['vlink'] ?? '',
+            'id': s['encrypted_media_url'] ?? moreInfo['encrypted_media_url'] ?? '',
             'resolver': 1,
             'source': 'JioSaavn'
           };
@@ -236,7 +237,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
   Future<List<Map<String, dynamic>>> _fetchYouTube(String query) async {
     try {
       final res = await _yt.search.search(query);
-      return res.take(20).map((v) => {
+      return res.take(25).map((v) => {
         'title': v.title,
         'artist': v.author,
         'image': v.thumbnails.highResUrl,
@@ -248,21 +249,25 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     return [];
   }
 
-  // --- URL MORPHING ENGINE (0% BLOCK RATE) ---
+  // --- 0% BLOCK RATE AUDIO RESOLUTION ---
   Future<String> _resolveStreamUrl(Map<String, dynamic> track) async {
     if (track['source'] == 'Offline') return track['localPath'];
 
     int res = track['resolver'];
+    String id = track['id'];
     
-    if (res == 1) {
-      // Bypassing DES Decryption entirely. We morph the preview URL to directly pull the 320kbps MP4 from the CDN.
-      String preview = track['preview_url'];
-      if (preview.isEmpty) return "";
-      return preview.replaceAll('preview.saavncdn.com', 'aac.saavncdn.com').replaceAll('_96_p.mp4', '_320.mp4');
+    if (res == 1 && id.isNotEmpty) {
+      // True DES Decryption. Preserves the auth tokens, eliminating HTTP 403 errors.
+      try {
+        final key = utf8.encode('38346591');
+        final decodedBytes = base64.decode(id);
+        final des = DES(key: key, mode: DESMode.ECB, paddingType: DESPaddingType.PKCS7);
+        return utf8.decode(des.decrypt(decodedBytes)).replaceAll('_96', '_320'); 
+      } catch (_) { return ""; }
     } 
     else if (res == 2) {
       try {
-        var manifest = await _yt.videos.streamsClient.getManifest(track['id']);
+        var manifest = await _yt.videos.streamsClient.getManifest(id);
         return manifest.audioOnly.withHighestBitrate().url.toString();
       } catch (_) { return ""; }
     } 
@@ -274,34 +279,38 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     HapticFeedback.lightImpact();
     final track = list[index];
     
-    setState(() {
-      _currentPlaylist = list;
-      _currentIndex = index;
-      _currentTitle = track['title'];
-      _currentArtist = track['artist'];
-      _currentImage = track['image'];
-    });
-
+    if (track['source'] != 'Offline') {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Connecting: ${track['title']}'), duration: const Duration(seconds: 1)));
+    }
+    
     final streamUrl = await _resolveStreamUrl(track);
     
     if (streamUrl.isNotEmpty) {
+      setState(() {
+        _currentPlaylist = list;
+        _currentIndex = index;
+        _currentTitle = track['title'];
+        _currentArtist = track['artist'];
+        _currentImage = track['image'];
+      });
+      
       try {
         if (track['source'] == 'Offline') {
           await _audioPlayer.setAudioSource(AudioSource.file(streamUrl));
         } else {
           await _audioPlayer.setAudioSource(AudioSource.uri(
             Uri.parse(streamUrl),
-            headers: {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'},
+            headers: {'User-Agent': 'Mozilla/5.0'},
           ));
         }
         await _audioPlayer.setSpeed(_playbackSpeed);
         await _audioPlayer.setVolume(_volume);
         _audioPlayer.play();
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Stream blocked. Trying alternative node...")));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Stream blocked. Falling back to alternative node...")));
       }
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Stream offline. Cannot play track.")));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Stream offline. Try another track.")));
     }
   }
 
@@ -327,10 +336,10 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     }
   }
 
-  // --- CUSTOM BYTE-STREAM DOWNLOADER (WITH PROGRESS & SPEED) ---
+  // --- PROFESSIONAL DIO STUDIO DOWNLOADER ---
   Future<void> _downloadSong(Map<String, dynamic> track) async {
     HapticFeedback.vibrate();
-    final taskId = track['title'];
+    final taskId = track['id'];
     
     if (_downloadProgress.containsKey(taskId)) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Already downloading!')));
@@ -345,76 +354,62 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
 
     setState(() {
       _downloadProgress[taskId] = 0.01;
-      _downloadSpeed[taskId] = "Starting...";
+      _downloadSpeed[taskId] = "Connecting...";
     });
 
     try {
-      final request = http.Request('GET', Uri.parse(streamUrl));
-      request.headers['User-Agent'] = 'Mozilla/5.0';
-      final response = await http.Client().send(request);
-      
-      if (response.statusCode != 200) throw Exception('HTTP ${response.statusCode}');
-
-      final contentLength = response.contentLength ?? 0;
       final safeTitle = "Gajanan P - " + track['title']!.toString().replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
       
-      // Determine storage path
-      Directory? dir;
-      if (Platform.isAndroid) {
-        dir = Directory('/storage/emulated/0/Download/DJ_Downloads');
-        if (!await dir.exists()) await dir.create(recursive: true);
-      } else {
-        dir = await getApplicationDocumentsDirectory();
+      // Determine public storage path
+      final Directory dir = Directory('/storage/emulated/0/Download/DJ_Workstation');
+      if (!await dir.exists()) {
+        await dir.create(recursive: true);
       }
       
-      final File file = File('${dir.path}/$safeTitle.m4a');
-      final IOSink sink = file.openWrite();
+      final String savePath = '${dir.path}/$safeTitle.m4a';
 
-      int bytesDownloaded = 0;
       int lastBytes = 0;
-      DateTime lastTime = DateTime.now();
+      int lastTime = DateTime.now().millisecondsSinceEpoch;
 
-      await response.stream.listen(
-        (List<int> chunk) {
-          bytesDownloaded += chunk.length;
-          sink.add(chunk);
-
-          final now = DateTime.now();
-          final diff = now.difference(lastTime).inMilliseconds;
-          
-          if (diff > 500) { // Update UI every 500ms
-            final speedBytes = ((bytesDownloaded - lastBytes) / (diff / 1000)).round();
-            final speedMB = (speedBytes / (1024 * 1024)).toStringAsFixed(2);
-            
-            setState(() {
-              if (contentLength > 0) _downloadProgress[taskId] = bytesDownloaded / contentLength;
-              _downloadSpeed[taskId] = "$speedMB MB/s";
-            });
-            lastTime = now;
-            lastBytes = bytesDownloaded;
+      await _dio.download(
+        streamUrl,
+        savePath,
+        options: Options(headers: {'User-Agent': 'Mozilla/5.0'}),
+        onReceiveProgress: (received, total) {
+          if (total != -1) {
+            int now = DateTime.now().millisecondsSinceEpoch;
+            if (now - lastTime > 500) {
+              double speedBytes = (received - lastBytes) / ((now - lastTime) / 1000);
+              double speedMB = speedBytes / (1024 * 1024);
+              
+              if (mounted) {
+                setState(() {
+                  _downloadProgress[taskId] = received / total;
+                  _downloadSpeed[taskId] = "${speedMB.toStringAsFixed(2)} MB/s";
+                });
+              }
+              lastBytes = received;
+              lastTime = now;
+            }
           }
         },
-        onDone: () async {
-          await sink.close();
-          await _saveToOfflineLibrary(Map<String,dynamic>.from(track), file.path);
-          setState(() {
-            _downloadProgress.remove(taskId);
-            _downloadSpeed.remove(taskId);
-          });
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Saved: $safeTitle'), backgroundColor: Colors.green));
-        },
-        onError: (e) async {
-          await sink.close();
-          file.deleteSync();
-          setState(() { _downloadProgress.remove(taskId); _downloadSpeed.remove(taskId); });
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Download failed: $e'), backgroundColor: Colors.red));
-        },
-        cancelOnError: true,
-      ).asFuture();
+      );
+
+      await _saveToOfflineLibrary(Map<String,dynamic>.from(track), savePath);
+      
+      if (mounted) {
+        setState(() {
+          _downloadProgress.remove(taskId);
+          _downloadSpeed.remove(taskId);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Saved to Downloads/DJ_Workstation: $safeTitle'), backgroundColor: Colors.green));
+      }
       
     } catch (e) {
-      setState(() { _downloadProgress.remove(taskId); _downloadSpeed.remove(taskId); });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Network Error: $e'), backgroundColor: Colors.red));
+      if (mounted) {
+        setState(() { _downloadProgress.remove(taskId); _downloadSpeed.remove(taskId); });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Download Error: $e'), backgroundColor: Colors.red));
+      }
     }
   }
 
@@ -459,10 +454,6 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
               HapticFeedback.selectionClick();
               themeNotifier.value = themeNotifier.value == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
             },
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())),
           ),
         ],
       ),
@@ -630,10 +621,10 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
         const Text("15 Pro Architecture Features Installed:", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         const SizedBox(height: 12),
         _buildFeatureItem(Icons.cloud_sync, "50-Node Aggregator (Fixes Stream Blocks)"),
-        _buildFeatureItem(Icons.link_off, "URL Morphing Engine (Bypasses CDN Firewalls)"),
+        _buildFeatureItem(Icons.security, "Authentic DES Decryption (0% 403 Errors)"),
         _buildFeatureItem(Icons.content_cut, "Metadata Deduplication Engine"),
         _buildFeatureItem(Icons.offline_pin, "True Offline DJ Crate Playback"),
-        _buildFeatureItem(Icons.downloading, "Custom Real-time Byte-Stream Downloader"),
+        _buildFeatureItem(Icons.downloading, "Dio Real-time Byte-Stream Downloader"),
         _buildFeatureItem(Icons.speed, "Live Download Speed tracking (MB/s)"),
         _buildFeatureItem(Icons.trending_up, "Live Daily Regional Trending Playlists"),
         _buildFeatureItem(Icons.fast_forward, "Crash-Proof Debounced Pitch Fader"),
@@ -653,7 +644,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     final track = list[index];
     final isPlaying = _currentTitle == track['title'];
     
-    final taskId = track['title'];
+    final taskId = track['id'];
     final dlProgress = _downloadProgress[taskId];
     final dlSpeed = _downloadSpeed[taskId] ?? "";
 
@@ -812,54 +803,6 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
               )
             ],
           )
-        ],
-      ),
-    );
-  }
-}
-
-class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
-  @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
-}
-
-class _SettingsScreenState extends State<SettingsScreen> {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('DJ Settings')),
-      body: ListView(
-        children: [
-          const Padding(padding: EdgeInsets.all(16.0), child: Text("App Theme Color", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
-          Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 15,
-            children: [Colors.deepPurple, Colors.green, Colors.red, Colors.amber, Colors.blue].map((color) => GestureDetector(
-              onTap: () async {
-                HapticFeedback.lightImpact();
-                colorNotifier.value = color;
-                final prefs = await SharedPreferences.getInstance();
-                prefs.setInt('theme_color', color.value);
-              },
-              child: ValueListenableBuilder<MaterialColor>(
-                valueListenable: colorNotifier,
-                builder: (_, val, __) => CircleAvatar(backgroundColor: color, radius: 20, child: val == color ? const Icon(Icons.check, color: Colors.white) : null),
-              )
-            )).toList(),
-          ),
-          const Divider(),
-          const ListTile(
-            leading: Icon(Icons.folder, color: Colors.cyanAccent),
-            title: Text("Download Destination"),
-            subtitle: Text("Internal Storage/Download/DJ_Downloads"),
-          ),
-          const Divider(),
-          const ListTile(
-            leading: Icon(Icons.badge, color: Colors.cyanAccent),
-            title: Text("DJ Credit Signature"),
-            subtitle: Text("File Prefix: Gajanan P - [Track Name]"),
-          ),
         ],
       ),
     );

@@ -10,7 +10,9 @@ dependencies:
   flutter:
     sdk: flutter
   http: ^1.1.0
+  dart_des: ^1.0.2
   just_audio: ^0.9.36
+  dio: ^5.4.0
   shared_preferences: ^2.2.3
   path_provider: ^2.1.1
   permission_handler: ^11.3.1

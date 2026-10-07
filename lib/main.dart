@@ -2,24 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:dart_des/dart_des.dart';
 import 'dart:convert';
-import 'dart:async';
-import 'dart:math';
 import 'package:just_audio/just_audio.dart';
 import 'package:background_downloader/background_downloader.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-// Global Notifiers for instant UI updates
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.dark);
-final ValueNotifier<MaterialColor> colorNotifier = ValueNotifier(Colors.deepPurple);
-final ValueNotifier<bool> fadeInNotifier = ValueNotifier(false);
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // Load saved preferences
-  final prefs = await SharedPreferences.getInstance();
-  fadeInNotifier.value = prefs.getBool('fade') ?? false;
-  
   runApp(const DJPlayerApp());
 }
 
@@ -30,30 +20,25 @@ class DJPlayerApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return ValueListenableBuilder<ThemeMode>(
       valueListenable: themeNotifier,
-      builder: (_, currentMode, __) {
-        return ValueListenableBuilder<MaterialColor>(
-          valueListenable: colorNotifier,
-          builder: (_, currentColor, __) {
-            return MaterialApp(
-              title: 'DJ Pro Player',
-              debugShowCheckedModeBanner: false,
-              theme: ThemeData(
-                brightness: Brightness.light,
-                primaryColor: currentColor,
-                colorScheme: ColorScheme.light(primary: currentColor, secondary: Colors.teal),
-                scaffoldBackgroundColor: Colors.grey[100],
-              ),
-              darkTheme: ThemeData(
-                brightness: Brightness.dark,
-                primaryColor: currentColor,
-                colorScheme: ColorScheme.dark(primary: currentColor, secondary: Colors.cyanAccent),
-                scaffoldBackgroundColor: Colors.black,
-                appBarTheme: const AppBarTheme(backgroundColor: Color(0xFF121212)),
-              ),
-              themeMode: currentMode,
-              home: const MainDJDashboard(),
-            );
-          }
+      builder: (_, ThemeMode currentMode, __) {
+        return MaterialApp(
+          title: 'DJ Pro Player',
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            brightness: Brightness.light,
+            primaryColor: Colors.deepPurple,
+            colorScheme: const ColorScheme.light(primary: Colors.deepPurple, secondary: Colors.teal),
+            scaffoldBackgroundColor: Colors.grey[100],
+          ),
+          darkTheme: ThemeData(
+            brightness: Brightness.dark,
+            primaryColor: Colors.deepPurpleAccent,
+            colorScheme: const ColorScheme.dark(primary: Colors.deepPurpleAccent, secondary: Colors.cyanAccent),
+            scaffoldBackgroundColor: Colors.black,
+            appBarTheme: const AppBarTheme(backgroundColor: Color(0xFF121212)),
+          ),
+          themeMode: currentMode,
+          home: const MainDJDashboard(),
         );
       },
     );
@@ -72,13 +57,9 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   
   List<dynamic> _searchResults = [];
-  List<String> _searchHistory = [];
-  List<Map<String, dynamic>> _djFavorites = [];
+  final List<Map<String, dynamic>> _djFavorites = [];
   bool _isLoading = false;
 
-  // Track & Playback State
-  List<dynamic> _currentPlaylist = [];
-  int _currentIndex = -1;
   String? _currentTitle;
   String? _currentArtist;
   String? _currentImage;
@@ -86,26 +67,16 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
   double _playbackSpeed = 1.0;
-  double _volume = 1.0;
   String _selectedQuality = '_320';
-  LoopMode _loopMode = LoopMode.off;
-  Timer? _sleepTimer;
 
-  // Tap-to-BPM State
   final List<DateTime> _tapTimestamps = [];
   int _calculatedBpm = 0;
 
   @override
   void initState() {
     super.initState();
-    _loadHistory();
     _audioPlayer.playerStateStream.listen((state) {
       if (mounted) setState(() => _isPlaying = state.playing);
-      if (state.processingState == ProcessingState.completed) {
-        if (_loopMode == LoopMode.all || _loopMode == LoopMode.off) {
-          _playNext();
-        }
-      }
     });
     _audioPlayer.durationStream.listen((d) {
       if (mounted) setState(() => _duration = d ?? Duration.zero);
@@ -115,40 +86,8 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     });
   }
 
-  Future<void> _loadHistory() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() => _searchHistory = prefs.getStringList('history') ?? []);
-  }
-
-  Future<void> _saveHistory(String query) async {
-    if (query.trim().isEmpty) return;
-    if (!_searchHistory.contains(query)) {
-      _searchHistory.insert(0, query);
-      if (_searchHistory.length > 5) _searchHistory.removeLast();
-      final prefs = await SharedPreferences.getInstance();
-      prefs.setStringList('history', _searchHistory);
-    }
-  }
-
-  // Feature 1: Intelligent API Parser
-  Map<String, String> _extractData(dynamic song) {
-    final title = song['title']?.toString().replaceAll(RegExp(r'<[^>]*>'), '') ?? 'Unknown';
-    final subtitle = song['subtitle']?.toString().replaceAll(RegExp(r'<[^>]*>'), '') ?? 'Unknown Artist';
-    final imageUrl = song['image']?.toString().replaceAll('150x150', '50x50') ?? '';
-    final moreInfo = song['more_info'] ?? {};
-    
-    // Deep hunt for the URL across multiple possible API responses
-    final mediaUrl = song['encrypted_media_url'] ?? 
-                     moreInfo['encrypted_media_url'] ?? 
-                     moreInfo['vlink'] ?? 
-                     song['media_preview_url'] ?? '';
-                     
-    return {'title': title, 'subtitle': subtitle, 'image': imageUrl, 'mediaUrl': mediaUrl};
-  }
-
   Future<void> _searchSongs(String query) async {
     if (query.trim().isEmpty) return;
-    _saveHistory(query);
     setState(() {
       _isLoading = true;
       _searchResults = [];
@@ -191,58 +130,21 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     }
   }
 
-  Future<void> _playSong(int index, List<dynamic> list) async {
-    if(index < 0 || index >= list.length) return;
-    final song = list[index];
-    final data = _extractData(song);
-    if(data['mediaUrl']!.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Stream not available for this track.")));
-      return;
-    }
-
-    final directUrl = _decryptMediaUrl(data['mediaUrl']!, _selectedQuality);
+  Future<void> _playSong(String encryptedUrl, String title, String artist, String imageUrl) async {
+    final directUrl = _decryptMediaUrl(encryptedUrl, _selectedQuality);
     if (directUrl.isNotEmpty) {
       setState(() {
-        _currentPlaylist = list;
-        _currentIndex = index;
-        _currentTitle = data['title'];
-        _currentArtist = data['subtitle'];
-        _currentImage = data['image'];
-        _currentEncryptedUrl = data['mediaUrl'];
+        _currentTitle = title;
+        _currentArtist = artist;
+        _currentImage = imageUrl;
       });
-      
       await _audioPlayer.setUrl(directUrl);
       await _audioPlayer.setSpeed(_playbackSpeed);
-      
-      // Feature 9: Fade-In Playback
-      if(fadeInNotifier.value) {
-        _audioPlayer.setVolume(0.0);
-        _audioPlayer.play();
-        for(int i=1; i<=10; i++){
-          await Future.delayed(const Duration(milliseconds: 150));
-          _audioPlayer.setVolume((i/10) * _volume);
-        }
-      } else {
-        _audioPlayer.setVolume(_volume);
-        _audioPlayer.play();
-      }
+      _audioPlayer.play();
     }
-  }
-
-  void _playNext() {
-    if (_currentIndex < _currentPlaylist.length - 1) _playSong(_currentIndex + 1, _currentPlaylist);
-  }
-
-  void _playPrev() {
-    if (_currentIndex > 0) _playSong(_currentIndex - 1, _currentPlaylist);
   }
 
   Future<void> _downloadSong(String encryptedUrl, String title, String subtitle) async {
-    if(encryptedUrl.isEmpty) {
-       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error: Stream locked.')));
-       return;
-    }
-    
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Downloading High-Res: $title ($_selectedQuality kbps)')),
     );
@@ -251,6 +153,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     if (decryptedUrl.isEmpty) return;
 
     final safeTitle = "Gajanan P - " + title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
+    
     final prefs = await SharedPreferences.getInstance();
     final saveLocation = prefs.getString('save_location') ?? 'Music';
     final sharedDir = saveLocation == 'Downloads' ? SharedStorage.downloads : SharedStorage.audio;
@@ -264,6 +167,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     );
 
     final result = await FileDownloader().download(task);
+    
     if (result.status == TaskStatus.complete) {
       try {
         await FileDownloader().moveToSharedStorage(task, sharedDir, directory: 'DJ_Downloads');
@@ -276,21 +180,12 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
           );
         }
       } catch (e) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Save error: $e'), backgroundColor: Colors.red));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Save error: $e'), backgroundColor: Colors.red),
+          );
+        }
       }
-    }
-  }
-
-  void _setSleepTimer(int min) {
-    _sleepTimer?.cancel();
-    if(min > 0) {
-      _sleepTimer = Timer(Duration(minutes: min), () {
-        _audioPlayer.pause();
-        if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sleep Timer Ended. Playback Paused.')));
-      });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Sleep timer set: $min min')));
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sleep timer disabled.')));
     }
   }
 
@@ -305,11 +200,15 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
         totalMs += _tapTimestamps[i].difference(_tapTimestamps[i - 1]).inMilliseconds;
       }
       final avgMs = totalMs / (_tapTimestamps.length - 1);
-      if (avgMs > 0) setState(() => _calculatedBpm = (60000 / avgMs).round());
+      if (avgMs > 0) {
+        setState(() {
+          _calculatedBpm = (60000 / avgMs).round();
+        });
+      }
     }
   }
 
-  void _showTrackDetails(Map<String, String> data) {
+  void _showTrackDetails(String title, String artist) {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
@@ -328,9 +227,9 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
                 ],
               ),
               const Divider(height: 24),
-              Text("Title: ${data['title']}", style: const TextStyle(fontWeight: FontWeight.w600)),
+              Text("Title: $title", style: const TextStyle(fontWeight: FontWeight.w600)),
               const SizedBox(height: 6),
-              Text("Artist: ${data['subtitle']}"),
+              Text("Artist: $artist"),
               const SizedBox(height: 6),
               Text("Audio Stream: High-Fidelity AAC / ${_selectedQuality.replaceAll('_', '')} kbps"),
               const SizedBox(height: 6),
@@ -339,15 +238,20 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: colorNotifier.value.withAlpha(50),
+                  color: Colors.deepPurple.withAlpha(50),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: colorNotifier.value),
+                  border: Border.all(color: Colors.deepPurpleAccent),
                 ),
                 child: const Row(
                   children: [
                     Icon(Icons.copyright, color: Colors.white70),
                     SizedBox(width: 8),
-                    Expanded(child: Text("Copyright & DJ Credit:\nDownloaded By Gajanan P", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
+                    Expanded(
+                      child: Text(
+                        "Copyright & DJ Credit:\nDownloaded By Gajanan P",
+                        style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -366,7 +270,6 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
 
   @override
   void dispose() {
-    _sleepTimer?.cancel();
     _audioPlayer.dispose();
     _searchController.dispose();
     super.dispose();
@@ -378,33 +281,26 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
       appBar: AppBar(
         title: const Text('DJ Pro Player', style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
-          PopupMenuButton<int>(
-            tooltip: "Sleep Timer",
-            icon: const Icon(Icons.nights_stay),
-            onSelected: _setSleepTimer,
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 15, child: Text("15 Minutes")),
-              PopupMenuItem(value: 30, child: Text("30 Minutes")),
-              PopupMenuItem(value: 60, child: Text("60 Minutes")),
-              PopupMenuItem(value: 0, child: Text("Off")),
-            ],
-          ),
           PopupMenuButton<String>(
             tooltip: "Stream Quality",
             icon: const Icon(Icons.high_quality),
             onSelected: (val) {
               setState(() => _selectedQuality = val);
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Quality set to ${val.replaceAll('_', '')} kbps')));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Quality set to ${val.replaceAll('_', '')} kbps')),
+              );
             },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: '_320', child: Text("320 kbps (High-Res)")),
-              PopupMenuItem(value: '_160', child: Text("160 kbps (Standard)")),
-              PopupMenuItem(value: '_96', child: Text("96 kbps (Data Saver)")),
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: '_320', child: Text("320 kbps (High-Res DJ)")),
+              const PopupMenuItem(value: '_160', child: Text("160 kbps (Standard)")),
+              const PopupMenuItem(value: '_96', child: Text("96 kbps (Data Saver)")),
             ],
           ),
           IconButton(
             icon: Icon(themeNotifier.value == ThemeMode.light ? Icons.dark_mode : Icons.light_mode),
-            onPressed: () => themeNotifier.value = themeNotifier.value == ThemeMode.light ? ThemeMode.dark : ThemeMode.light,
+            onPressed: () {
+              themeNotifier.value = themeNotifier.value == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
+            },
           ),
           IconButton(
             icon: const Icon(Icons.settings),
@@ -429,7 +325,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentTab,
-        selectedItemColor: colorNotifier.value,
+        selectedItemColor: Colors.deepPurpleAccent,
         onTap: (index) => setState(() => _currentTab = index),
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.search), label: "Discover"),
@@ -448,7 +344,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
           child: TextField(
             controller: _searchController,
             decoration: InputDecoration(
-              hintText: 'Search Tracks...',
+              hintText: 'Search Indian DJ Edits, Bollytech, Kannada...',
               filled: true,
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
               prefixIcon: const Icon(Icons.search),
@@ -456,22 +352,14 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
             onSubmitted: _searchSongs,
           ),
         ),
-        if (_searchHistory.isNotEmpty && _searchResults.isEmpty && !_isLoading)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12.0),
-            child: Wrap(
-              spacing: 8,
-              children: _searchHistory.map((q) => ActionChip(
-                label: Text(q),
-                onPressed: () { _searchController.text = q; _searchSongs(q); }
-              )).toList(),
-            ),
-          ),
         if (_isLoading) const Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()),
         Expanded(
           child: ListView.builder(
             itemCount: _searchResults.length,
-            itemBuilder: (context, index) => _buildSongTile(index, _searchResults),
+            itemBuilder: (context, index) {
+              final song = _searchResults[index];
+              return _buildSongTile(song);
+            },
           ),
         ),
       ],
@@ -481,26 +369,12 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
   Widget _buildCrateTab() {
     return _djFavorites.isEmpty
         ? const Center(child: Text("Your DJ Crate is empty. Star tracks to add them!"))
-        : Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    icon: const Icon(Icons.delete_sweep, color: Colors.red),
-                    label: const Text("Clear Crate", style: TextStyle(color: Colors.red)),
-                    onPressed: () => setState(() => _djFavorites.clear()),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: ListView.builder(
-                  itemCount: _djFavorites.length,
-                  itemBuilder: (context, index) => _buildSongTile(index, _djFavorites),
-                ),
-              ),
-            ],
+        : ListView.builder(
+            itemCount: _djFavorites.length,
+            itemBuilder: (context, index) {
+              final song = _djFavorites[index];
+              return _buildSongTile(song);
+            },
           );
   }
 
@@ -511,7 +385,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
         children: [
           Text(
             _calculatedBpm > 0 ? "$_calculatedBpm" : "--",
-            style: TextStyle(fontSize: 72, fontWeight: FontWeight.bold, color: colorNotifier.value),
+            style: const TextStyle(fontSize: 72, fontWeight: FontWeight.bold, color: Colors.cyanAccent),
           ),
           const Text("BPM (Beats Per Minute)", style: TextStyle(fontSize: 18, color: Colors.grey)),
           const SizedBox(height: 36),
@@ -519,14 +393,17 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
             style: ElevatedButton.styleFrom(
               shape: const CircleBorder(),
               padding: const EdgeInsets.all(48),
-              backgroundColor: colorNotifier.value,
+              backgroundColor: Colors.deepPurpleAccent,
             ),
             onPressed: _tapBpm,
             child: const Text("TAP", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
           ),
           const SizedBox(height: 20),
           TextButton(
-            onPressed: () => setState(() { _tapTimestamps.clear(); _calculatedBpm = 0; }),
+            onPressed: () => setState(() {
+              _tapTimestamps.clear();
+              _calculatedBpm = 0;
+            }),
             child: const Text("Reset BPM"),
           ),
         ],
@@ -534,31 +411,25 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     );
   }
 
-  Widget _buildSongTile(int index, List<dynamic> list) {
-    final data = _extractData(list[index]);
-    final title = data['title']!;
-    final subtitle = data['subtitle']!;
-    final mediaUrl = data['mediaUrl']!;
-    final imageUrl = data['image']!;
+  Widget _buildSongTile(dynamic song) {
+    final title = song['title']?.toString().replaceAll(RegExp(r'<[^>]*>'), '') ?? 'Unknown';
+    final subtitle = song['subtitle']?.toString().replaceAll(RegExp(r'<[^>]*>'), '') ?? 'Unknown Artist';
     
-    final isFav = _djFavorites.any((item) => _extractData(item)['title'] == title);
-    final isCurrentlyPlaying = _currentTitle == title;
+    // Deep URL parsing for nested results
+    final moreInfo = song['more_info'] ?? {};
+    final mediaUrl = song['encrypted_media_url'] ?? moreInfo['encrypted_media_url'] ?? moreInfo['vlink'] ?? song['media_preview_url'] ?? '';
+    
+    final imageUrl = song['image']?.toString().replaceAll('150x150', '50x50') ?? '';
+    final isFav = _djFavorites.any((item) => item['title'] == title);
 
     return ListTile(
-      leading: Stack(
-        alignment: Alignment.center,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: imageUrl.isNotEmpty
-                ? Image.network(imageUrl, width: 50, height: 50, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.music_note, size: 50))
-                : const Icon(Icons.music_note, size: 50),
-          ),
-          if(isCurrentlyPlaying && _isPlaying)
-             AnimatedEQ(color: colorNotifier.value), // Feature 8: EQ Visualizer
-        ],
+      leading: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: imageUrl.isNotEmpty
+            ? Image.network(imageUrl, width: 50, height: 50, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.music_note, size: 50))
+            : const Icon(Icons.music_note, size: 50),
       ),
-      title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.bold, color: isCurrentlyPlaying ? colorNotifier.value : null)),
+      title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
       subtitle: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -567,18 +438,21 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
             icon: Icon(isFav ? Icons.star : Icons.star_border, color: isFav ? Colors.amber : Colors.grey),
             onPressed: () {
               setState(() {
-                if (isFav) _djFavorites.removeWhere((item) => _extractData(item)['title'] == title);
-                else _djFavorites.add(Map<String, dynamic>.from(list[index]));
+                if (isFav) {
+                  _djFavorites.removeWhere((item) => item['title'] == title);
+                } else {
+                  _djFavorites.add(Map<String, dynamic>.from(song));
+                }
               });
             },
           ),
           IconButton(
             icon: const Icon(Icons.info_outline, size: 22),
-            onPressed: () => _showTrackDetails(data),
+            onPressed: () => _showTrackDetails(title, subtitle),
           ),
           IconButton(
-            icon: Icon(Icons.play_circle_fill, color: mediaUrl.isNotEmpty ? colorNotifier.value : Colors.grey, size: 35),
-            onPressed: mediaUrl.isNotEmpty ? () => _playSong(index, list) : null,
+            icon: Icon(Icons.play_circle_fill, color: mediaUrl.isNotEmpty ? Colors.deepPurpleAccent : Colors.grey, size: 35),
+            onPressed: mediaUrl.isNotEmpty ? () => _playSong(mediaUrl, title, subtitle, imageUrl) : null,
           ),
           IconButton(
             icon: const Icon(Icons.download, size: 26),
@@ -593,10 +467,10 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
   Widget _buildBottomPlayer() {
     final remaining = _duration - _position;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        color: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF1A1A1A) : Colors.white,
-        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, -3))],
+        color: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF1A1A1A) : Colors.deepPurple[50],
+        boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 10, offset: Offset(0, -3))],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -615,25 +489,34 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
                   ],
                 ),
               ),
-              IconButton(icon: const Icon(Icons.skip_previous), onPressed: _playPrev),
               IconButton(
-                icon: Icon(_isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled, color: colorNotifier.value, size: 42),
+                icon: const Icon(Icons.replay_10),
+                onPressed: () {
+                  final newPos = _position - const Duration(seconds: 10);
+                  _audioPlayer.seek(newPos < Duration.zero ? Duration.zero : newPos);
+                },
+              ),
+              IconButton(
+                icon: Icon(_isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled, color: Colors.deepPurpleAccent, size: 42),
                 onPressed: () => _isPlaying ? _audioPlayer.pause() : _audioPlayer.play(),
               ),
-              IconButton(icon: const Icon(Icons.skip_next), onPressed: _playNext),
+              IconButton(
+                icon: const Icon(Icons.forward_10),
+                onPressed: () {
+                  final newPos = _position + const Duration(seconds: 10);
+                  if (newPos < _duration) _audioPlayer.seek(newPos);
+                },
+              ),
             ],
           ),
-          SizedBox(
-            height: 24,
-            child: SliderTheme(
-              data: SliderTheme.of(context).copyWith(thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6), trackHeight: 3),
-              child: Slider(
-                value: _position.inSeconds.toDouble().clamp(0.0, _duration.inSeconds.toDouble()),
-                max: _duration.inSeconds.toDouble() > 0 ? _duration.inSeconds.toDouble() : 1.0,
-                activeColor: Colors.cyanAccent,
-                inactiveColor: Colors.grey[700],
-                onChanged: (val) => _audioPlayer.seek(Duration(seconds: val.toInt())),
-              ),
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6)),
+            child: Slider(
+              value: _position.inSeconds.toDouble().clamp(0.0, _duration.inSeconds.toDouble()),
+              max: _duration.inSeconds.toDouble() > 0 ? _duration.inSeconds.toDouble() : 1.0,
+              activeColor: Colors.cyanAccent,
+              inactiveColor: Colors.grey[700],
+              onChanged: (val) => _audioPlayer.seek(Duration(seconds: val.toInt())),
             ),
           ),
           Padding(
@@ -642,74 +525,37 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(_formatDuration(_position), style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                Row(
+                  children: [
+                    const Text("DJ Pitch: ", style: TextStyle(fontSize: 11, color: Colors.grey)),
+                    Text("${_playbackSpeed.toStringAsFixed(2)}x", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.cyanAccent)),
+                    const SizedBox(width: 6),
+                    InkWell(
+                      onTap: () {
+                        setState(() => _playbackSpeed = 1.0);
+                        _audioPlayer.setSpeed(1.0);
+                      },
+                      child: const Text("(Reset)", style: TextStyle(fontSize: 10, color: Colors.deepPurpleAccent)),
+                    ),
+                  ],
+                ),
                 Text("-${_formatDuration(remaining > Duration.zero ? remaining : Duration.zero)}", style: const TextStyle(fontSize: 11, color: Colors.grey)),
               ],
             ),
           ),
-          Row(
-            children: [
-              const Icon(Icons.speed, size: 16, color: Colors.grey),
-              Expanded(
-                child: Slider(
-                  value: _playbackSpeed, min: 0.5, max: 1.5, activeColor: colorNotifier.value,
-                  onChanged: (v) { setState(() => _playbackSpeed = v); _audioPlayer.setSpeed(v); },
-                ),
-              ),
-              const Icon(Icons.volume_up, size: 16, color: Colors.grey),
-              Expanded(
-                child: Slider(
-                  value: _volume, min: 0.0, max: 1.0, activeColor: Colors.cyanAccent,
-                  onChanged: (v) { setState(() => _volume = v); _audioPlayer.setVolume(v); },
-                ),
-              ),
-              IconButton(
-                icon: Icon(_loopMode == LoopMode.one ? Icons.repeat_one : Icons.repeat, color: _loopMode == LoopMode.off ? Colors.grey : colorNotifier.value),
-                onPressed: () {
-                  setState(() => _loopMode = _loopMode == LoopMode.off ? LoopMode.all : (_loopMode == LoopMode.all ? LoopMode.one : LoopMode.off));
-                  _audioPlayer.setLoopMode(_loopMode);
-                },
-              )
-            ],
-          )
+          Slider(
+            min: 0.5,
+            max: 1.5,
+            divisions: 20,
+            value: _playbackSpeed,
+            activeColor: Colors.deepPurpleAccent,
+            onChanged: (speed) {
+              setState(() => _playbackSpeed = speed);
+              _audioPlayer.setSpeed(speed);
+            },
+          ),
         ],
       ),
-    );
-  }
-}
-
-// EQ Animation Helper
-class AnimatedEQ extends StatefulWidget {
-  final Color color;
-  const AnimatedEQ({required this.color, super.key});
-  @override
-  State<AnimatedEQ> createState() => _AnimatedEQState();
-}
-class _AnimatedEQState extends State<AnimatedEQ> with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 400))..repeat(reverse: true);
-  }
-  @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _ctrl,
-      builder: (c, w) {
-        return Container(
-          color: Colors.black54,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: List.generate(4, (i) => Container(
-              margin: const EdgeInsets.symmetric(horizontal: 1),
-              width: 4, height: 10 + Random().nextInt(15).toDouble(), color: widget.color,
-            )),
-          ),
-        );
-      }
     );
   }
 }
@@ -734,57 +580,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _selectedLocation = prefs.getString('save_location') ?? 'Music');
   }
 
+  Future<void> _saveSettings(String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('save_location', value);
+    setState(() => _selectedLocation = value);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('DJ Settings')),
       body: ListView(
         children: [
-          const Padding(padding: EdgeInsets.all(16.0), child: Text("App Theme Color", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
-          Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 15,
-            children: [Colors.deepPurple, Colors.green, Colors.red, Colors.amber, Colors.blue].map((color) => GestureDetector(
-              onTap: () => colorNotifier.value = color,
-              child: CircleAvatar(backgroundColor: color, radius: 20, child: colorNotifier.value == color ? const Icon(Icons.check, color: Colors.white) : null),
-            )).toList(),
-          ),
-          const Divider(),
-          SwitchListTile(
-            title: const Text("Fade-In Playback"),
-            subtitle: const Text("Smooth volume ramp on play"),
-            activeColor: colorNotifier.value,
-            value: fadeInNotifier.value,
-            onChanged: (v) async {
-              fadeInNotifier.value = v;
-              final p = await SharedPreferences.getInstance();
-              p.setBool('fade', v);
-              setState((){});
-            }
-          ),
-          const Divider(),
           const Padding(padding: EdgeInsets.all(16.0), child: Text("Download Destination", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
           RadioListTile<String>(
             title: const Text("Music Folder"),
             subtitle: const Text("Internal Storage/Music/DJ_Downloads"),
             value: 'Music',
             groupValue: _selectedLocation,
-            onChanged: (val) async {
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.setString('save_location', val!);
-              setState(() => _selectedLocation = val);
-            },
+            onChanged: (val) => _saveSettings(val!),
           ),
           RadioListTile<String>(
             title: const Text("Downloads Folder"),
             subtitle: const Text("Internal Storage/Download/DJ_Downloads"),
             value: 'Downloads',
             groupValue: _selectedLocation,
-            onChanged: (val) async {
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.setString('save_location', val!);
-              setState(() => _selectedLocation = val);
-            },
+            onChanged: (val) => _saveSettings(val!),
+          ),
+          const Divider(),
+          const ListTile(
+            leading: Icon(Icons.badge, color: Colors.cyanAccent),
+            title: Text("DJ Credit Signature"),
+            subtitle: Text("Downloaded By Gajanan P"),
           ),
         ],
       ),

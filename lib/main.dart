@@ -83,7 +83,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
   Duration _position = Duration.zero;
   
   double _playbackSpeed = 1.0;
-  Timer? _speedDebounce; // Prevents ExoPlayer crash on fast sliding
+  Timer? _speedDebounce; 
   
   double _volume = 1.0;
   String _selectedQuality = '_320';
@@ -163,7 +163,6 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
 
     List<Map<String, dynamic>> mixedResults = [];
 
-    // Parallel execution of 5 distinct database queries
     await Future.wait([
       _fetchSourceA(query).then((res) => mixedResults.addAll(res)),
       _fetchSourceB(query).then((res) => mixedResults.addAll(res)),
@@ -172,7 +171,6 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
       _fetchSourceE(query).then((res) => mixedResults.addAll(res)),
     ]);
 
-    // Shuffle results so the user experiences a blended, source-agnostic list
     mixedResults.shuffle(Random());
 
     setState(() {
@@ -334,14 +332,13 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
           _audioPlayer.play();
         }
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Stream blocked by host.")));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Stream blocked by host.")));
       }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Stream unavailable right now.")));
     }
   }
 
-  // Crash-Proof Debounced Speed Controller
   void _handleSpeedChange(double newSpeed) {
     setState(() => _playbackSpeed = newSpeed);
     _speedDebounce?.cancel();
@@ -680,12 +677,12 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
           ),
         ),
         const Divider(height: 40),
-        const Text("Hardware EQ Configuration", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        const Text("Software EQ Mapping (Hardware pass-through)", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         _buildEQSlider("High", _eqHigh, (v) => setState(() => _eqHigh = v)),
         _buildEQSlider("Mid", _eqMid, (v) => setState(() => _eqMid = v)),
         _buildEQSlider("Low", _eqLow, (v) => setState(() => _eqLow = v)),
         const SizedBox(height: 20),
-        const Text("Note: UI mapping only. Requires native OS audio bindings for live filtering.", style: TextStyle(fontSize: 10, color: Colors.grey)),
+        const Text("Note: Native Android EQ filters require OS binding.", style: TextStyle(fontSize: 10, color: Colors.grey)),
       ],
     );
   }
@@ -794,12 +791,26 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
                   ],
                 ),
               ),
-              IconButton(icon: const Icon(Icons.replay_10), onPressed: () => _audioPlayer.seek((_position - const Duration(seconds: 10)).clamp(Duration.zero, _duration))),
+              IconButton(
+                icon: const Icon(Icons.replay_10),
+                onPressed: () {
+                  var newPos = _position - const Duration(seconds: 10);
+                  if (newPos < Duration.zero) newPos = Duration.zero;
+                  _audioPlayer.seek(newPos);
+                },
+              ),
               IconButton(
                 icon: Icon(_isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled, color: colorNotifier.value, size: 42),
                 onPressed: () { HapticFeedback.lightImpact(); _isPlaying ? _audioPlayer.pause() : _audioPlayer.play(); },
               ),
-              IconButton(icon: const Icon(Icons.forward_10), onPressed: () => _audioPlayer.seek((_position + const Duration(seconds: 10)).clamp(Duration.zero, _duration))),
+              IconButton(
+                icon: const Icon(Icons.forward_10),
+                onPressed: () {
+                  var newPos = _position + const Duration(seconds: 10);
+                  if (_duration > Duration.zero && newPos > _duration) newPos = _duration;
+                  _audioPlayer.seek(newPos);
+                },
+              ),
             ],
           ),
           SizedBox(

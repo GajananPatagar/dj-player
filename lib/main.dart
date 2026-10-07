@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:dio/dio.dart';
 import 'dart:convert';
 import 'dart:async';
@@ -94,6 +95,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
   Timer? _speedDebounce; 
   double _volume = 1.0;
   LoopMode _loopMode = LoopMode.off;
+  Timer? _sleepTimer; // FIX: Added missing sleep timer declaration
 
   final List<DateTime> _tapTimestamps = [];
   int _calculatedBpm = 0;
@@ -137,6 +139,28 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
         colorNotifier.value = Colors.primaries.firstWhere((c) => c.value == savedColor, orElse: () => Colors.deepPurple);
       }
     });
+  }
+
+  Future<void> _loadOfflineLibrary() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? saved = prefs.getString('offline_library');
+    if (saved != null) {
+      setState(() {
+        _offlineSongs = List<Map<String, dynamic>>.from(json.decode(saved));
+      });
+    }
+  }
+
+  Future<void> _saveToOfflineLibrary(Map<String, dynamic> track, String localPath) async {
+    track['localPath'] = localPath;
+    track['source'] = 'Offline';
+    
+    _offlineSongs.removeWhere((t) => t['title'] == track['title'] && t['artist'] == track['artist']);
+    _offlineSongs.insert(0, track);
+    
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('offline_library', json.encode(_offlineSongs));
+    setState(() {});
   }
 
   Future<void> _scanDownloadedFiles() async {
@@ -199,7 +223,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
       _scanDownloadedFiles();
     } catch (e) {
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Search failed. Check connection.")));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Search failed. Check connection.")));
     }
   }
 
@@ -243,7 +267,6 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     HapticFeedback.lightImpact();
     final track = list[index];
     
-    // Check if already downloaded to save data
     String safeName = track['title'].toString().replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
     if (_downloadedFileIds.contains(safeName)) {
       final dir = Directory('/storage/emulated/0/Download/DJ_Downloads');
@@ -321,7 +344,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
 
     final streamUrl = await _resolveStreamUrl(track);
     if (streamUrl.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cannot resolve media stream.')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cannot resolve media stream for download.')));
       return;
     }
 
@@ -381,7 +404,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     } catch (e) {
       if (mounted) {
         setState(() { _downloadProgress.remove(taskId); _downloadSpeed.remove(taskId); });
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Download Error: 403 Block Bypassed, retry.'), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Download Error: 403 Block Bypassed, retry.'), backgroundColor: Colors.red));
       }
     }
   }
@@ -594,7 +617,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
           ),
         ),
         const Divider(height: 40),
-        const Text("50 Pro Features Active:", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        const Text("15 Pro Architecture Features Installed:", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         const SizedBox(height: 12),
         _buildFeatureItem(Icons.public, "1-10. Omni-Source Global Routing Engine"),
         _buildFeatureItem(Icons.download_done, "11-20. 0-Error Dio Stream Downloader"),
@@ -620,7 +643,6 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     final dlProgress = _downloadProgress[taskId];
     final dlSpeed = _downloadSpeed[taskId] ?? "";
     
-    // Check if file is already downloaded
     String safeName = track['title']!.toString().replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
     bool isDownloaded = _downloadedFileIds.contains(safeName) || isOfflineMode;
 

@@ -8,15 +8,24 @@ import 'dart:math';
 import 'dart:io';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:dart_des/dart_des.dart';
+import 'package:ffmpeg_kit_flutter_audio/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_audio/return_code.dart';
+import 'package:path_provider/path_provider.dart';
 
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.dark);
 final ValueNotifier<MaterialColor> colorNotifier = ValueNotifier(Colors.deepPurple);
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await JustAudioBackground.init(
+    androidNotificationChannelId: 'com.djplayer.app.audio',
+    androidNotificationChannelName: 'DJ Playback',
+    androidNotificationOngoing: true,
+  );
   runApp(const DJPlayerApp());
 }
 
@@ -80,7 +89,6 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
   bool _isTrendingLoading = false;
   
   Map<String, double> _downloadProgress = {};
-  Map<String, String> _downloadSpeed = {};
   Set<String> _downloadedFileIds = {};
 
   List<Map<String, dynamic>> _currentPlaylist = [];
@@ -88,6 +96,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
   String? _currentTitle;
   String? _currentArtist;
   String? _currentImage;
+  String _currentLyrics = "Searching LRC Database...";
   bool _isPlaying = false;
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
@@ -106,8 +115,8 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     super.initState();
     _requestPermissions();
     _loadPrefs();
-    _scanDownloadedFiles();
-    _fetchTrending(_selectedLanguage);
+    _scanOfflineLibrary();
+    _fetchFederatedTrending(_selectedLanguage);
     
     _audioPlayer.playerStateStream.listen((state) {
       if (mounted) setState(() => _isPlaying = state.playing);
@@ -142,23 +151,10 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     });
   }
 
-  Future<void> _saveToOfflineLibrary(Map<String, dynamic> track, String localPath) async {
-    track['localPath'] = localPath;
-    track['source'] = 'Offline';
-    
-    _offlineSongs.removeWhere((t) => t['title'] == track['title'] && t['artist'] == track['artist']);
-    _offlineSongs.insert(0, track);
-    
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('offline_library', json.encode(_offlineSongs));
-    setState(() {});
-  }
-
-  Future<void> _scanDownloadedFiles() async {
+  Future<void> _scanOfflineLibrary() async {
     try {
       final List<Directory> searchDirectories = [
         Directory('/storage/emulated/0/Download/DJ_Downloads'),
-        Directory('/storage/emulated/0/Download/DJ_Workstation'),
         Directory('/storage/emulated/0/Music/DJ_Downloads'),
       ];
       
@@ -169,16 +165,15 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
         if (await dir.exists()) {
           final files = dir.listSync();
           for (var file in files) {
-            if (file is File && file.path.endsWith('.m4a')) {
-              String filename = file.path.split('/').last.replaceAll('.m4a', '');
-              // Universal scanner retrieves files regardless of naming history
-              String trackName = filename.replaceAll('Gajanan Patkar - ', '').replaceAll('Gajanan P - ', '');
+            if (file is File && (file.path.endsWith('.m4a') || file.path.endsWith('.mp3'))) {
+              String filename = file.path.split('/').last.replaceAll('.m4a', '').replaceAll('.mp3', '');
+              String trackName = filename.replaceAll('Gajanan Patkar - ', '');
               
               if (!foundIds.contains(trackName)) {
                 foundIds.add(trackName);
                 loadedOffline.add({
                   'title': trackName,
-                  'artist': 'Local Audio',
+                  'artist': 'Offline Crate',
                   'id': trackName,
                   'image': '',
                   'localPath': file.path,
@@ -195,15 +190,12 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
         _offlineSongs = loadedOffline;
       });
     } catch (e) {
-      debugPrint("Scanner bypassed permission lock: $e");
+      debugPrint("Scan error: $e");
     }
   }
 
-  String _getSafeFilename(String title) {
-    return "Gajanan Patkar - " + title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
-  }
-
-  Future<void> _searchSongs(String query) async {
+  // --- LAYER 1: FEDERATED METADATA ---
+  Future<void> _searchFederated(String query) async {
     if (query.trim().isEmpty) return;
     HapticFeedback.lightImpact();
     FocusScope.of(context).unfocus();
@@ -213,63 +205,117 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
       _searchResults = [];
     });
 
-    try {
-      final res = await _yt.search.search(query);
-      final List<Map<String, dynamic>> results = res.take(30).map((v) => {
-        'title': v.title,
-        'artist': v.author,
-        'image': v.thumbnails.highResUrl,
-        'id': v.id.value,
-        'source': 'GlobalNode'
-      }).toList();
+    List<Map<String, dynamic>> results = [];
 
-      setState(() {
-        _searchResults = results;
-        _isLoading = false;
-      });
-      _scanDownloadedFiles();
-    } catch (e) {
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Search failed. Check connection.")));
+    // Prioritize structured JSON via JioSaavn API to guarantee pristine ID3 tags
+    try {
+      final res = await http.get(Uri.parse('https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&ctx=web6dot0&api_version=4&q=${Uri.encodeComponent(query)}'));
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body.trim());
+        final List list = data['results'] ?? data['songs']?['data'] ?? [];
+        results.addAll(list.map((s) {
+          final moreInfo = s['more_info'] ?? {};
+          return {
+            'title': s['title'].toString().replaceAll(RegExp(r'<[^>]*>'), ''),
+            'artist': s['subtitle'].toString().replaceAll(RegExp(r'<[^>]*>'), ''),
+            'image': s['image'].toString().replaceAll('150x150', '500x500'),
+            'id': s['encrypted_media_url'] ?? moreInfo['encrypted_media_url'] ?? '',
+            'source': 'JioSaavn'
+          };
+        }).toList());
+      }
+    } catch (_) {}
+
+    // Fallback to Global Graph
+    if (results.isEmpty) {
+      try {
+        final ytRes = await _yt.search.search(query);
+        results.addAll(ytRes.take(20).map((v) => {
+          'title': v.title,
+          'artist': v.author,
+          'image': v.thumbnails.highResUrl,
+          'id': v.id.value,
+          'source': 'YouTube'
+        }).toList());
+      } catch (_) {}
     }
+
+    setState(() {
+      _searchResults = results;
+      _isLoading = false;
+    });
+    _scanOfflineLibrary();
   }
 
-  Future<void> _fetchTrending(String language) async {
+  Future<void> _fetchFederatedTrending(String language) async {
     setState(() {
       _isTrendingLoading = true;
       _trendingResults = [];
     });
     
     try {
-      String query = "Top 50 $language Hit Songs";
-      final res = await _yt.search.search(query);
-      // Capped to 20 to prevent pagination timeout errors
-      final List<Map<String, dynamic>> results = res.take(20).map((v) => {
+      final ytRes = await _yt.search.search("Top 50 $language Hit Songs");
+      final List<Map<String, dynamic>> results = ytRes.take(25).map((v) => {
         'title': v.title,
         'artist': v.author,
         'image': v.thumbnails.highResUrl,
         'id': v.id.value,
-        'source': 'GlobalNode'
+        'source': 'YouTube'
       }).toList();
       
       setState(() {
         _trendingResults = results;
         _isTrendingLoading = false;
       });
-      _scanDownloadedFiles();
+      _scanOfflineLibrary();
     } catch (_) {
       setState(() => _isTrendingLoading = false);
     }
   }
 
-  Future<String> _resolveStreamUrl(Map<String, dynamic> track) async {
-    if (track['source'] == 'Offline') return track['localPath'];
+  Future<void> _fetchLRCLyrics(String title, String artist) async {
+    setState(() => _currentLyrics = "Searching LRCLib Database...");
     try {
-      var manifest = await _yt.videos.streamsClient.getManifest(track['id']);
-      return manifest.audioOnly.withHighestBitrate().url.toString();
-    } catch (_) { return ""; }
+      final res = await http.get(Uri.parse('https://lrclib.net/api/get?track_name=${Uri.encodeComponent(title)}&artist_name=${Uri.encodeComponent(artist)}'));
+      if (res.statusCode == 200) {
+         setState(() => _currentLyrics = json.decode(res.body)['syncedLyrics'] ?? json.decode(res.body)['plainLyrics'] ?? "No Sync Lyrics Available.");
+      } else {
+         setState(() => _currentLyrics = "Instrumental / No Lyrics Found.");
+      }
+    } catch(_) { setState(() => _currentLyrics = "Lyrics API Offline"); }
   }
 
+  // --- LAYER 2: CLIENT-SIDE EXTRACTION & DECENTRALIZED FALLBACK ---
+  Future<String> _extractStreamUrl(Map<String, dynamic> track) async {
+    if (track['source'] == 'Offline') return track['localPath'];
+    
+    if (track['source'] == 'JioSaavn' && track['id'].isNotEmpty) {
+      try {
+        final key = utf8.encode('38346591');
+        final decodedBytes = base64.decode(track['id']);
+        final des = DES(key: key, mode: DESMode.ECB, paddingType: DESPaddingType.PKCS7);
+        return utf8.decode(des.decrypt(decodedBytes)).replaceAll('_96', '_320'); 
+      } catch (_) {}
+    } 
+    else if (track['source'] == 'YouTube') {
+      try {
+        // Primary Client-Side Extraction
+        var manifest = await _yt.videos.streamsClient.getManifest(track['id']);
+        return manifest.audioOnly.withHighestBitrate().url.toString();
+      } catch (e) {
+        // Decentralized Fallback Mechanism (Piped API)
+        try {
+          final res = await http.get(Uri.parse('https://pipedapi.kavin.rocks/streams/${track['id']}'));
+          final data = json.decode(res.body);
+          final audioStreams = data['audioStreams'] as List;
+          if (audioStreams.isNotEmpty) return audioStreams.first['url'];
+        } catch (_) { return ""; }
+      }
+    } 
+    return "";
+  }
+
+  // --- LAYER 3: UNIFIED PLAYBACK & CACHING ENGINE ---
   Future<void> _playSong(int index, List<Map<String, dynamic>> list) async {
     if(index < 0 || index >= list.length) return;
     HapticFeedback.lightImpact();
@@ -278,7 +324,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     String safeName = track['title'].toString().replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
     if (_downloadedFileIds.contains(safeName)) {
       final dir = Directory('/storage/emulated/0/Download/DJ_Downloads');
-      final localFile = File('${dir.path}/${_getSafeFilename(safeName)}.m4a');
+      final localFile = File('${dir.path}/Gajanan Patkar - $safeName.m4a');
       if (await localFile.exists()) {
         track['source'] = 'Offline';
         track['localPath'] = localFile.path;
@@ -286,10 +332,10 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     }
 
     if (track['source'] != 'Offline') {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Resolving Live Audio: ${track['title']}'), duration: const Duration(seconds: 1)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Client Extraction: ${track['title']}'), duration: const Duration(seconds: 1)));
     }
     
-    final streamUrl = await _resolveStreamUrl(track);
+    final streamUrl = await _extractStreamUrl(track);
     
     if (streamUrl.isNotEmpty) {
       setState(() {
@@ -300,21 +346,29 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
         _currentImage = track['image'];
       });
       
+      _fetchLRCLyrics(track['title'], track['artist']);
+      
       try {
         if (track['source'] == 'Offline') {
-          await _audioPlayer.setAudioSource(AudioSource.file(streamUrl));
+          await _audioPlayer.setAudioSource(AudioSource.file(
+            streamUrl,
+            tag: MediaItem(id: track['id'], title: track['title'], artist: track['artist'])
+          ));
         } else {
-          // Native headers removed entirely to bypass 403 Forbidden firewall rejections
-          await _audioPlayer.setAudioSource(AudioSource.uri(Uri.parse(streamUrl)));
+          // Utilizing LockCachingAudioSource to create a SimpleCache equivalent
+          await _audioPlayer.setAudioSource(LockCachingAudioSource(
+            Uri.parse(streamUrl),
+            tag: MediaItem(id: track['id'], title: track['title'], artist: track['artist'], artUri: track['image'].isNotEmpty ? Uri.parse(track['image']) : null)
+          ));
         }
         await _audioPlayer.setSpeed(_playbackSpeed);
         await _audioPlayer.setVolume(_volume);
         _audioPlayer.play();
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Error playing stream.")));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Stream blocked. Decentralized fallback failed.")));
       }
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Stream offline. Try another track.")));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Stream completely offline across all nodes.")));
     }
   }
 
@@ -340,77 +394,73 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     }
   }
 
-  Future<void> _downloadSong(Map<String, dynamic> track) async {
+  // --- LAYER 4: FFMPEG POST-PROCESSING PIPELINE ---
+  Future<void> _downloadAndProcess(Map<String, dynamic> track) async {
     HapticFeedback.vibrate();
     final taskId = track['id'];
     
-    if (_downloadProgress.containsKey(taskId)) {
-      return;
-    }
+    if (_downloadProgress.containsKey(taskId)) return;
 
-    final streamUrl = await _resolveStreamUrl(track);
+    final streamUrl = await _extractStreamUrl(track);
     if (streamUrl.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cannot resolve media stream for download.')));
       return;
     }
 
-    setState(() {
-      _downloadProgress[taskId] = 0.01;
-      _downloadSpeed[taskId] = "Connecting...";
-    });
+    setState(() => _downloadProgress[taskId] = 0.1);
 
     try {
       final safeTitle = track['title']!.toString().replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
-      final fileName = _getSafeFilename(safeTitle) + ".m4a";
+      final safeArtist = track['artist']!.toString().replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
       
-      final Directory dir = Directory('/storage/emulated/0/Download/DJ_Downloads');
-      if (!await dir.exists()) {
-        await dir.create(recursive: true);
+      final Directory pubDir = Directory('/storage/emulated/0/Download/DJ_Downloads');
+      if (!await pubDir.exists()) await pubDir.create(recursive: true);
+      
+      final Directory tempDir = await getTemporaryDirectory();
+      final String rawAudioPath = '${tempDir.path}/${taskId}_raw.mp4';
+      final String coverPath = '${tempDir.path}/${taskId}_cover.jpg';
+      final String finalOutPath = '${pubDir.path}/Gajanan Patkar - $safeTitle.m4a';
+
+      // 1. Download Cover Art
+      if (track['image'].isNotEmpty) {
+        final imgRes = await http.get(Uri.parse(track['image']));
+        await File(coverPath).writeAsBytes(imgRes.bodyBytes);
       }
+
+      setState(() => _downloadProgress[taskId] = 0.4);
+
+      // 2. Download Raw Audio Stream
+      await _dio.download(streamUrl, rawAudioPath);
       
-      final String savePath = '${dir.path}/$fileName';
+      setState(() => _downloadProgress[taskId] = 0.7);
 
-      int lastBytes = 0;
-      int lastTime = DateTime.now().millisecondsSinceEpoch;
-
-      // Custom Headers stripped out to avoid 403 Forbidden CDN Blocks
-      await _dio.download(
-        streamUrl,
-        savePath,
-        onReceiveProgress: (received, total) {
-          if (total != -1) {
-            int now = DateTime.now().millisecondsSinceEpoch;
-            if (now - lastTime > 500) {
-              double speedBytes = (received - lastBytes) / ((now - lastTime) / 1000);
-              double speedMB = speedBytes / (1024 * 1024);
-              
-              if (mounted) {
-                setState(() {
-                  _downloadProgress[taskId] = received / total;
-                  _downloadSpeed[taskId] = "${speedMB.toStringAsFixed(2)} MB/s";
-                });
-              }
-              lastBytes = received;
-              lastTime = now;
-            }
-          }
-        },
-      );
-
-      _scanDownloadedFiles();
+      // 3. FFmpeg Muxing & ID3 Injection
+      String command = "-y -i '$rawAudioPath' ";
+      if (await File(coverPath).exists()) command += "-i '$coverPath' -map 0:a -map 1:v -disposition:v attached_pic ";
+      else command += "-map 0:a ";
       
-      if (mounted) {
-        setState(() {
-          _downloadProgress.remove(taskId);
-          _downloadSpeed.remove(taskId);
-        });
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Saved: $fileName'), backgroundColor: Colors.green));
+      command += "-c copy -id3v2_version 3 -metadata title='$safeTitle' -metadata artist='$safeArtist' -metadata album='DJ Pro Workstation Crate' '$finalOutPath'";
+      
+      var session = await FFmpegKit.execute(command);
+      var returnCode = await session.getReturnCode();
+      
+      if (ReturnCode.isSuccess(returnCode)) {
+         _scanOfflineLibrary();
+         if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('FFmpeg Exported: Gajanan Patkar - $safeTitle'), backgroundColor: Colors.green));
+      } else {
+         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('FFmpeg Muxing Failed'), backgroundColor: Colors.red));
       }
+
+      // Cleanup
+      if (await File(rawAudioPath).exists()) await File(rawAudioPath).delete();
+      if (await File(coverPath).exists()) await File(coverPath).delete();
+      
+      setState(() => _downloadProgress.remove(taskId));
       
     } catch (e) {
       if (mounted) {
-        setState(() { _downloadProgress.remove(taskId); _downloadSpeed.remove(taskId); });
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Download Error. Verify Network Stability.'), backgroundColor: Colors.red));
+        setState(() => _downloadProgress.remove(taskId));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Processing Pipeline Error'), backgroundColor: Colors.red));
       }
     }
   }
@@ -436,6 +486,32 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     return '$minutes:$seconds';
   }
 
+  void _showLyricsModal() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.black.withOpacity(0.9),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (_) => Container(
+        height: MediaQuery.of(context).size.height * 0.75,
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.lyrics, color: Colors.cyanAccent),
+                const SizedBox(width: 8),
+                Text("LRCLib Sync", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, color: Colors.white)),
+              ],
+            ),
+            const Divider(color: Colors.white24, height: 30),
+            Expanded(child: SingleChildScrollView(child: Text(_currentLyrics, style: const TextStyle(fontSize: 16, height: 1.8, color: Colors.white)))),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _speedDebounce?.cancel();
@@ -449,7 +525,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('DJ Pro Workstation', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('DJ Architect Engine', style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
           IconButton(
             icon: Icon(themeNotifier.value == ThemeMode.light ? Icons.dark_mode : Icons.light_mode),
@@ -457,10 +533,6 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
               HapticFeedback.selectionClick();
               themeNotifier.value = themeNotifier.value == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
             },
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())).then((_) => _scanDownloadedFiles()),
           ),
         ],
       ),
@@ -484,15 +556,16 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
         currentIndex: _currentTab,
         selectedItemColor: colorNotifier.value,
         unselectedItemColor: Colors.grey,
+        type: BottomNavigationBarType.fixed,
         onTap: (index) {
           HapticFeedback.selectionClick();
           setState(() => _currentTab = index);
         },
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.local_fire_department), label: "Trending"),
-          BottomNavigationBarItem(icon: Icon(Icons.search), label: "Search"),
-          BottomNavigationBarItem(icon: Icon(Icons.folder_special), label: "Library"),
-          BottomNavigationBarItem(icon: Icon(Icons.tune), label: "Tools"),
+          BottomNavigationBarItem(icon: Icon(Icons.search), label: "Federated"),
+          BottomNavigationBarItem(icon: Icon(Icons.folder_special), label: "Offline"),
+          BottomNavigationBarItem(icon: Icon(Icons.tune), label: "Studio"),
         ],
       ),
     );
@@ -524,7 +597,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
                   onSelected: (val) {
                     HapticFeedback.lightImpact();
                     setState(() => _selectedLanguage = lang);
-                    _fetchTrending(lang);
+                    _fetchFederatedTrending(lang);
                   },
                 ),
               );
@@ -551,13 +624,13 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
           child: TextField(
             controller: _searchController,
             decoration: InputDecoration(
-              hintText: 'Search Omni-Source Router...',
+              hintText: 'Search Federated Metadata APIs...',
               filled: true,
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
               prefixIcon: const Icon(Icons.search),
               suffixIcon: IconButton(icon: const Icon(Icons.clear), onPressed: () => _searchController.clear())
             ),
-            onSubmitted: _searchSongs,
+            onSubmitted: _searchFederated,
           ),
         ),
         if (_isLoading) const Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()),
@@ -579,13 +652,13 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text("Offline DJ Crate", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+              const Text("Media3 Cache Lib", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
               TextButton.icon(
                 icon: const Icon(Icons.refresh, color: Colors.cyanAccent),
                 label: const Text("Scan Files", style: TextStyle(color: Colors.cyanAccent)),
                 onPressed: () {
                   HapticFeedback.vibrate();
-                  _scanDownloadedFiles();
+                  _scanOfflineLibrary();
                 },
               ),
             ],
@@ -593,7 +666,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
         ),
         Expanded(
           child: _offlineSongs.isEmpty
-              ? const Center(child: Text("No offline tracks found. Download some!"))
+              ? const Center(child: Text("No offline tracks found. Run FFmpeg Engine!"))
               : ListView.builder(
                   itemCount: _offlineSongs.length,
                   itemBuilder: (context, index) => _buildSongTile(index, _offlineSongs, isOfflineMode: true),
@@ -623,13 +696,13 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
           ),
         ),
         const Divider(height: 40),
-        const Text("15 Pro Architecture Features Installed:", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        const Text("Active Decoupled Architectural Layers:", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         const SizedBox(height: 12),
-        _buildFeatureItem(Icons.public, "1-10. Omni-Source Global Routing Engine"),
-        _buildFeatureItem(Icons.download_done, "11-20. 0-Error Dio Stream Downloader"),
-        _buildFeatureItem(Icons.speed, "21-30. Real-time MB/s Download Speeds"),
-        _buildFeatureItem(Icons.check_circle, "31-40. Auto-Detection of Local Files"),
-        _buildFeatureItem(Icons.auto_awesome, "41-50. Crash-Proof Debounced Control Board"),
+        _buildFeatureItem(Icons.cloud_sync, "Layer 1: Federated Metadata Graph API"),
+        _buildFeatureItem(Icons.security, "Layer 2: Decentralized Piped Fallbacks"),
+        _buildFeatureItem(Icons.memory, "Layer 3: LockCachingAudioSource (Media3)"),
+        _buildFeatureItem(Icons.build_circle, "Layer 4: FFmpegKit Native ID3 Muxing"),
+        _buildFeatureItem(Icons.lyrics, "Layer 5: LRCLib Synchronized Data Extraction"),
       ],
     );
   }
@@ -646,8 +719,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     final isPlaying = _currentTitle == track['title'];
     
     final taskId = track['id'];
-    final dlProgress = _downloadProgress[taskId];
-    final dlSpeed = _downloadSpeed[taskId] ?? "";
+    final isDownloading = _downloadProgress.containsKey(taskId);
     
     String safeName = track['title']!.toString().replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
     bool isDownloaded = _downloadedFileIds.contains(safeName) || isOfflineMode;
@@ -675,28 +747,12 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
         ],
       ),
       title: Text(track['title']!, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.bold, color: isPlaying ? colorNotifier.value : null)),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(track['artist']!, maxLines: 1, overflow: TextOverflow.ellipsis),
-          if (dlProgress != null && !isOfflineMode)
-            Padding(
-              padding: const EdgeInsets.only(top: 6.0),
-              child: Row(
-                children: [
-                  Expanded(child: LinearProgressIndicator(value: dlProgress, color: Colors.cyanAccent, backgroundColor: Colors.grey[800])),
-                  const SizedBox(width: 8),
-                  Text(dlSpeed, style: const TextStyle(fontSize: 10, color: Colors.cyanAccent)),
-                ],
-              ),
-            ),
-        ],
-      ),
+      subtitle: Text(track['artist']!, maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: isDownloaded
         ? const Icon(Icons.check_circle, color: Colors.green)
         : IconButton(
-            icon: Icon(dlProgress != null ? Icons.stop_circle : Icons.download, size: 26, color: dlProgress != null ? Colors.red : null), 
-            onPressed: dlProgress != null ? null : () => _downloadSong(track),
+            icon: Icon(isDownloading ? Icons.settings_applications : Icons.download, size: 26, color: isDownloading ? Colors.cyanAccent : null), 
+            onPressed: isDownloading ? null : () => _downloadAndProcess(track),
           ),
       onTap: () => _playSong(index, list),
     );
@@ -732,24 +788,10 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
                   ],
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.replay_10),
-                onPressed: () {
-                  final ms = _position.inMilliseconds - 10000;
-                  _audioPlayer.seek(Duration(milliseconds: ms < 0 ? 0 : ms));
-                },
-              ),
+              IconButton(icon: const Icon(Icons.lyrics, color: Colors.cyanAccent), onPressed: _showLyricsModal),
               IconButton(
                 icon: Icon(_isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled, color: colorNotifier.value, size: 42),
                 onPressed: () { HapticFeedback.lightImpact(); _isPlaying ? _audioPlayer.pause() : _audioPlayer.play(); },
-              ),
-              IconButton(
-                icon: const Icon(Icons.forward_10),
-                onPressed: () {
-                  final ms = _position.inMilliseconds + 10000;
-                  final maxMs = _duration.inMilliseconds;
-                  _audioPlayer.seek(Duration(milliseconds: ms > maxMs ? maxMs : ms));
-                },
               ),
             ],
           ),
@@ -789,72 +831,8 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
                 onTap: () { HapticFeedback.lightImpact(); _handleSpeedChange(1.0); },
                 child: Text("${_playbackSpeed.toStringAsFixed(1)}x", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
               ),
-              const SizedBox(width: 8),
-              const Icon(Icons.volume_up, size: 16, color: Colors.grey),
-              Expanded(
-                child: Slider(
-                  value: _volume, min: 0.0, max: 1.0, activeColor: Colors.cyanAccent,
-                  onChanged: (v) { setState(() => _volume = v); _audioPlayer.setVolume(v); },
-                ),
-              ),
-              IconButton(
-                icon: Icon(_loopMode == LoopMode.one ? Icons.repeat_one : Icons.repeat, color: _loopMode == LoopMode.off ? Colors.grey : colorNotifier.value),
-                onPressed: () {
-                  HapticFeedback.selectionClick();
-                  setState(() => _loopMode = _loopMode == LoopMode.off ? LoopMode.all : (_loopMode == LoopMode.all ? LoopMode.one : LoopMode.off));
-                  _audioPlayer.setLoopMode(_loopMode);
-                },
-              )
             ],
           )
-        ],
-      ),
-    );
-  }
-}
-
-class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
-  @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
-}
-
-class _SettingsScreenState extends State<SettingsScreen> {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('DJ Settings')),
-      body: ListView(
-        children: [
-          const Padding(padding: EdgeInsets.all(16.0), child: Text("App Theme Color", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
-          Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 15,
-            children: [Colors.deepPurple, Colors.green, Colors.red, Colors.amber, Colors.blue].map((color) => GestureDetector(
-              onTap: () async {
-                HapticFeedback.lightImpact();
-                colorNotifier.value = color;
-                final prefs = await SharedPreferences.getInstance();
-                prefs.setInt('theme_color', color.value);
-              },
-              child: ValueListenableBuilder<MaterialColor>(
-                valueListenable: colorNotifier,
-                builder: (_, val, __) => CircleAvatar(backgroundColor: color, radius: 20, child: val == color ? const Icon(Icons.check, color: Colors.white) : null),
-              )
-            )).toList(),
-          ),
-          const Divider(),
-          const ListTile(
-            leading: Icon(Icons.folder, color: Colors.cyanAccent),
-            title: Text("Download Destination"),
-            subtitle: Text("Internal Storage/Download/DJ_Downloads"),
-          ),
-          const Divider(),
-          const ListTile(
-            leading: Icon(Icons.badge, color: Colors.cyanAccent),
-            title: Text("DJ Credit Signature"),
-            subtitle: Text("File Prefix: Gajanan Patkar - [Track Name]"),
-          ),
         ],
       ),
     );

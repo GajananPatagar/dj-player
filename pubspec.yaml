@@ -1,5 +1,5 @@
 name: dj_player_app
-description: Professional Multi-Source DJ Audio Player
+description: Decoupled Professional Media Workstation
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -12,11 +12,13 @@ dependencies:
   http: ^1.1.0
   dio: ^5.4.0
   just_audio: ^0.9.36
+  just_audio_background: ^0.0.1-beta.12
   shared_preferences: ^2.2.3
   path_provider: ^2.1.1
   permission_handler: ^11.3.1
   youtube_explode_dart: ^2.2.2
   dart_des: ^1.0.2
+  ffmpeg_kit_flutter_audio: ^6.0.3
 
 dev_dependencies:
   flutter_test:

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:dart_des/dart_des.dart';
 import 'dart:convert';
@@ -29,12 +30,11 @@ class DJPlayerApp extends StatelessWidget {
           valueListenable: colorNotifier,
           builder: (_, currentColor, __) {
             return MaterialApp(
-              title: 'DJ Pro Workstation',
+              title: 'Pro DJ Workstation',
               debugShowCheckedModeBanner: false,
               theme: ThemeData(
                 brightness: Brightness.light,
                 primaryColor: currentColor,
-                colorScheme: ColorScheme.light(primary: currentColor, secondary: Colors.teal),
                 scaffoldBackgroundColor: Colors.grey[100],
               ),
               darkTheme: ThemeData(
@@ -66,16 +66,14 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   final YoutubeExplode _yt = YoutubeExplode();
   
-  String _activeSource = 'JioSaavn';
-  List<dynamic> _searchResults = [];
+  List<Map<String, dynamic>> _searchResults = [];
   List<String> _searchHistory = [];
   List<Map<String, dynamic>> _djFavorites = [];
   bool _isLoading = false;
   bool _isGridView = false;
-  bool _isShuffle = false;
 
   // Track & Playback State
-  List<dynamic> _currentPlaylist = [];
+  List<Map<String, dynamic>> _currentPlaylist = [];
   int _currentIndex = -1;
   String? _currentTitle;
   String? _currentArtist;
@@ -83,7 +81,10 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
   bool _isPlaying = false;
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
+  
   double _playbackSpeed = 1.0;
+  Timer? _speedDebounce; // Prevents ExoPlayer crash on fast sliding
+  
   double _volume = 1.0;
   String _selectedQuality = '_320';
   LoopMode _loopMode = LoopMode.off;
@@ -95,6 +96,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
   double _eqHigh = 0;
   double _eqMid = 0;
   double _eqLow = 0;
+  bool _crossfadeEnabled = false;
 
   @override
   void initState() {
@@ -127,156 +129,262 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
       if (savedColor != null) {
         colorNotifier.value = Colors.primaries.firstWhere((c) => c.value == savedColor, orElse: () => Colors.deepPurple);
       }
+      _crossfadeEnabled = prefs.getBool('crossfade') ?? false;
+      
+      final String? favsJson = prefs.getString('favorites');
+      if (favsJson != null) {
+        List<dynamic> decoded = json.decode(favsJson);
+        _djFavorites = decoded.map((e) => Map<String, dynamic>.from(e)).toList();
+      }
     });
   }
 
-  Future<void> _saveHistory(String query) async {
-    if (query.trim().isEmpty) return;
-    if (!_searchHistory.contains(query)) {
-      _searchHistory.insert(0, query);
-      if (_searchHistory.length > 8) _searchHistory.removeLast();
-      final prefs = await SharedPreferences.getInstance();
-      prefs.setStringList('history', _searchHistory);
-      setState((){});
-    }
+  Future<void> _savePrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    prefs.setStringList('history', _searchHistory);
+    prefs.setString('favorites', json.encode(_djFavorites));
   }
 
-  Map<String, String> _extractData(dynamic song) {
-    if (song['source'] == 'YouTube') {
-      return {
-        'id': song['id'],
-        'title': song['title'],
-        'subtitle': song['subtitle'],
-        'image': song['image'],
-        'mediaUrl': song['id'], // We resolve YT stream at playback
-        'source': 'YouTube'
-      };
-    }
-    
-    final title = song['title']?.toString().replaceAll(RegExp(r'<[^>]*>'), '') ?? 'Unknown';
-    final subtitle = song['subtitle']?.toString().replaceAll(RegExp(r'<[^>]*>'), '') ?? 'Unknown Artist';
-    final imageUrl = song['image']?.toString().replaceAll('150x150', '50x50') ?? '';
-    final moreInfo = song['more_info'] ?? {};
-    final mediaUrl = song['encrypted_media_url'] ?? moreInfo['encrypted_media_url'] ?? moreInfo['vlink'] ?? song['media_preview_url'] ?? '';
-    return {'id': mediaUrl, 'title': title, 'subtitle': subtitle, 'image': imageUrl, 'mediaUrl': mediaUrl, 'source': 'JioSaavn'};
-  }
-
+  // --- 5-SOURCE UNIFIED SEARCH ENGINE ---
   Future<void> _searchSongs(String query) async {
     if (query.trim().isEmpty) return;
-    _saveHistory(query);
+    HapticFeedback.lightImpact();
+    
+    if (!_searchHistory.contains(query)) {
+      _searchHistory.insert(0, query);
+      if (_searchHistory.length > 10) _searchHistory.removeLast();
+      _savePrefs();
+    }
+
     setState(() {
       _isLoading = true;
       _searchResults = [];
     });
 
+    List<Map<String, dynamic>> mixedResults = [];
+
+    // Parallel execution of 5 distinct database queries
+    await Future.wait([
+      _fetchSourceA(query).then((res) => mixedResults.addAll(res)),
+      _fetchSourceB(query).then((res) => mixedResults.addAll(res)),
+      _fetchSourceC(query).then((res) => mixedResults.addAll(res)),
+      _fetchSourceD(query).then((res) => mixedResults.addAll(res)),
+      _fetchSourceE(query).then((res) => mixedResults.addAll(res)),
+    ]);
+
+    // Shuffle results so the user experiences a blended, source-agnostic list
+    mixedResults.shuffle(Random());
+
+    setState(() {
+      _searchResults = mixedResults;
+      _isLoading = false;
+    });
+  }
+
+  // Source A: Primary High-Res API
+  Future<List<Map<String, dynamic>>> _fetchSourceA(String query) async {
     try {
-      if (_activeSource == 'YouTube') {
-        final ytResults = await _yt.search.search(query);
-        final parsed = ytResults.take(15).map((v) => {
-          'source': 'YouTube',
-          'id': v.id.value,
-          'title': v.title,
-          'subtitle': v.author,
-          'image': v.thumbnails.highResUrl,
+      final res = await http.get(Uri.parse('https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&ctx=web6dot0&api_version=4&q=${Uri.encodeComponent(query)}'));
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body.trim());
+        final List results = data['results'] ?? data['songs']?['data'] ?? [];
+        return results.map((s) => {
+          'title': s['title'].toString().replaceAll(RegExp(r'<[^>]*>'), ''),
+          'artist': s['subtitle'].toString().replaceAll(RegExp(r'<[^>]*>'), ''),
+          'image': s['image'].toString().replaceAll('150x150', '50x50'),
+          'id': s['encrypted_media_url'] ?? s['more_info']?['encrypted_media_url'] ?? '',
+          'resolver': 1
         }).toList();
-        setState(() => _searchResults = parsed);
-      } else {
-        final url = Uri.parse('https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&ctx=web6dot0&api_version=4&q=${Uri.encodeComponent(query)}');
-        final response = await http.get(url, headers: {'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'});
-        if (response.statusCode == 200) {
-          final data = json.decode(response.body.trim());
-          List<dynamic> parsed = [];
-          if (data is Map) {
-            if (data['results'] != null) parsed = data['results'];
-            else if (data['songs']?['data'] != null) parsed = data['songs']['data'];
-          }
-          setState(() => _searchResults = parsed);
-        }
       }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Search error: $e")));
-    } finally {
-      setState(() => _isLoading = false);
-    }
+    } catch (_) {}
+    return [];
   }
 
-  String _decryptJioUrl(String encryptedUrl) {
+  // Source B: Global Video/Audio Graph
+  Future<List<Map<String, dynamic>>> _fetchSourceB(String query) async {
     try {
-      final key = utf8.encode('38346591');
-      final decodedBytes = base64.decode(encryptedUrl);
-      final des = DES(key: key, mode: DESMode.ECB, paddingType: DESPaddingType.PKCS7);
-      final decryptedUrl = utf8.decode(des.decrypt(decodedBytes));
-      return decryptedUrl.replaceAll('_96', _selectedQuality);
-    } catch (e) {
-      return "";
-    }
+      final res = await _yt.search.search(query);
+      return res.take(10).map((v) => {
+        'title': v.title,
+        'artist': v.author,
+        'image': v.thumbnails.highResUrl,
+        'id': v.id.value,
+        'resolver': 2
+      }).toList();
+    } catch (_) {}
+    return [];
   }
 
-  Future<String> _resolveDirectUrl(Map<String, String> data) async {
-    if (data['source'] == 'YouTube') {
-      try {
-        var manifest = await _yt.videos.streamsClient.getManifest(data['id']);
-        return manifest.audioOnly.withHighestBitrate().url.toString();
-      } catch (e) {
-        return "";
+  // Source C: Proxy Engine
+  Future<List<Map<String, dynamic>>> _fetchSourceC(String query) async {
+    try {
+      final res = await http.get(Uri.parse('https://pipedapi.kavin.rocks/search?q=${Uri.encodeComponent(query)}&filter=music_songs'));
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body);
+        final List items = data['items'] ?? [];
+        return items.take(8).map((v) => {
+          'title': v['title'],
+          'artist': v['uploaderName'] ?? 'Unknown',
+          'image': v['thumbnail'] ?? '',
+          'id': v['url']?.replaceAll('/watch?v=', '') ?? '',
+          'resolver': 3
+        }).toList();
       }
-    } else {
-      return _decryptJioUrl(data['mediaUrl']!);
-    }
+    } catch (_) {}
+    return [];
   }
 
-  Future<void> _playSong(int index, List<dynamic> list) async {
-    if(index < 0 || index >= list.length) return;
-    final data = _extractData(list[index]);
+  // Source D: Open Developer API
+  Future<List<Map<String, dynamic>>> _fetchSourceD(String query) async {
+    try {
+      final res = await http.get(Uri.parse('https://api.jamendo.com/v3.0/tracks/?client_id=56d30c95&format=json&limit=5&search=${Uri.encodeComponent(query)}'));
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body);
+        final List items = data['results'] ?? [];
+        return items.map((v) => {
+          'title': v['name'],
+          'artist': v['artist_name'],
+          'image': v['image'],
+          'id': v['audio'],
+          'resolver': 4
+        }).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  // Source E: Preview Database
+  Future<List<Map<String, dynamic>>> _fetchSourceE(String query) async {
+    try {
+      final res = await http.get(Uri.parse('https://itunes.apple.com/search?term=${Uri.encodeComponent(query)}&media=music&limit=5'));
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body);
+        final List items = data['results'] ?? [];
+        return items.where((v) => v['previewUrl'] != null).map((v) => {
+          'title': v['trackName'] ?? 'Unknown',
+          'artist': v['artistName'] ?? 'Unknown',
+          'image': v['artworkUrl100'] ?? '',
+          'id': v['previewUrl'],
+          'resolver': 5
+        }).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  // --- AUDIO RESOLUTION & PLAYBACK ---
+  Future<String> _resolveStreamUrl(Map<String, dynamic> track) async {
+    int res = track['resolver'];
+    String id = track['id'];
     
-    final directUrl = await _resolveDirectUrl(data);
-    if (directUrl.isNotEmpty) {
+    if (res == 1) {
+      try {
+        final key = utf8.encode('38346591');
+        final decodedBytes = base64.decode(id);
+        final des = DES(key: key, mode: DESMode.ECB, paddingType: DESPaddingType.PKCS7);
+        return utf8.decode(des.decrypt(decodedBytes)).replaceAll('_96', _selectedQuality);
+      } catch (_) { return ""; }
+    } 
+    else if (res == 2 || res == 3) {
+      try {
+        var manifest = await _yt.videos.streamsClient.getManifest(id);
+        return manifest.audioOnly.withHighestBitrate().url.toString();
+      } catch (_) { return ""; }
+    } 
+    else if (res == 4 || res == 5) {
+      return id; // Direct URL
+    }
+    return "";
+  }
+
+  Future<void> _playSong(int index, List<Map<String, dynamic>> list) async {
+    if(index < 0 || index >= list.length) return;
+    HapticFeedback.lightImpact();
+    
+    final track = list[index];
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Resolving Stream: ${track['title']}'), duration: const Duration(seconds: 1)));
+    
+    final streamUrl = await _resolveStreamUrl(track);
+    
+    if (streamUrl.isNotEmpty) {
       setState(() {
         _currentPlaylist = list;
         _currentIndex = index;
-        _currentTitle = data['title'];
-        _currentArtist = data['subtitle'];
-        _currentImage = data['image'];
+        _currentTitle = track['title'];
+        _currentArtist = track['artist'];
+        _currentImage = track['image'];
       });
       
-      await _audioPlayer.setUrl(directUrl);
-      await _audioPlayer.setSpeed(_playbackSpeed);
-      await _audioPlayer.setVolume(_volume);
-      _audioPlayer.play();
+      try {
+        await _audioPlayer.setAudioSource(AudioSource.uri(
+          Uri.parse(streamUrl),
+          headers: {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'},
+        ));
+        await _audioPlayer.setSpeed(_playbackSpeed);
+        
+        if (_crossfadeEnabled) {
+          _audioPlayer.setVolume(0.0);
+          _audioPlayer.play();
+          for(int i=1; i<=10; i++) {
+            await Future.delayed(const Duration(milliseconds: 100));
+            _audioPlayer.setVolume((i/10) * _volume);
+          }
+        } else {
+          _audioPlayer.setVolume(_volume);
+          _audioPlayer.play();
+        }
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Stream blocked by host.")));
+      }
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Stream not available.")));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Stream unavailable right now.")));
     }
+  }
+
+  // Crash-Proof Debounced Speed Controller
+  void _handleSpeedChange(double newSpeed) {
+    setState(() => _playbackSpeed = newSpeed);
+    _speedDebounce?.cancel();
+    _speedDebounce = Timer(const Duration(milliseconds: 100), () {
+      _audioPlayer.setSpeed(newSpeed);
+    });
   }
 
   void _playNext() {
     if (_currentPlaylist.isEmpty) return;
+    HapticFeedback.selectionClick();
     int next = _currentIndex + 1;
-    if (_isShuffle) next = Random().nextInt(_currentPlaylist.length);
     if (next < _currentPlaylist.length) _playSong(next, _currentPlaylist);
   }
 
   void _playPrev() {
-    if (_currentIndex > 0) _playSong(_currentIndex - 1, _currentPlaylist);
+    if (_currentIndex > 0) {
+      HapticFeedback.selectionClick();
+      _playSong(_currentIndex - 1, _currentPlaylist);
+    }
   }
 
-  Future<void> _downloadSong(Map<String, String> data) async {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Processing Download: ${data['title']}')));
+  Future<void> _downloadSong(Map<String, dynamic> track) async {
+    HapticFeedback.vibrate();
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Downloading: ${track['title']}')));
     
-    final directUrl = await _resolveDirectUrl(data);
-    if (directUrl.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cannot resolve media stream.')));
+    final streamUrl = await _resolveStreamUrl(track);
+    if (streamUrl.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cannot resolve media stream for download.')));
       return;
     }
 
-    // LIFETIME FEATURE: Safe file naming with hardcoded credit to bypass fragile metadata packages
-    final safeTitle = "Gajanan P - " + data['title']!.replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
+    final safeTitle = track['title']!.toString().replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
+    final safeArtist = track['artist']!.toString().replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
+    final fileName = "$safeTitle - $safeArtist.m4a";
+    
     final prefs = await SharedPreferences.getInstance();
     final saveLocation = prefs.getString('save_location') ?? 'Music';
     final sharedDir = saveLocation == 'Downloads' ? SharedStorage.downloads : SharedStorage.audio;
 
     final task = DownloadTask(
-      url: directUrl,
-      filename: '$safeTitle.m4a',
+      url: streamUrl,
+      filename: fileName,
       directory: 'DJ_Downloads',
       baseDirectory: BaseDirectory.applicationDocuments,
       updates: Updates.statusAndProgress,
@@ -286,7 +394,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     if (result.status == TaskStatus.complete) {
       try {
         await FileDownloader().moveToSharedStorage(task, sharedDir, directory: 'DJ_Downloads');
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Saved: $safeTitle'), backgroundColor: Colors.green));
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Saved: $fileName'), backgroundColor: Colors.green));
       } catch (e) {
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Save error: $e'), backgroundColor: Colors.red));
       }
@@ -306,7 +414,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     }
   }
 
-  void _showInspector(Map<String, String> data) {
+  void _showInspector(Map<String, dynamic> track) {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
@@ -318,17 +426,17 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
           children: [
             Row(
               children: [
-                const Icon(Icons.verified, color: Colors.cyanAccent),
+                const Icon(Icons.analytics, color: Colors.cyanAccent),
                 const SizedBox(width: 8),
-                Text("DJ Track Inspector", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                Text("Track Inspector", style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
               ],
             ),
             const Divider(height: 24),
-            Text("Title: ${data['title']}", style: const TextStyle(fontWeight: FontWeight.w600)),
+            Text("Title: ${track['title']}", style: const TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 6),
-            Text("Artist: ${data['subtitle']}"),
+            Text("Artist: ${track['artist']}"),
             const SizedBox(height: 6),
-            Text("Data Source: ${data['source']}"),
+            Text("Engine ID: ${track['resolver']}"),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(12),
@@ -339,9 +447,9 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
               ),
               child: const Row(
                 children: [
-                  Icon(Icons.copyright, color: Colors.white70),
+                  Icon(Icons.verified_user, color: Colors.white70),
                   SizedBox(width: 8),
-                  Expanded(child: Text("Copyright & DJ Credit:\nDownloaded By Gajanan P", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
+                  Expanded(child: Text("High-Fidelity Audio\nNo embedded watermarks.", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white))),
                 ],
               ),
             ),
@@ -351,8 +459,15 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     );
   }
 
+  String _formatDuration(Duration d) {
+    final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
   @override
   void dispose() {
+    _speedDebounce?.cancel();
     _sleepTimer?.cancel();
     _audioPlayer.dispose();
     _searchController.dispose();
@@ -363,9 +478,10 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('DJ Pro Workstation', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('DJ Pro Player', style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
           PopupMenuButton<int>(
+            tooltip: "Sleep Timer",
             icon: const Icon(Icons.nights_stay),
             onSelected: _setSleepTimer,
             itemBuilder: (_) => const [
@@ -377,7 +493,10 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
           ),
           IconButton(
             icon: Icon(themeNotifier.value == ThemeMode.light ? Icons.dark_mode : Icons.light_mode),
-            onPressed: () => themeNotifier.value = themeNotifier.value == ThemeMode.light ? ThemeMode.dark : ThemeMode.light,
+            onPressed: () {
+              HapticFeedback.selectionClick();
+              themeNotifier.value = themeNotifier.value == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
+            },
           ),
           IconButton(
             icon: const Icon(Icons.settings),
@@ -403,9 +522,12 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentTab,
         selectedItemColor: colorNotifier.value,
-        onTap: (index) => setState(() => _currentTab = index),
+        onTap: (index) {
+          HapticFeedback.selectionClick();
+          setState(() => _currentTab = index);
+        },
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.public), label: "Multi-Source"),
+          BottomNavigationBarItem(icon: Icon(Icons.public), label: "Global Search"),
           BottomNavigationBarItem(icon: Icon(Icons.queue_music), label: "DJ Crate"),
           BottomNavigationBarItem(icon: Icon(Icons.tune), label: "Studio Tools"),
         ],
@@ -417,44 +539,32 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _searchController,
-                  decoration: InputDecoration(
-                    hintText: 'Search $_activeSource...',
-                    filled: true,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
-                    prefixIcon: const Icon(Icons.search),
-                  ),
-                  onSubmitted: _searchSongs,
-                ),
-              ),
-              const SizedBox(width: 8),
-              DropdownButton<String>(
-                value: _activeSource,
-                underline: const SizedBox(),
-                items: ['JioSaavn', 'YouTube'].map((String value) {
-                  return DropdownMenuItem<String>(value: value, child: Text(value));
-                }).toList(),
-                onChanged: (val) => setState(() => _activeSource = val!),
-              ),
-            ],
+          padding: const EdgeInsets.all(12.0),
+          child: TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: 'Search Global Database...',
+              filled: true,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.clear),
+                onPressed: () => _searchController.clear(),
+              )
+            ),
+            onSubmitted: _searchSongs,
           ),
         ),
         if (_searchHistory.isNotEmpty && _searchResults.isEmpty && !_isLoading)
           Padding(
-            padding: const EdgeInsets.all(12.0),
+            padding: const EdgeInsets.symmetric(horizontal: 12.0),
             child: Wrap(
               spacing: 8,
               children: [
                 ..._searchHistory.map((q) => ActionChip(label: Text(q), onPressed: () { _searchController.text = q; _searchSongs(q); })).toList(),
-                ActionChip(label: const Text("Clear", style: TextStyle(color: Colors.red)), onPressed: () async {
+                ActionChip(label: const Text("Clear", style: TextStyle(color: Colors.red)), onPressed: () {
                   setState(() => _searchHistory.clear());
-                  final prefs = await SharedPreferences.getInstance();
-                  prefs.remove('history');
+                  _savePrefs();
                 })
               ]
             ),
@@ -463,7 +573,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
         Expanded(
           child: ListView.builder(
             itemCount: _searchResults.length,
-            itemBuilder: (context, index) => _buildSongTile(index, _searchResults),
+            itemBuilder: (context, index) => _buildSongTile(index, _searchResults, allowSwipe: false),
           ),
         ),
       ],
@@ -480,14 +590,17 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
             children: [
               Row(
                 children: [
-                  IconButton(icon: Icon(_isGridView ? Icons.view_list : Icons.grid_view), onPressed: () => setState(() => _isGridView = !_isGridView)),
-                  IconButton(icon: const Icon(Icons.sort_by_alpha), onPressed: () => setState(() => _djFavorites.sort((a, b) => _extractData(a)['title']!.compareTo(_extractData(b)['title']!)))),
+                  IconButton(icon: Icon(_isGridView ? Icons.view_list : Icons.grid_view), onPressed: () { HapticFeedback.selectionClick(); setState(() => _isGridView = !_isGridView); }),
                 ],
               ),
               TextButton.icon(
                 icon: const Icon(Icons.delete_sweep, color: Colors.red),
                 label: const Text("Clear Crate", style: TextStyle(color: Colors.red)),
-                onPressed: () => setState(() => _djFavorites.clear()),
+                onPressed: () {
+                  HapticFeedback.vibrate();
+                  setState(() => _djFavorites.clear());
+                  _savePrefs();
+                },
               ),
             ],
           ),
@@ -501,26 +614,35 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
                     itemCount: _djFavorites.length,
                     itemBuilder: (context, index) => _buildGridTile(index, _djFavorites),
                   )
-                : ListView.builder(
+                : ReorderableListView.builder(
                     itemCount: _djFavorites.length,
-                    itemBuilder: (context, index) => _buildSongTile(index, _djFavorites),
+                    onReorder: (oldI, newI) {
+                      setState(() {
+                        if (oldI < newI) newI -= 1;
+                        final item = _djFavorites.removeAt(oldI);
+                        _djFavorites.insert(newI, item);
+                      });
+                      _savePrefs();
+                    },
+                    itemBuilder: (context, index) => _buildSongTile(index, _djFavorites, allowSwipe: true, key: ValueKey(_djFavorites[index]['id'])),
                   ),
         ),
       ],
     );
   }
 
-  Widget _buildGridTile(int index, List<dynamic> list) {
-    final data = _extractData(list[index]);
+  Widget _buildGridTile(int index, List<Map<String,dynamic>> list) {
+    final track = list[index];
     return Card(
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => _playSong(index, list),
         child: Column(
           children: [
-            Expanded(child: Image.network(data['image']!, fit: BoxFit.cover)),
+            Expanded(child: Image.network(track['image']!, fit: BoxFit.cover, width: double.infinity)),
             Padding(
               padding: const EdgeInsets.all(8.0),
-              child: Text(data['title']!, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
+              child: Text(track['title']!, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
             )
           ],
         ),
@@ -541,6 +663,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
               ElevatedButton(
                 style: ElevatedButton.styleFrom(shape: const CircleBorder(), padding: const EdgeInsets.all(40), backgroundColor: colorNotifier.value),
                 onPressed: () {
+                  HapticFeedback.lightImpact();
                   final now = DateTime.now();
                   _tapTimestamps.add(now);
                   if (_tapTimestamps.length > 5) _tapTimestamps.removeAt(0);
@@ -557,12 +680,12 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
           ),
         ),
         const Divider(height: 40),
-        const Text("Software EQ Mapping (Hardware pass-through)", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        const Text("Hardware EQ Configuration", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         _buildEQSlider("High", _eqHigh, (v) => setState(() => _eqHigh = v)),
         _buildEQSlider("Mid", _eqMid, (v) => setState(() => _eqMid = v)),
         _buildEQSlider("Low", _eqLow, (v) => setState(() => _eqLow = v)),
         const SizedBox(height: 20),
-        const Text("Note: Native Android EQ filters require OS binding.", style: TextStyle(fontSize: 10, color: Colors.grey)),
+        const Text("Note: UI mapping only. Requires native OS audio bindings for live filtering.", style: TextStyle(fontSize: 10, color: Colors.grey)),
       ],
     );
   }
@@ -576,19 +699,19 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     );
   }
 
-  Widget _buildSongTile(int index, List<dynamic> list) {
-    final data = _extractData(list[index]);
-    final isFav = _djFavorites.any((item) => _extractData(item)['title'] == data['title']);
-    final isPlaying = _currentTitle == data['title'];
+  Widget _buildSongTile(int index, List<Map<String,dynamic>> list, {bool allowSwipe = false, Key? key}) {
+    final track = list[index];
+    final isFav = _djFavorites.any((item) => item['id'] == track['id']);
+    final isPlaying = _currentTitle == track['title'];
 
-    return ListTile(
+    Widget tile = ListTile(
       leading: Stack(
         alignment: Alignment.center,
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: data['image']!.isNotEmpty
-                ? Image.network(data['image']!, width: 50, height: 50, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.music_note, size: 50))
+            child: track['image']!.isNotEmpty
+                ? Image.network(track['image']!, width: 50, height: 50, fit: BoxFit.cover, errorBuilder: (c, e, s) => const Icon(Icons.music_note, size: 50))
                 : const Icon(Icons.music_note, size: 50),
           ),
           if(isPlaying && _isPlaying)
@@ -603,24 +726,42 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
             )
         ],
       ),
-      title: Text(data['title']!, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.bold, color: isPlaying ? colorNotifier.value : null)),
-      subtitle: Text(data['subtitle']!, maxLines: 1, overflow: TextOverflow.ellipsis),
+      title: Text(track['title']!, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.bold, color: isPlaying ? colorNotifier.value : null)),
+      subtitle: Text(track['artist']!, maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
             icon: Icon(isFav ? Icons.star : Icons.star_border, color: isFav ? Colors.amber : Colors.grey),
-            onPressed: () => setState(() {
-              if (isFav) _djFavorites.removeWhere((item) => _extractData(item)['title'] == data['title']);
-              else _djFavorites.add(Map<String, dynamic>.from(list[index]));
-            }),
+            onPressed: () {
+              HapticFeedback.selectionClick();
+              setState(() {
+                if (isFav) _djFavorites.removeWhere((item) => item['id'] == track['id']);
+                else _djFavorites.add(track);
+              });
+              _savePrefs();
+            },
           ),
-          IconButton(icon: const Icon(Icons.info_outline, size: 22), onPressed: () => _showInspector(data)),
-          IconButton(icon: const Icon(Icons.download, size: 26), onPressed: () => _downloadSong(data)),
+          IconButton(icon: const Icon(Icons.info_outline, size: 22), onPressed: () => _showInspector(track)),
+          IconButton(icon: const Icon(Icons.download, size: 26), onPressed: () => _downloadSong(track)),
         ],
       ),
       onTap: () => _playSong(index, list),
     );
+
+    if (allowSwipe) {
+      return Dismissible(
+        key: key ?? UniqueKey(),
+        direction: DismissDirection.endToStart,
+        background: Container(color: Colors.red, alignment: Alignment.centerRight, padding: const EdgeInsets.only(right: 20), child: const Icon(Icons.delete, color: Colors.white)),
+        onDismissed: (_) {
+          setState(() => _djFavorites.removeAt(index));
+          _savePrefs();
+        },
+        child: tile,
+      );
+    }
+    return tile;
   }
 
   Widget _buildBottomPlayer() {
@@ -633,7 +774,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF1A1A1A) : Colors.white,
+        color: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF151515) : Colors.white,
         boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, -3))],
       ),
       child: Column(
@@ -653,13 +794,12 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
                   ],
                 ),
               ),
-              IconButton(icon: Icon(_isShuffle ? Icons.shuffle : Icons.shuffle, color: _isShuffle ? colorNotifier.value : Colors.grey), onPressed: () => setState(() => _isShuffle = !_isShuffle)),
-              IconButton(icon: const Icon(Icons.skip_previous), onPressed: _playPrev),
+              IconButton(icon: const Icon(Icons.replay_10), onPressed: () => _audioPlayer.seek((_position - const Duration(seconds: 10)).clamp(Duration.zero, _duration))),
               IconButton(
                 icon: Icon(_isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled, color: colorNotifier.value, size: 42),
-                onPressed: () => _isPlaying ? _audioPlayer.pause() : _audioPlayer.play(),
+                onPressed: () { HapticFeedback.lightImpact(); _isPlaying ? _audioPlayer.pause() : _audioPlayer.play(); },
               ),
-              IconButton(icon: const Icon(Icons.skip_next), onPressed: _playNext),
+              IconButton(icon: const Icon(Icons.forward_10), onPressed: () => _audioPlayer.seek((_position + const Duration(seconds: 10)).clamp(Duration.zero, _duration))),
             ],
           ),
           SizedBox(
@@ -690,10 +830,15 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
               const Icon(Icons.speed, size: 16, color: Colors.grey),
               Expanded(
                 child: Slider(
-                  value: _playbackSpeed, min: 0.5, max: 1.5, activeColor: colorNotifier.value,
-                  onChanged: (v) { setState(() => _playbackSpeed = v); _audioPlayer.setSpeed(v); },
+                  value: _playbackSpeed, min: 0.5, max: 3.0, activeColor: colorNotifier.value,
+                  onChanged: _handleSpeedChange,
                 ),
               ),
+              InkWell(
+                onTap: () { HapticFeedback.lightImpact(); _handleSpeedChange(1.0); },
+                child: Text("${_playbackSpeed.toStringAsFixed(1)}x", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(width: 8),
               const Icon(Icons.volume_up, size: 16, color: Colors.grey),
               Expanded(
                 child: Slider(
@@ -704,6 +849,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
               IconButton(
                 icon: Icon(_loopMode == LoopMode.one ? Icons.repeat_one : Icons.repeat, color: _loopMode == LoopMode.off ? Colors.grey : colorNotifier.value),
                 onPressed: () {
+                  HapticFeedback.selectionClick();
                   setState(() => _loopMode = _loopMode == LoopMode.off ? LoopMode.all : (_loopMode == LoopMode.all ? LoopMode.one : LoopMode.off));
                   _audioPlayer.setLoopMode(_loopMode);
                 },
@@ -724,6 +870,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   String _selectedLocation = 'Music';
+  bool _crossfade = false;
 
   @override
   void initState() {
@@ -733,13 +880,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() => _selectedLocation = prefs.getString('save_location') ?? 'Music');
-  }
-
-  Future<void> _saveSettings(String value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('save_location', value);
-    setState(() => _selectedLocation = value);
+    setState(() {
+      _selectedLocation = prefs.getString('save_location') ?? 'Music';
+      _crossfade = prefs.getBool('crossfade') ?? false;
+    });
   }
 
   @override
@@ -754,6 +898,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             spacing: 15,
             children: [Colors.deepPurple, Colors.green, Colors.red, Colors.amber, Colors.blue].map((color) => GestureDetector(
               onTap: () async {
+                HapticFeedback.lightImpact();
                 colorNotifier.value = color;
                 final prefs = await SharedPreferences.getInstance();
                 prefs.setInt('theme_color', color.value);
@@ -765,26 +910,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
             )).toList(),
           ),
           const Divider(),
+          SwitchListTile(
+            title: const Text("Crossfade Playback"),
+            subtitle: const Text("Smooth volume ramp on play"),
+            activeColor: colorNotifier.value,
+            value: _crossfade,
+            onChanged: (v) async {
+              HapticFeedback.selectionClick();
+              setState(() => _crossfade = v);
+              final p = await SharedPreferences.getInstance();
+              p.setBool('crossfade', v);
+            }
+          ),
+          const Divider(),
           const Padding(padding: EdgeInsets.all(16.0), child: Text("Download Destination", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
           RadioListTile<String>(
             title: const Text("Music Folder"),
             subtitle: const Text("Internal Storage/Music/DJ_Downloads"),
             value: 'Music',
             groupValue: _selectedLocation,
-            onChanged: (val) => _saveSettings(val!),
+            onChanged: (val) async {
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setString('save_location', val!);
+              setState(() => _selectedLocation = val);
+            },
           ),
           RadioListTile<String>(
             title: const Text("Downloads Folder"),
             subtitle: const Text("Internal Storage/Download/DJ_Downloads"),
             value: 'Downloads',
             groupValue: _selectedLocation,
-            onChanged: (val) => _saveSettings(val!),
+            onChanged: (val) async {
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setString('save_location', val!);
+              setState(() => _selectedLocation = val);
+            },
           ),
           const Divider(),
           const ListTile(
-            leading: Icon(Icons.badge, color: Colors.cyanAccent),
-            title: Text("DJ Credit Signature"),
-            subtitle: Text("File Prefix: Gajanan P - [Track Name]"),
+            leading: Icon(Icons.save_alt, color: Colors.cyanAccent),
+            title: Text("File Output Standard"),
+            subtitle: Text("Format: [Track Name] - [Artist].m4a"),
           ),
         ],
       ),

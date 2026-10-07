@@ -44,6 +44,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: build/app/outputs/flutter-apk/app-release.apk
-          tag_name: v5.0.MULTI_SOURCE_${{ github.run_number }}
+          tag_name: v6.0.PRO_LIFETIME_${{ github.run_number }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -8,22 +8,15 @@ import 'dart:math';
 import 'dart:io';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:just_audio_background/just_audio_background.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:dart_des/dart_des.dart';
-import 'package:path_provider/path_provider.dart';
 
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.dark);
 final ValueNotifier<MaterialColor> colorNotifier = ValueNotifier(Colors.deepPurple);
 
-Future<void> main() async {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await JustAudioBackground.init(
-    androidNotificationChannelId: 'com.djplayer.app.audio',
-    androidNotificationChannelName: 'DJ Playback',
-    androidNotificationOngoing: true,
-  );
   runApp(const DJPlayerApp());
 }
 
@@ -87,6 +80,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
   bool _isTrendingLoading = false;
   
   Map<String, double> _downloadProgress = {};
+  Map<String, String> _downloadSpeed = {};
   Set<String> _downloadedFileIds = {};
 
   List<Map<String, dynamic>> _currentPlaylist = [];
@@ -103,7 +97,6 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
   Timer? _speedDebounce; 
   double _volume = 1.0;
   LoopMode _loopMode = LoopMode.off;
-  Timer? _sleepTimer;
 
   final List<DateTime> _tapTimestamps = [];
   int _calculatedBpm = 0;
@@ -136,7 +129,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
   }
 
   Future<void> _requestPermissions() async {
-    await [Permission.storage, Permission.audio, Permission.manageExternalStorage].request();
+    await [Permission.storage, Permission.audio].request();
   }
 
   Future<void> _loadPrefs() async {
@@ -165,7 +158,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
           for (var file in files) {
             if (file is File && (file.path.endsWith('.m4a') || file.path.endsWith('.mp3'))) {
               String filename = file.path.split('/').last.replaceAll('.m4a', '').replaceAll('.mp3', '');
-              String trackName = filename.replaceAll('Gajanan Patkar - ', '');
+              String trackName = filename.replaceAll('Gajanan Patkar - ', '').replaceAll('Gajanan P - ', '');
               
               if (!foundIds.contains(trackName)) {
                 foundIds.add(trackName);
@@ -192,7 +185,6 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     }
   }
 
-  // --- LAYER 1: FEDERATED METADATA ---
   Future<void> _searchFederated(String query) async {
     if (query.trim().isEmpty) return;
     HapticFeedback.lightImpact();
@@ -226,7 +218,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     if (results.isEmpty) {
       try {
         final ytRes = await _yt.search.search(query);
-        results.addAll(ytRes.take(20).map((v) => {
+        results.addAll(ytRes.take(30).map((v) => {
           'title': v.title,
           'artist': v.author,
           'image': v.thumbnails.highResUrl,
@@ -251,7 +243,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     
     try {
       final ytRes = await _yt.search.search("Top 50 $language Hit Songs");
-      final List<Map<String, dynamic>> results = ytRes.take(25).map((v) => {
+      final List<Map<String, dynamic>> results = ytRes.take(30).map((v) => {
         'title': v.title,
         'artist': v.author,
         'image': v.thumbnails.highResUrl,
@@ -281,7 +273,6 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     } catch(_) { setState(() => _currentLyrics = "Lyrics API Offline"); }
   }
 
-  // --- LAYER 2: CLIENT-SIDE EXTRACTION ---
   Future<String> _extractStreamUrl(Map<String, dynamic> track) async {
     if (track['source'] == 'Offline') return track['localPath'];
     
@@ -309,7 +300,6 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     return "";
   }
 
-  // --- LAYER 3: UNIFIED PLAYBACK & CACHING ENGINE ---
   Future<void> _playSong(int index, List<Map<String, dynamic>> list) async {
     if(index < 0 || index >= list.length) return;
     HapticFeedback.lightImpact();
@@ -323,10 +313,6 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
         track['source'] = 'Offline';
         track['localPath'] = localFile.path;
       }
-    }
-
-    if (track['source'] != 'Offline') {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Client Extraction: ${track['title']}'), duration: const Duration(seconds: 1)));
     }
     
     final streamUrl = await _extractStreamUrl(track);
@@ -344,24 +330,18 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
       
       try {
         if (track['source'] == 'Offline') {
-          await _audioPlayer.setAudioSource(AudioSource.file(
-            streamUrl,
-            tag: MediaItem(id: track['id'], title: track['title'], artist: track['artist'])
-          ));
+          await _audioPlayer.setAudioSource(AudioSource.file(streamUrl));
         } else {
-          await _audioPlayer.setAudioSource(LockCachingAudioSource(
-            Uri.parse(streamUrl),
-            tag: MediaItem(id: track['id'], title: track['title'], artist: track['artist'], artUri: track['image'].isNotEmpty ? Uri.parse(track['image']) : null)
-          ));
+          await _audioPlayer.setAudioSource(LockCachingAudioSource(Uri.parse(streamUrl)));
         }
         await _audioPlayer.setSpeed(_playbackSpeed);
         await _audioPlayer.setVolume(_volume);
         _audioPlayer.play();
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Stream blocked. Decentralized fallback failed.")));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Stream playback failed.")));
       }
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Stream completely offline across all nodes.")));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Stream offline. Try another track.")));
     }
   }
 
@@ -387,8 +367,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     }
   }
 
-  // --- LAYER 4: NATIVE DIO BYTE-STREAM DOWNLOADER ---
-  Future<void> _downloadAndProcess(Map<String, dynamic> track) async {
+  Future<void> _downloadSong(Map<String, dynamic> track) async {
     HapticFeedback.vibrate();
     final taskId = track['id'];
     
@@ -400,7 +379,10 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
       return;
     }
 
-    setState(() => _downloadProgress[taskId] = 0.01);
+    setState(() {
+      _downloadProgress[taskId] = 0.01;
+      _downloadSpeed[taskId] = "Connecting...";
+    });
 
     try {
       final safeTitle = track['title']!.toString().replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
@@ -410,12 +392,25 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
       
       final String finalOutPath = '${pubDir.path}/Gajanan Patkar - $safeTitle.m4a';
 
+      int lastBytes = 0;
+      int lastTime = DateTime.now().millisecondsSinceEpoch;
+
       await _dio.download(
         streamUrl,
         finalOutPath,
         onReceiveProgress: (received, total) {
           if (total != -1 && mounted) {
-            setState(() => _downloadProgress[taskId] = received / total);
+            int now = DateTime.now().millisecondsSinceEpoch;
+            if (now - lastTime > 500) {
+              double speedBytes = (received - lastBytes) / ((now - lastTime) / 1000);
+              double speedMB = speedBytes / (1024 * 1024);
+              setState(() {
+                _downloadProgress[taskId] = received / total;
+                _downloadSpeed[taskId] = "${speedMB.toStringAsFixed(2)} MB/s";
+              });
+              lastBytes = received;
+              lastTime = now;
+            }
           }
         },
       );
@@ -423,14 +418,17 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
       _scanOfflineLibrary();
       
       if (mounted) {
-        setState(() => _downloadProgress.remove(taskId));
+        setState(() {
+          _downloadProgress.remove(taskId);
+          _downloadSpeed.remove(taskId);
+        });
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Saved: Gajanan Patkar - $safeTitle'), backgroundColor: Colors.green));
       }
       
     } catch (e) {
       if (mounted) {
-        setState(() => _downloadProgress.remove(taskId));
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Processing Pipeline Error'), backgroundColor: Colors.red));
+        setState(() { _downloadProgress.remove(taskId); _downloadSpeed.remove(taskId); });
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Processing Error: Stream Failed'), backgroundColor: Colors.red));
       }
     }
   }
@@ -485,7 +483,6 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
   @override
   void dispose() {
     _speedDebounce?.cancel();
-    _sleepTimer?.cancel();
     _audioPlayer.dispose();
     _searchController.dispose();
     super.dispose();
@@ -503,6 +500,10 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
               HapticFeedback.selectionClick();
               themeNotifier.value = themeNotifier.value == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
             },
+          ),
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())).then((_) => _scanOfflineLibrary()),
           ),
         ],
       ),
@@ -689,7 +690,8 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     final isPlaying = _currentTitle == track['title'];
     
     final taskId = track['id'];
-    final isDownloading = _downloadProgress.containsKey(taskId);
+    final dlProgress = _downloadProgress[taskId];
+    final dlSpeed = _downloadSpeed[taskId] ?? "";
     
     String safeName = track['title']!.toString().replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
     bool isDownloaded = _downloadedFileIds.contains(safeName) || isOfflineMode;
@@ -717,12 +719,28 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
         ],
       ),
       title: Text(track['title']!, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.bold, color: isPlaying ? colorNotifier.value : null)),
-      subtitle: Text(track['artist']!, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(track['artist']!, maxLines: 1, overflow: TextOverflow.ellipsis),
+          if (dlProgress != null && !isOfflineMode)
+            Padding(
+              padding: const EdgeInsets.only(top: 6.0),
+              child: Row(
+                children: [
+                  Expanded(child: LinearProgressIndicator(value: dlProgress, color: Colors.cyanAccent, backgroundColor: Colors.grey[800])),
+                  const SizedBox(width: 8),
+                  Text(dlSpeed, style: const TextStyle(fontSize: 10, color: Colors.cyanAccent)),
+                ],
+              ),
+            ),
+        ],
+      ),
       trailing: isDownloaded
         ? const Icon(Icons.check_circle, color: Colors.green)
         : IconButton(
-            icon: Icon(isDownloading ? Icons.settings_applications : Icons.download, size: 26, color: isDownloading ? Colors.cyanAccent : null), 
-            onPressed: isDownloading ? null : () => _downloadAndProcess(track),
+            icon: Icon(dlProgress != null ? Icons.settings_applications : Icons.download, size: 26, color: dlProgress != null ? Colors.cyanAccent : null), 
+            onPressed: dlProgress != null ? null : () => _downloadAndProcess(track),
           ),
       onTap: () => _playSong(index, list),
     );
@@ -803,6 +821,54 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
               ),
             ],
           )
+        ],
+      ),
+    );
+  }
+}
+
+class SettingsScreen extends StatefulWidget {
+  const SettingsScreen({super.key});
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('DJ Settings')),
+      body: ListView(
+        children: [
+          const Padding(padding: EdgeInsets.all(16.0), child: Text("App Theme Color", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 15,
+            children: [Colors.deepPurple, Colors.green, Colors.red, Colors.amber, Colors.blue].map((color) => GestureDetector(
+              onTap: () async {
+                HapticFeedback.lightImpact();
+                colorNotifier.value = color;
+                final prefs = await SharedPreferences.getInstance();
+                prefs.setInt('theme_color', color.value);
+              },
+              child: ValueListenableBuilder<MaterialColor>(
+                valueListenable: colorNotifier,
+                builder: (_, val, __) => CircleAvatar(backgroundColor: color, radius: 20, child: val == color ? const Icon(Icons.check, color: Colors.white) : null),
+              )
+            )).toList(),
+          ),
+          const Divider(),
+          const ListTile(
+            leading: Icon(Icons.folder, color: Colors.cyanAccent),
+            title: Text("Download Destination"),
+            subtitle: Text("Internal Storage/Download/DJ_Downloads"),
+          ),
+          const Divider(),
+          const ListTile(
+            leading: Icon(Icons.badge, color: Colors.cyanAccent),
+            title: Text("DJ Credit Signature"),
+            subtitle: Text("File Prefix: Gajanan Patkar - [Track Name]"),
+          ),
         ],
       ),
     );

@@ -8,22 +8,15 @@ import 'dart:math';
 import 'dart:io';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:just_audio_background/just_audio_background.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:dart_des/dart_des.dart';
-import 'package:path_provider/path_provider.dart';
 
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.dark);
 final ValueNotifier<MaterialColor> colorNotifier = ValueNotifier(Colors.deepPurple);
 
-Future<void> main() async {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await JustAudioBackground.init(
-    androidNotificationChannelId: 'com.djplayer.app.audio',
-    androidNotificationChannelName: 'DJ Playback',
-    androidNotificationOngoing: true,
-  );
   runApp(const DJPlayerApp());
 }
 
@@ -104,7 +97,6 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
   Timer? _speedDebounce; 
   double _volume = 1.0;
   LoopMode _loopMode = LoopMode.off;
-  Timer? _sleepTimer;
 
   final List<DateTime> _tapTimestamps = [];
   int _calculatedBpm = 0;
@@ -166,7 +158,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
           for (var file in files) {
             if (file is File && (file.path.endsWith('.m4a') || file.path.endsWith('.mp3'))) {
               String filename = file.path.split('/').last.replaceAll('.m4a', '').replaceAll('.mp3', '');
-              String trackName = filename.replaceAll('Gajanan Patkar - ', '');
+              String trackName = filename.replaceAll('Gajanan Patkar - ', '').replaceAll('Gajanan P - ', '');
               
               if (!foundIds.contains(trackName)) {
                 foundIds.add(trackName);
@@ -193,7 +185,6 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     }
   }
 
-  // --- LAYER 1: FEDERATED METADATA ---
   Future<void> _searchFederated(String query) async {
     if (query.trim().isEmpty) return;
     HapticFeedback.lightImpact();
@@ -339,15 +330,11 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
       
       try {
         if (track['source'] == 'Offline') {
-          await _audioPlayer.setAudioSource(AudioSource.file(
-            streamUrl,
-            tag: MediaItem(id: track['id'], title: track['title'], artist: track['artist'])
-          ));
+          // Native file playback
+          await _audioPlayer.setAudioSource(AudioSource.file(streamUrl));
         } else {
-          await _audioPlayer.setAudioSource(LockCachingAudioSource(
-            Uri.parse(streamUrl),
-            tag: MediaItem(id: track['id'], title: track['title'], artist: track['artist'], artUri: track['image'].isNotEmpty ? Uri.parse(track['image']) : null)
-          ));
+          // Native web playback without JustAudioBackground tags causing crashes
+          await _audioPlayer.setAudioSource(LockCachingAudioSource(Uri.parse(streamUrl)));
         }
         await _audioPlayer.setSpeed(_playbackSpeed);
         await _audioPlayer.setVolume(_volume);
@@ -550,8 +537,8 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.local_fire_department), label: "Trending"),
           BottomNavigationBarItem(icon: Icon(Icons.search), label: "Federated"),
-          BottomNavigationBarItem(icon: Icon(Icons.folder_special), label: "Offline"),
-          BottomNavigationBarItem(icon: Icon(Icons.tune), label: "Studio"),
+          BottomNavigationBarItem(icon: Icon(Icons.folder_special), label: "Library"),
+          BottomNavigationBarItem(icon: Icon(Icons.tune), label: "Tools"),
         ],
       ),
     );
@@ -652,7 +639,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
         ),
         Expanded(
           child: _offlineSongs.isEmpty
-              ? const Center(child: Text("No offline tracks found. Run FFmpeg Engine!"))
+              ? const Center(child: Text("No offline tracks found. Run Network Engine!"))
               : ListView.builder(
                   itemCount: _offlineSongs.length,
                   itemBuilder: (context, index) => _buildSongTile(index, _offlineSongs, isOfflineMode: true),
@@ -755,7 +742,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
         ? const Icon(Icons.check_circle, color: Colors.green)
         : IconButton(
             icon: Icon(dlProgress != null ? Icons.settings_applications : Icons.download, size: 26, color: dlProgress != null ? Colors.cyanAccent : null), 
-            onPressed: dlProgress != null ? null : () => _downloadSong(track), // FIX: Calling correct native method
+            onPressed: dlProgress != null ? null : () => _downloadSong(track),
           ),
       onTap: () => _playSong(index, list),
     );

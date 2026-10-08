@@ -45,6 +45,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: build/app/outputs/flutter-apk/app-release.apk
-          tag_name: v18.0.CRASH_FIXED_PRO_${{ github.run_number }}
+          tag_name: v19.0.AUTO_HEAL_PRO_${{ github.run_number }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

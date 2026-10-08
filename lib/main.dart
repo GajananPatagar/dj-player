@@ -12,8 +12,6 @@ import 'package:just_audio_background/just_audio_background.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:dart_des/dart_des.dart';
-import 'package:ffmpeg_kit_flutter_audio/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter_audio/return_code.dart';
 import 'package:path_provider/path_provider.dart';
 
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.dark);
@@ -207,7 +205,6 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
 
     List<Map<String, dynamic>> results = [];
 
-    // Prioritize structured JSON via JioSaavn API to guarantee pristine ID3 tags
     try {
       final res = await http.get(Uri.parse('https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&ctx=web6dot0&api_version=4&q=${Uri.encodeComponent(query)}'));
       if (res.statusCode == 200) {
@@ -226,7 +223,6 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
       }
     } catch (_) {}
 
-    // Fallback to Global Graph
     if (results.isEmpty) {
       try {
         final ytRes = await _yt.search.search(query);
@@ -285,7 +281,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     } catch(_) { setState(() => _currentLyrics = "Lyrics API Offline"); }
   }
 
-  // --- LAYER 2: CLIENT-SIDE EXTRACTION & DECENTRALIZED FALLBACK ---
+  // --- LAYER 2: CLIENT-SIDE EXTRACTION ---
   Future<String> _extractStreamUrl(Map<String, dynamic> track) async {
     if (track['source'] == 'Offline') return track['localPath'];
     
@@ -299,11 +295,9 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     } 
     else if (track['source'] == 'YouTube') {
       try {
-        // Primary Client-Side Extraction
         var manifest = await _yt.videos.streamsClient.getManifest(track['id']);
         return manifest.audioOnly.withHighestBitrate().url.toString();
       } catch (e) {
-        // Decentralized Fallback Mechanism (Piped API)
         try {
           final res = await http.get(Uri.parse('https://pipedapi.kavin.rocks/streams/${track['id']}'));
           final data = json.decode(res.body);
@@ -355,7 +349,6 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
             tag: MediaItem(id: track['id'], title: track['title'], artist: track['artist'])
           ));
         } else {
-          // Utilizing LockCachingAudioSource to create a SimpleCache equivalent
           await _audioPlayer.setAudioSource(LockCachingAudioSource(
             Uri.parse(streamUrl),
             tag: MediaItem(id: track['id'], title: track['title'], artist: track['artist'], artUri: track['image'].isNotEmpty ? Uri.parse(track['image']) : null)
@@ -394,7 +387,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
     }
   }
 
-  // --- LAYER 4: FFMPEG POST-PROCESSING PIPELINE ---
+  // --- LAYER 4: NATIVE DIO BYTE-STREAM DOWNLOADER ---
   Future<void> _downloadAndProcess(Map<String, dynamic> track) async {
     HapticFeedback.vibrate();
     final taskId = track['id'];
@@ -407,55 +400,32 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
       return;
     }
 
-    setState(() => _downloadProgress[taskId] = 0.1);
+    setState(() => _downloadProgress[taskId] = 0.01);
 
     try {
       final safeTitle = track['title']!.toString().replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
-      final safeArtist = track['artist']!.toString().replaceAll(RegExp(r'[\\/:*?"<>|]'), '');
       
       final Directory pubDir = Directory('/storage/emulated/0/Download/DJ_Downloads');
       if (!await pubDir.exists()) await pubDir.create(recursive: true);
       
-      final Directory tempDir = await getTemporaryDirectory();
-      final String rawAudioPath = '${tempDir.path}/${taskId}_raw.mp4';
-      final String coverPath = '${tempDir.path}/${taskId}_cover.jpg';
       final String finalOutPath = '${pubDir.path}/Gajanan Patkar - $safeTitle.m4a';
 
-      // 1. Download Cover Art
-      if (track['image'].isNotEmpty) {
-        final imgRes = await http.get(Uri.parse(track['image']));
-        await File(coverPath).writeAsBytes(imgRes.bodyBytes);
+      await _dio.download(
+        streamUrl,
+        finalOutPath,
+        onReceiveProgress: (received, total) {
+          if (total != -1 && mounted) {
+            setState(() => _downloadProgress[taskId] = received / total);
+          }
+        },
+      );
+
+      _scanOfflineLibrary();
+      
+      if (mounted) {
+        setState(() => _downloadProgress.remove(taskId));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Saved: Gajanan Patkar - $safeTitle'), backgroundColor: Colors.green));
       }
-
-      setState(() => _downloadProgress[taskId] = 0.4);
-
-      // 2. Download Raw Audio Stream
-      await _dio.download(streamUrl, rawAudioPath);
-      
-      setState(() => _downloadProgress[taskId] = 0.7);
-
-      // 3. FFmpeg Muxing & ID3 Injection
-      String command = "-y -i '$rawAudioPath' ";
-      if (await File(coverPath).exists()) command += "-i '$coverPath' -map 0:a -map 1:v -disposition:v attached_pic ";
-      else command += "-map 0:a ";
-      
-      command += "-c copy -id3v2_version 3 -metadata title='$safeTitle' -metadata artist='$safeArtist' -metadata album='DJ Pro Workstation Crate' '$finalOutPath'";
-      
-      var session = await FFmpegKit.execute(command);
-      var returnCode = await session.getReturnCode();
-      
-      if (ReturnCode.isSuccess(returnCode)) {
-         _scanOfflineLibrary();
-         if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('FFmpeg Exported: Gajanan Patkar - $safeTitle'), backgroundColor: Colors.green));
-      } else {
-         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('FFmpeg Muxing Failed'), backgroundColor: Colors.red));
-      }
-
-      // Cleanup
-      if (await File(rawAudioPath).exists()) await File(rawAudioPath).delete();
-      if (await File(coverPath).exists()) await File(coverPath).delete();
-      
-      setState(() => _downloadProgress.remove(taskId));
       
     } catch (e) {
       if (mounted) {
@@ -666,7 +636,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
         ),
         Expanded(
           child: _offlineSongs.isEmpty
-              ? const Center(child: Text("No offline tracks found. Run FFmpeg Engine!"))
+              ? const Center(child: Text("No offline tracks found. Download tracks first!"))
               : ListView.builder(
                   itemCount: _offlineSongs.length,
                   itemBuilder: (context, index) => _buildSongTile(index, _offlineSongs, isOfflineMode: true),
@@ -701,7 +671,7 @@ class _MainDJDashboardState extends State<MainDJDashboard> {
         _buildFeatureItem(Icons.cloud_sync, "Layer 1: Federated Metadata Graph API"),
         _buildFeatureItem(Icons.security, "Layer 2: Decentralized Piped Fallbacks"),
         _buildFeatureItem(Icons.memory, "Layer 3: LockCachingAudioSource (Media3)"),
-        _buildFeatureItem(Icons.build_circle, "Layer 4: FFmpegKit Native ID3 Muxing"),
+        _buildFeatureItem(Icons.build_circle, "Layer 4: Native Dart Direct Byte Downloading"),
         _buildFeatureItem(Icons.lyrics, "Layer 5: LRCLib Synchronized Data Extraction"),
       ],
     );

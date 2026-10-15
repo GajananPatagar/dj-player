@@ -1,0 +1,132 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+body {
+  background: #0b0e14;
+  color: #f0f6fc;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 12px;
+}
+
+.top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: #161b22;
+  border-radius: 10px;
+  border: 1px solid #30363d;
+}
+
+.brand {
+  font-weight: 800;
+  color: #00e5ff;
+  letter-spacing: 1px;
+}
+
+.tag-badge {
+  font-size: 0.75rem;
+  background: #238636;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+.mixer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+  margin: 14px 0;
+}
+
+.deck {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  padding: 16px;
+  text-align: center;
+}
+
+.platter {
+  width: 130px;
+  height: 130px;
+  margin: 12px auto;
+  border-radius: 50%;
+  border: 6px solid #00e5ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle, #21262d 30%, #0d1117 100%);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.platter.spinning {
+  animation: spin 3s linear infinite;
+  border-color: #ff007f;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.file-input {
+  width: 100%;
+  margin: 8px 0;
+  color: #8b949e;
+}
+
+.controls {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin: 10px 0;
+}
+
+.btn {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  border-radius: 8px;
+  font-weight: 700;
+  cursor: pointer;
+  color: #fff;
+}
+
+.play-btn { background: #1f6feb; }
+.cue-btn { background: #da3633; }
+
+.sliders {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  text-align: left;
+  font-size: 0.85rem;
+}
+
+.sliders input[type="range"] {
+  width: 100%;
+}
+
+.crossfader-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #161b22;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid #30363d;
+}
+
+.crossfader-bar input[type="range"] {
+  flex: 1;
+}

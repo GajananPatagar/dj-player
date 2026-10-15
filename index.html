@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>DJ Player v19.0 AUTO_HEAL_PRO_39</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="top-bar">
+    <div class="brand">🎧 DJ PLAYER PRO</div>
+    <div class="tag-badge" id="versionBadge">v19.0.AUTO_HEAL_PRO_39</div>
+  </header>
+
+  <main class="mixer-grid">
+    <!-- DECK A -->
+    <section class="deck" id="deckA">
+      <h2>DECK A</h2>
+      <div class=" platter" id="platterA">
+        <span id="statusA">READY</span>
+      </div>
+      <input type="file" id="fileA" accept="audio/*" class="file-input" />
+      <div class="controls">
+        <button id="playA" class="btn play-btn">PLAY / PAUSE</button>
+        <button id="cueA" class="btn cue-btn">CUE</button>
+      </div>
+      <div class="sliders">
+        <label>Pitch / Speed <input type="range" id="rateA" min="0.5" max="1.5" step="0.01" value="1" /></label>
+        <label>Gain A <input type="range" id="gainA" min="0" max="1" step="0.01" value="0.85" /></label>
+        <label>Bass Boost <input type="range" id="bassA" min="-15" max="15" step="1" value="0" /></label>
+      </div>
+    </section>
+
+    <!-- DECK B -->
+    <section class="deck" id="deckB">
+      <h2>DECK B</h2>
+      <div class="platter" id="platterB">
+        <span id="statusB">READY</span>
+      </div>
+      <input type="file" id="fileB" accept="audio/*" class="file-input" />
+      <div class="controls">
+        <button id="playB" class="btn play-btn">PLAY / PAUSE</button>
+        <button id="cueB" class="btn cue-btn">CUE</button>
+      </div>
+      <div class="sliders">
+        <label>Pitch / Speed <input type="range" id="rateB" min="0.5" max="1.5" step="0.01" value="1" /></label>
+        <label>Gain B <input type="range" id="gainB" min="0" max="1" step="0.01" value="0.85" /></label>
+        <label>Bass Boost <input type="range" id="bassB" min="-15" max="15" step="1" value="0" /></label>
+      </div>
+    </section>
+  </main>
+
+  <footer class="crossfader-bar">
+    <span>DECK A</span>
+    <input type="range" id="crossfader" min="0" max="1" step="0.01" value="0.5" />
+    <span>DECK B</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

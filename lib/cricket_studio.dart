@@ -1,7 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter_tts/flutter_tts.dart';
-import 'package:audioplayers/audioplayers.dart';
+import 'main.dart';
 import 'voice_and_pro_hub.dart';
 
 class CricketCommentaryScreen extends StatefulWidget {
@@ -12,8 +11,6 @@ class CricketCommentaryScreen extends StatefulWidget {
 }
 
 class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
-  final FlutterTts _tts = FlutterTts();
-  final AudioPlayer _cloudVoicePlayer = AudioPlayer();
   final Random _rng = Random();
 
   final TextEditingController _teamACtrl = TextEditingController(text: 'Karnataka Lions');
@@ -37,7 +34,7 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
   int _wickets = 0;
   int _legalBalls = 0;
   bool _freeHit = false;
-  List<String> _thisOver = [];
+  final List<String> _thisOver = [];
   final List<String> _feed = [];
   final Set<String> _usedTournamentLines = {};
 
@@ -48,14 +45,17 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
   }
 
   void _loadSquads() {
-    _squadA = _squadACtrl.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-    _squadB = _squadBCtrl.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-    if (_squadA.isNotEmpty && !_squadA.contains(_striker)) _striker = _squadA[0];
-    if (_squadA.length > 1 && !_squadA.contains(_nonStriker)) _nonStriker = _squadA[1];
-    if (_squadB.isNotEmpty && !_squadB.contains(_wk)) _wk = _squadB[0];
-    if (_squadB.length > 1 && !_squadB.contains(_bowler)) _bowler = _squadB[1];
-    if (_squadB.length > 2 && !_squadB.contains(_fielder)) _fielder = _squadB[2];
-    setState(() {});
+    final parsedA = _squadACtrl.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toSet().toList();
+    final parsedB = _squadBCtrl.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toSet().toList();
+    _squadA = parsedA.isEmpty ? ['Player 1', 'Player 2'] : parsedA;
+    _squadB = parsedB.isEmpty ? ['Bowler 1', 'Keeper 1', 'Fielder 1'] : parsedB;
+
+    if (!_squadA.contains(_striker)) _striker = _squadA[0];
+    if (!_squadA.contains(_nonStriker)) _nonStriker = _squadA.length > 1 ? _squadA[1] : _squadA[0];
+    if (!_squadB.contains(_wk)) _wk = _squadB[0];
+    if (!_squadB.contains(_bowler)) _bowler = _squadB.length > 1 ? _squadB[1] : _squadB[0];
+    if (!_squadB.contains(_fielder)) _fielder = _squadB.length > 2 ? _squadB[2] : _squadB[0];
+    if (mounted) setState(() {});
   }
 
   void _swapStrike() {
@@ -66,9 +66,7 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
     });
   }
 
-  String _oversText() {
-    return (_legalBalls ~/ 6).toString() + '.' + (_legalBalls % 6).toString();
-  }
+  String _oversText() => (_legalBalls ~/ 6).toString() + '.' + (_legalBalls % 6).toString();
 
   String _generateNonRepeatingLine(String eventType) {
     final teamA = _teamACtrl.text.trim();
@@ -106,7 +104,6 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
         case 'CAUGHT_WK':
           pool = [
             'ಬ್ಯಾಟ್‌ನ ಅಂಚಿಗೆ ತಗುಲಿ ವಿಕೆಟ್ ಕೀಪರ್ ಕೈ ಸೇರಿದೆ! ' + _bowler + ' ಎಸೆತದಲ್ಲಿ ವಿಕೆಟ್ ಕೀಪರ್ ' + _wk + ' ಅದ್ಭುತ ಕ್ಯಾಚ್ ಹಿಡಿದಿದ್ದಾರೆ! ' + _striker + ' ಔಟ್!',
-            'ಕಾಟ್ ಬಿಹೈಂಡ್! ವಿಕೆಟ್ ಹಿಂದೆ ' + _wk + ' ಮಿಂಚಿನ ವೇಗದಲ್ಲಿ ಕ್ಯಾಚ್ ಹಿಡಿದಿದ್ದಾರೆ!'
           ];
           break;
         case 'RUN_OUT':
@@ -117,7 +114,7 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
           break;
         case 'STUMPED':
           pool = [
-            'ಮಿಂಚಿನ ಸ್ಟಂಪಿಂಗ್! ' + _striker + ' ಮುಂದೆ ಬಂದು ಹೊಡೆಯಲು ಪ್ರಯತ್ನಿಸಿದರು, ಆದರೆ ವಿಕೆಟ್ ಕೀಪರ್ ' + _wk + ' ಕ್ಷಣಮಾತ್ರದಲ್ಲಿ ಬೇಲ್ಸ್ ಹಾರಿಸಿದ್ದಾರೆ!',
+            'ಮಿಂಚಿನ ಸ್ಟಂಪಿಂಗ್! ' + _striker + ' ಮುಂದೆ ಬಂದು ಹೊಡೆಯಲು ಪ್ರಯತ್ನಿಸಿದರು, ಆದರೆ ವಿಕೆಟ್ ಕೀಪರ್ ' + _wk + ' ಕ್ಷಣಮಾತ್ರದಲ್ಲಿ ಬೇಲ್ಸ್ ಹಾರಿಸಿದ್ದಾರೆ!'
           ];
           break;
         case 'LBW':
@@ -145,6 +142,11 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
             'ಅದ್ಭುತ ಓಟ! ' + _striker + ' ಮತ್ತು ' + _nonStriker + ' ಫೀಲ್ಡರ್ ' + _fielder + ' ಚೆಂಡನ್ನು ಎಸೆಯುವಷ್ಟರಲ್ಲಿ ಎರಡು ರನ್ ಪೂರೈಸಿದ್ದಾರೆ!'
           ];
           break;
+        case 'RUN_3':
+          pool = [
+            'ಮೂರು ರನ್‌ಗಳು! ' + _striker + ' ಮತ್ತು ' + _nonStriker + ' ಮಿಂಚಿನ ವೇಗದಲ್ಲಿ ಓಡಿ ಮೂರು ರನ್ ಪೂರೈಸಿದ್ದಾರೆ!'
+          ];
+          break;
         default:
           pool = [
             'ಡಾಟ್ ಬಾಲ್! ' + _bowler + ' ಅವರ ನಿಖರವಾದ ಎಸೆತವನ್ನು ' + _striker + ' ರಕ್ಷಣಾತ್ಮಕವಾಗಿ ಆಡಿದ್ದಾರೆ. ಯಾವುದೇ ರನ್ ಇಲ್ಲ!'
@@ -155,8 +157,7 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
         case 'SIX':
           pool = [
             'शानदार छक्का! ' + _bowler + ' की गेंद पर ' + _striker + ' का गगनचुंबी प्रहार! गेंद सीधा स्टेडियम के बाहर छह रनों के लिए!',
-            'धमाकेदार सिक्सर! ' + _striker + ' ने फ्रंट फुट हटाया और गेंद को दर्शकों के बीच पहुंचा दिया! कमाल की बल्लेबाज़ी!',
-            'बल्ले के बीचो-बीच लगी गेंद! ' + _fielder + ' सिर्फ दर्शक बनकर देखते रह गए और गेंद सीमा रेखा के पार छह रन!'
+            'धमाकेदार सिक्सर! ' + _striker + ' ने फ्रंट फुट हटाया और गेंद को दर्शकों के बीच पहुंचा दिया! कमाल की बल्लेबाज़ी!'
           ];
           break;
         case 'FOUR':
@@ -168,13 +169,12 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
         case 'BOWLED':
           pool = [
             'बैटरी बोल्ड! क्लीन बोल्ड! ' + _bowler + ' की सटीक यॉर्कर ने ' + _striker + ' के स्टंप्स हवा में उड़ा दिए! गिल्लियां विकेटकीपर ' + _wk + ' के पास जा गिरीं!',
-            'डंडे बिखर गए! बैटरी बोल्ड! ' + _bowler + ' की रफ़्तार का ' + _striker + ' के पास कोई जवाब नहीं था! बोल्ड होकर पवेलियन लौटते हुए!'
+            'डंडे बिखर गए! बैटरी बोल्ड! ' + _bowler + ' की रफ़्तार का ' + _striker + ' के पास कोई जवाब नहीं था!'
           ];
           break;
         case 'CAUGHT':
           pool = [
-            'हवा में गेंद और शानदार कैच! ' + _striker + ' ने बड़ा शॉट खेलने की कोशिश की लेकिन फील्डर ' + _fielder + ' ने बाउंड्री पर बेहतरीन कैच लपका!',
-            'क्या कैच पकड़ा है ' + _fielder + ' ने! ' + _bowler + ' को मिली बड़ी सफलता, ' + _striker + ' आउट!'
+            'हवा में गेंद और शानदार कैच! ' + _striker + ' ने बड़ा शॉट खेलने की कोशिश की लेकिन फील्डर ' + _fielder + ' ने बाउंड्री पर बेहतरीन कैच लपका!'
           ];
           break;
         case 'CAUGHT_WK':
@@ -217,6 +217,11 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
             'गैप में शॉट और तेज़ दौड़! ' + _fielder + ' के थ्रो से पहले ' + _striker + ' और ' + _nonStriker + ' ने दो रन पूरे किए!'
           ];
           break;
+        case 'RUN_3':
+          pool = [
+            'शानदार रनिंग! ' + _striker + ' और ' + _nonStriker + ' ने चीते की रफ़्तार से दौड़कर तीन रन पूरे किए!'
+          ];
+          break;
         default:
           pool = [
             'डॉट बॉल! ' + _bowler + ' की सटीक लाइन और लेंथ, ' + _striker + ' ने सम्मान दिया। कोई रन नहीं!'
@@ -226,8 +231,7 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
       switch (eventType) {
         case 'SIX':
           pool = [
-            'MONSTER MAXIMUM! ' + _striker + ' picks up the length from ' + _bowler + ' and launches it high into the upper tier for SIX!',
-            'OUT OF THE PARK! ' + _striker + ' clears the front leg and smashes ' + _bowler + ' over ' + _fielder + ' for a massive SIX!'
+            'MONSTER MAXIMUM! ' + _striker + ' picks the length from ' + _bowler + ' and launches it high into the upper tier for SIX!'
           ];
           break;
         case 'FOUR':
@@ -237,13 +241,12 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
           break;
         case 'BOWLED':
           pool = [
-            'BATTERY BOLD! CLEAN BOWLED! TIMBER! ' + _bowler + ' fires an unplayable yorker that shatters ' + _striker + 's stumps right in front of keeper ' + _wk + '!',
-            'CASTLED HIM! BATTERY BOLD! ' + _bowler + ' uproots the middle stump! What a sensational delivery!'
+            'BATTERY BOLD! CLEAN BOWLED! TIMBER! ' + _bowler + ' fires an unplayable yorker that shatters ' + _striker + 's stumps right in front of keeper ' + _wk + '!'
           ];
           break;
         case 'CAUGHT':
           pool = [
-            'TAKEN IN THE DEEP! ' + _striker + ' mistimes the lofted drive and ' + _fielder + ' pouches a clinical catch off ' + _bowler + '!'
+            'TAKEN IN THE DEEP! ' + _striker + ' mistimes the lofted shot and ' + _fielder + ' pouches a clinical catch off ' + _bowler + '!'
           ];
           break;
         case 'CAUGHT_WK':
@@ -286,6 +289,11 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
             'Punched into the pocket by ' + _striker + '! They sprint back hard for two runs before ' + _fielder + ' can relay the throw!'
           ];
           break;
+        case 'RUN_3':
+          pool = [
+            'Exquisite placement by ' + _striker + '! They sprint three hard runs before ' + _fielder + ' can cut it off!'
+          ];
+          break;
         default:
           pool = [
             'Solid front-foot defense by ' + _striker + ' back to ' + _bowler + '. Dot ball pressure building!'
@@ -294,41 +302,15 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
     }
 
     String chosen = pool[_rng.nextInt(pool.length)];
+    final catchphrase = VoiceCloneProfileStore.activeProfile.catchphrase.trim();
+    if (catchphrase.isNotEmpty) {
+      chosen = catchphrase + '! ' + chosen;
+    }
     if (_usedTournamentLines.contains(chosen)) {
-      chosen = chosen + ' (' + _oversText() + ' ಓವರ್ / Over)';
+      chosen = chosen + ' [' + _runs.toString() + '/' + _wickets.toString() + ' • ' + _oversText() + ' Ov]';
     }
     _usedTournamentLines.add(chosen);
     return chosen;
-  }
-
-  Future<void> _speakWithClonedVoice(String text) async {
-    final profile = VoiceCloneProfileStore.activeProfile;
-    String langCode = 'kn-IN';
-    String tlParam = 'kn';
-    if (_commLanguage == 'HINDI') {
-      langCode = 'hi-IN';
-      tlParam = 'hi';
-    } else if (_commLanguage == 'ENGLISH') {
-      langCode = 'en-IN';
-      tlParam = 'en';
-    }
-
-    try {
-      await _tts.setLanguage(langCode);
-      await _tts.setPitch(profile.pitch);
-      await _tts.setSpeechRate(profile.speed);
-      await _tts.speak(text);
-    } catch (_) {}
-
-    // Cloud Neural Voice Fallback so Kannada/Hindi works even if local TTS voice pack is missing
-    if (profile.useCloudNeuralBackup) {
-      try {
-        final safeQuery = Uri.encodeComponent(text.length > 180 ? text.substring(0, 180) : text);
-        final url = 'https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=' + tlParam + '&q=' + safeQuery;
-        await _cloudVoicePlayer.play(UrlSource(url));
-        await _cloudVoicePlayer.setPlaybackRate(profile.speed.clamp(0.7, 1.4));
-      } catch (_) {}
-    }
   }
 
   void _triggerBall(String eventType) {
@@ -354,6 +336,11 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
       case 'RUN_2':
         _runs += 2;
         badge = '2';
+        break;
+      case 'RUN_3':
+        _runs += 3;
+        rotate = true;
+        badge = '3';
         break;
       case 'FOUR':
         _runs += 4;
@@ -413,11 +400,13 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
       }
     });
 
-    _speakWithClonedVoice(line);
+    // Play Stadium SFX + Speak Real Voice Commentary
+    AppSoundEngine.playSynthesizedSfx(eventType);
+    AppSoundEngine.speakRealVoice(line, _commLanguage);
   }
 
   Widget _buildRoleDropdown(String label, String currentValue, List<String> items, ValueChanged<String?> onChanged) {
-    final safeItems = items.contains(currentValue) ? items : [currentValue, ...items];
+    final uniqueItems = <String>{currentValue, ...items}.toList();
     return Expanded(
       child: Container(
         margin: const EdgeInsets.all(3),
@@ -432,8 +421,7 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
             value: currentValue,
             isExpanded: true,
             style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
-            items: safeItems
-                .toSet()
+            items: uniqueItems
                 .map((p) => DropdownMenuItem(value: p, child: Text(label + ': ' + p, overflow: TextOverflow.ellipsis)))
                 .toList(),
             onChanged: onChanged,
@@ -448,7 +436,7 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
     return ListView(
       padding: const EdgeInsets.all(10),
       children: [
-        // Live Scoreboard Banner
+        // Stadium Scoreboard Card
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -494,7 +482,7 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
         ),
         const SizedBox(height: 8),
 
-        // Commentary Language Selector (Kannada / Hindi / English)
+        // Language Selector (Kannada / Hindi / English)
         Row(
           children: ['KANNADA', 'HINDI', 'ENGLISH'].map((lang) {
             final active = (_commLanguage == lang);
@@ -515,11 +503,11 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
         ),
         const SizedBox(height: 8),
 
-        // Step 1: Manual Team & Squad Entry
+        // Step 1: Team & Squad Editor
         ExpansionTile(
           collapsedBackgroundColor: const Color(0xFF11192B),
           backgroundColor: const Color(0xFF11192B),
-          title: const Text('📋 Step 1: Edit Team Names & 11-Player Squads',
+          title: const Text('📋 Step 1: Enter Team Names & 11-Player Squads',
               style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF00E5FF))),
           children: [
             Padding(
@@ -581,18 +569,19 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
         ),
         const SizedBox(height: 8),
 
-        // Step 3: Post-Bowling Parameter Trigger Buttons
+        // Step 3: Post-Bowling Parameter Trigger Pad
         GridView.count(
           crossAxisCount: 3,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           mainAxisSpacing: 6,
           crossAxisSpacing: 6,
-          childAspectRatio: 2.1,
+          childAspectRatio: 2.15,
           children: [
             _actionButton('0 • DOT', Colors.blueGrey, () => _triggerBall('DOT')),
             _actionButton('1 • SINGLE', Colors.teal, () => _triggerBall('RUN_1')),
             _actionButton('2 • DOUBLE', Colors.teal, () => _triggerBall('RUN_2')),
+            _actionButton('3 • THREE', Colors.teal.shade700, () => _triggerBall('RUN_3')),
             _actionButton('4 • FOUR!', Colors.blueAccent, () => _triggerBall('FOUR')),
             _actionButton('6 • SIXER!', Colors.deepPurpleAccent, () => _triggerBall('SIX')),
             _actionButton('🔥 BATTERY BOLD', Colors.redAccent, () => _triggerBall('BOWLED')),
@@ -637,7 +626,7 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
                 const Text('Tap any run or wicket button above to hear live Kannada/Hindi/English commentary!',
                     style: TextStyle(fontSize: 12, color: Colors.white70))
               else
-                ..._feed.take(8).map((line) => Padding(
+                ..._feed.take(10).map((line) => Padding(
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       child: Text(line, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                     )),

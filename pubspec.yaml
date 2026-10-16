@@ -1,7 +1,7 @@
 name: dj_player
-description: DJ Play and Commentry App - World 320kbps Audio & Kannada/Hindi Cricket Commentary
+description: DJ Play and Commentry App
 publish_to: 'none'
-version: 20.0.0+40
+version: 21.0.0+41
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -11,7 +11,6 @@ dependencies:
     sdk: flutter
   http: any
   audioplayers: any
-  flutter_tts: any
   shared_preferences: any
   path_provider: any
 

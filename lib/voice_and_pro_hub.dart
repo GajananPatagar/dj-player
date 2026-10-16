@@ -1,17 +1,19 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter_tts/flutter_tts.dart';
+import 'main.dart';
 
 class VoiceCloneProfile {
   String name;
   double pitch;
   double speed;
+  String catchphrase;
   bool useCloudNeuralBackup;
 
   VoiceCloneProfile({
     required this.name,
     required this.pitch,
     required this.speed,
+    this.catchphrase = '',
     this.useCloudNeuralBackup = true,
   });
 }
@@ -21,14 +23,15 @@ class VoiceCloneProfileStore {
     name: 'Pro Stadium Commentator (Default)',
     pitch: 1.08,
     speed: 1.02,
+    catchphrase: '',
     useCloudNeuralBackup: true,
   );
 
   static final List<VoiceCloneProfile> presets = [
-    VoiceCloneProfile(name: 'Kannada Josh RJ Voice', pitch: 1.15, speed: 1.08),
-    VoiceCloneProfile(name: 'Hindi IPL Dhamaka Voice', pitch: 1.12, speed: 1.10),
-    VoiceCloneProfile(name: 'Deep Baritone Legend Voice', pitch: 0.82, speed: 0.96),
-    VoiceCloneProfile(name: 'Fast High-Energy Youth Voice', pitch: 1.28, speed: 1.18),
+    VoiceCloneProfile(name: 'Kannada Josh RJ Voice', pitch: 1.15, speed: 1.08, catchphrase: 'ಸೂಪರ್ ಗುರು'),
+    VoiceCloneProfile(name: 'Hindi IPL Dhamaka Voice', pitch: 1.12, speed: 1.10, catchphrase: 'क्या बात है'),
+    VoiceCloneProfile(name: 'Deep Baritone Legend Voice', pitch: 0.82, speed: 0.96, catchphrase: ''),
+    VoiceCloneProfile(name: 'Fast High-Energy Youth Voice', pitch: 1.28, speed: 1.18, catchphrase: ''),
   ];
 }
 
@@ -40,8 +43,8 @@ class VoiceCloneAndProHubScreen extends StatefulWidget {
 }
 
 class _VoiceCloneAndProHubScreenState extends State<VoiceCloneAndProHubScreen> {
-  final FlutterTts _tts = FlutterTts();
   final TextEditingController _speakerNameCtrl = TextEditingController(text: 'Custom Speaker Sample #1');
+  final TextEditingController _catchphraseCtrl = TextEditingController(text: 'ಬೆಂಕಿ ಶಾಟ್');
 
   bool _isSamplingMic = false;
   int _sampleSeconds = 0;
@@ -49,12 +52,17 @@ class _VoiceCloneAndProHubScreenState extends State<VoiceCloneAndProHubScreen> {
   double _detectedPitch = 1.08;
   double _detectedSpeed = 1.04;
 
-  // NRR & DLS Calculator Controllers
   final TextEditingController _runsScoredCtrl = TextEditingController(text: '185');
   final TextEditingController _oversFacedCtrl = TextEditingController(text: '20');
   final TextEditingController _runsConcededCtrl = TextEditingController(text: '162');
   final TextEditingController _oversBowledCtrl = TextEditingController(text: '20');
   String _nrrResult = '+1.150 NRR';
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
 
   void _startVoiceSampling() {
     setState(() {
@@ -63,6 +71,10 @@ class _VoiceCloneAndProHubScreenState extends State<VoiceCloneAndProHubScreen> {
     });
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
       if (_sampleSeconds >= 5) {
         t.cancel();
         _finishVoiceCloneExtraction();
@@ -77,6 +89,7 @@ class _VoiceCloneAndProHubScreenState extends State<VoiceCloneAndProHubScreen> {
       name: _speakerNameCtrl.text.trim().isEmpty ? 'Sampled Real Voice' : _speakerNameCtrl.text.trim(),
       pitch: _detectedPitch,
       speed: _detectedSpeed,
+      catchphrase: _catchphraseCtrl.text.trim(),
       useCloudNeuralBackup: true,
     );
     setState(() {
@@ -87,12 +100,12 @@ class _VoiceCloneAndProHubScreenState extends State<VoiceCloneAndProHubScreen> {
     _testClonedVoice();
   }
 
-  Future<void> _testClonedVoice() async {
+  void _testClonedVoice() {
     final p = VoiceCloneProfileStore.activeProfile;
-    await _tts.setLanguage('kn-IN');
-    await _tts.setPitch(p.pitch);
-    await _tts.setSpeechRate(p.speed);
-    await _tts.speak('ನಮಸ್ಕಾರ! ಇದು ' + p.name + ' ಧ್ವನಿಯಲ್ಲಿ ನೇರ ಕ್ರಿಕೆಟ್ ವೀಕ್ಷಕ ವಿವರಣೆ!');
+    AppSoundEngine.speakRealVoice(
+      'ನಮಸ್ಕಾರ! ಇದು ' + p.name + ' ಧ್ವನಿಯಲ್ಲಿ ನೇರ ಕ್ರಿಕೆಟ್ ವೀಕ್ಷಕ ವಿವರಣೆ!',
+      'KANNADA',
+    );
   }
 
   void _calcNrr() {
@@ -129,7 +142,7 @@ class _VoiceCloneAndProHubScreenState extends State<VoiceCloneAndProHubScreen> {
               ),
               const SizedBox(height: 4),
               const Text(
-                'Have anyone speak for 5 seconds into the mic—the app locks onto their pitch, speed & resonance for all Kannada, Hindi & English match commentary!',
+                'Have anyone speak for 5 seconds into the mic—the app locks onto their pitch, cadence & signature catchphrase for all Kannada, Hindi & English commentary!',
                 style: TextStyle(fontSize: 11, color: Colors.white70),
               ),
               const SizedBox(height: 10),
@@ -137,6 +150,15 @@ class _VoiceCloneAndProHubScreenState extends State<VoiceCloneAndProHubScreen> {
                 controller: _speakerNameCtrl,
                 decoration: const InputDecoration(
                   labelText: 'Speaker / Commentator Name',
+                  filled: true,
+                  fillColor: Color(0xFF090D16),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _catchphraseCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Speaker Signature Catchphrase (Spoken on Shots/Wickets)',
                   filled: true,
                   fillColor: Color(0xFF090D16),
                 ),
@@ -151,10 +173,10 @@ class _VoiceCloneAndProHubScreenState extends State<VoiceCloneAndProHubScreen> {
                         foregroundColor: Colors.black,
                         padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
-                      icon: Icon(_isSamplingMic ? Icons.mic : Icons.Spatial_audio_off),
+                      icon: Icon(_isSamplingMic ? Icons.mic : Icons.equalizer),
                       label: Text(
                         _isSamplingMic
-                            ? 'Listening Sample... (' + (5 - _sampleSeconds).toString() + 's)'
+                            ? 'Sampling Voice... (' + (5 - _sampleSeconds).toString() + 's)'
                             : '🎙 Record 5s Sample Voice & Clone',
                         style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
                       ),
@@ -200,7 +222,52 @@ class _VoiceCloneAndProHubScreenState extends State<VoiceCloneAndProHubScreen> {
         ),
         const SizedBox(height: 12),
 
-        // Saved Voice Clones List
+        // 2. Live Stadium & DJ Soundboard FX Pads
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: const Color(0xFF11192B),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.amber),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('🎛 INSTANT DJ & STADIUM FX SOUNDBOARD (100% OFFLINE SYNTH)',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.amberAccent)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ElevatedButton(
+                    onPressed: () => AppSoundEngine.playSynthesizedSfx('AIRHORN'),
+                    child: const Text('📢 DJ Airhorn'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () => AppSoundEngine.playSynthesizedSfx('LASER'),
+                    child: const Text('⚡ Laser Drop'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () => AppSoundEngine.playSynthesizedSfx('CROWD'),
+                    child: const Text('🏟 Crowd Roar'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () => AppSoundEngine.playSynthesizedSfx('BOWLED'),
+                    child: const Text('🪵 Stump Crash'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () => AppSoundEngine.playSynthesizedSfx('NO_BALL'),
+                    child: const Text('🚨 Free-Hit Siren'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // 3. Saved Voice Clones
         const Text('🎭 Saved Commentator Voice Profiles',
             style: TextStyle(fontWeight: FontWeight.bold, color: Colors.amber)),
         const SizedBox(height: 6),
@@ -223,7 +290,7 @@ class _VoiceCloneAndProHubScreenState extends State<VoiceCloneAndProHubScreen> {
         }),
         const SizedBox(height: 12),
 
-        // Tournament NRR & Pro Suite
+        // 4. Tournament NRR Calculator
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(

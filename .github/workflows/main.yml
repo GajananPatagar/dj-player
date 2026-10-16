@@ -27,22 +27,76 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Generate Android Platform Shell if Missing
+      - name: Safely Generate Android Folder Without Touching lib/main.dart
         run: |
           if [ ! -d "android" ]; then
-            flutter create --org com.gajanan.djplaycommentry --project-name dj_player .
+            flutter create --platforms=android --org com.gajanan.djplaycommentry --project-name dj_player /tmp/shell
+            cp -r /tmp/shell/android ./android
+          fi
+          echo "Verifying lib/main.dart entry point:"
+          grep -n "void main()" lib/main.dart
+
+      - name: Inject Native Android Hardware TTS Into MainActivity.kt (Zero KGP Plugin Warning)
+        run: |
+          MAIN_KT=$(find android/app/src/main -name "MainActivity.kt" | head -n 1)
+          if [ -n "$MAIN_KT" ]; then
+            PKG_LINE=$(head -n 1 "$MAIN_KT")
+            cat << 'KTEOF' > "$MAIN_KT"
+          $PKG_LINE
+          import android.os.Bundle
+          import android.speech.tts.TextToSpeech
+          import io.flutter.embedding.android.FlutterActivity
+          import io.flutter.embedding.engine.FlutterEngine
+          import io.flutter.plugin.common.MethodChannel
+          import java.util.Locale
+
+          class MainActivity: FlutterActivity(), TextToSpeech.OnInitListener {
+              private var tts: TextToSpeech? = null
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  tts = TextToSpeech(this, this)
+              }
+              override fun onInit(status: Int) {}
+              override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+                  super.configureFlutterEngine(flutterEngine)
+                  MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dj_native_tts").setMethodCallHandler { call, result ->
+                      if (call.method == "speak") {
+                          val text = call.argument<String>("text") ?: ""
+                          val lang = call.argument<String>("lang") ?: "kn-IN"
+                          val pitch = (call.argument<Double>("pitch") ?: 1.0).toFloat()
+                          val rate = (call.argument<Double>("rate") ?: 1.0).toFloat()
+                          tts?.language = Locale.forLanguageTag(lang)
+                          tts?.setPitch(pitch)
+                          tts?.setSpeechRate(rate)
+                          tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "dj_utt")
+                          result.success(true)
+                      } else {
+                          result.notImplemented()
+                      }
+                  }
+              }
+              override fun onDestroy() {
+                  tts?.stop()
+                  tts?.shutdown()
+                  super.onDestroy()
+              }
+          }
+          KTEOF
+            sed -i "s|\$PKG_LINE|$PKG_LINE|g" "$MAIN_KT"
           fi
 
-      - name: Set App Name to "DJ Play and Commentry App" & Permissions & High-Class Icon
+      - name: Set App Name to "DJ Play and Commentry App", Cleartext HTTP & High-Class Icon
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST" ]; then
             sed -i 's/android:label="[^"]*"/android:label="DJ Play and Commentry App"/g' "$MANIFEST"
+            if ! grep -q "usesCleartextTraffic" "$MANIFEST"; then
+              sed -i 's/<application/<application android:usesCleartextTraffic="true"/' "$MANIFEST"
+            fi
             if ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
               sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <uses-permission android:name="android.permission.RECORD_AUDIO"\/>\n    <application/' "$MANIFEST"
             fi
           fi
-          # Inject High-Class Icon into all Android mipmap folders
           if [ -f "assets/icon.png" ]; then
             for dir in android/app/src/main/res/mipmap-*; do
               if [ -d "$dir" ]; then
@@ -53,7 +107,7 @@ jobs:
             rm -rf android/app/src/main/res/mipmap-anydpi-v26
           fi
 
-      - name: Install Flutter Dependencies & Build Release APK
+      - name: Install Dependencies & Build Release APK
         run: |
           flutter pub get
           flutter build apk --release --no-tree-shake-icons

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -12,81 +13,129 @@ void main() {
   runApp(const DjPlayCommentaryApp());
 }
 
-/// Zero-Error Native + Cloud Neural Voice & In-Memory WAV SFX Engine
 class AppSoundEngine {
-  static const MethodChannel _nativeTts = MethodChannel('dj_native_tts');
+  static const MethodChannel _nativeChannel = MethodChannel('dj_native_tts');
   static final AudioPlayer _voicePlayer = AudioPlayer();
   static final AudioPlayer _sfxPlayer = AudioPlayer();
+  static bool _isSpeakingLock = false;
 
-  static Future<void> speakRealVoice(String text, String langMode) async {
+  /// Speaks with ONLY ONE engine at a time (Zero Double Voice!)
+  /// Priority 1: User's Real Recorded Human Voice Clip (if recorded for this event)
+  /// Priority 2: Android High-Definition Natural Neural Voice (or Cloud Neural if selected)
+  static Future<void> speakRealVoice(String text, String langMode, {String? eventKey}) async {
     if (text.trim().isEmpty) return;
-    final profile = VoiceCloneProfileStore.activeProfile;
-
-    String locale = 'kn-IN';
-    String tl = 'kn';
-    if (langMode == 'HINDI') {
-      locale = 'hi-IN';
-      tl = 'hi';
-    } else if (langMode == 'ENGLISH') {
-      locale = 'en-IN';
-      tl = 'en';
-    }
-
-    // 1. Try Native Android Hardware TTS (Zero KGP warning, supports exact pitch + rate)
-    try {
-      await _nativeTts.invokeMethod('speak', {
-        'text': text,
-        'lang': locale,
-        'pitch': profile.pitch,
-        'rate': profile.speed,
-      });
-    } catch (_) {}
-
-    // 2. Cloud Neural Voice Stream Backup (Guarantees Kannada/Hindi voice on every device)
-    if (profile.useCloudNeuralBackup) {
+    if (_isSpeakingLock) {
       try {
-        final chunks = _splitTextIntoChunks(text, 160);
-        final firstChunk = Uri.encodeComponent(chunks.first);
-        final url = 'https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=' + tl + '&q=' + firstChunk;
+        await _nativeChannel.invokeMethod('stopSpeak');
         await _voicePlayer.stop();
-        await _voicePlayer.play(UrlSource(url));
-        await _voicePlayer.setPlaybackRate(profile.speed.clamp(0.65, 1.45));
       } catch (_) {}
     }
+    _isSpeakingLock = true;
+
+    try {
+      final profile = VoiceCloneProfileStore.activeProfile;
+
+      // 1. If user recorded a real human voice clip for this ball outcome, play their REAL voice!
+      if (eventKey != null) {
+        final String? recordedPath = VoiceCloneProfileStore.recordedEventClips[eventKey];
+        if (recordedPath != null && File(recordedPath).existsSync()) {
+          await _voicePlayer.stop();
+          await _voicePlayer.play(DeviceFileSource(recordedPath));
+          _isSpeakingLock = false;
+          return;
+        }
+      }
+
+      String locale = 'kn-IN';
+      String tl = 'kn';
+      if (langMode == 'HINDI') {
+        locale = 'hi-IN';
+        tl = 'hi';
+      } else if (langMode == 'ENGLISH') {
+        locale = 'en-IN';
+        tl = 'en';
+      }
+
+      // 2. Single Engine Selection: Never run Native TTS and Cloud TTS at the same time!
+      if (!profile.preferCloudVoiceOnly) {
+        final bool? nativeSpoke = await _nativeChannel.invokeMethod<bool>('speak', {
+          'text': text,
+          'lang': locale,
+          'pitch': profile.pitch,
+          'rate': profile.speed,
+        });
+        if (nativeSpoke == true) {
+          _isSpeakingLock = false;
+          return;
+        }
+      }
+
+      // 3. Fallback (or user-selected) Single Cloud Neural Broadcast Stream
+      final String cleanText = text.length > 185 ? text.substring(0, 185) : text;
+      final String url = 'https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=' +
+          tl +
+          '&q=' +
+          Uri.encodeComponent(cleanText);
+      await _voicePlayer.stop();
+      await _voicePlayer.play(UrlSource(url));
+      await _voicePlayer.setPlaybackRate(profile.speed.clamp(0.75, 1.35));
+    } catch (_) {
+    } finally {
+      _isSpeakingLock = false;
+    }
   }
 
-  static List<String> _splitTextIntoChunks(String text, int maxLen) {
-    if (text.length <= maxLen) return [text];
-    return [text.substring(0, maxLen)];
+  static Future<String?> startMicRecording(String fileName) async {
+    try {
+      return await _nativeChannel.invokeMethod<String>('startRecord', {'name': fileName});
+    } catch (_) {
+      return null;
+    }
   }
 
-  /// Generates real 16-bit PCM WAV audio in memory so SFX never fail offline
+  static Future<String?> stopMicRecording() async {
+    try {
+      return await _nativeChannel.invokeMethod<String>('stopRecord');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> playRecordedFile(String path) async {
+    try {
+      if (File(path).existsSync()) {
+        await _voicePlayer.stop();
+        await _voicePlayer.play(DeviceFileSource(path));
+      }
+    } catch (_) {}
+  }
+
   static Future<void> playSynthesizedSfx(String type) async {
     try {
       final bytes = _buildWavBytes(type);
       await _sfxPlayer.stop();
+      await _sfxPlayer.setVolume(0.45); // Balanced so it never drowns out commentary
       await _sfxPlayer.play(BytesSource(bytes));
     } catch (_) {}
   }
 
   static Uint8List _buildWavBytes(String type) {
     const int sampleRate = 22050;
-    final double durationSec = (type == 'CROWD' || type == 'SIX') ? 1.4 : 0.45;
+    final double durationSec = (type == 'CROWD' || type == 'SIX') ? 0.9 : 0.35;
     final int numSamples = (sampleRate * durationSec).toInt();
     final int dataSize = numSamples * 2;
     final ByteData bd = ByteData(44 + dataSize);
 
-    // WAV RIFF Header
     final header = [
-      0x52, 0x49, 0x46, 0x46, // "RIFF"
+      0x52, 0x49, 0x46, 0x46,
       ..._int32Le(36 + dataSize),
-      0x57, 0x41, 0x56, 0x45, // "WAVE"
-      0x66, 0x6D, 0x74, 0x20, // "fmt "
+      0x57, 0x41, 0x56, 0x45,
+      0x66, 0x6D, 0x74, 0x20,
       16, 0, 0, 0, 1, 0, 1, 0,
       ..._int32Le(sampleRate),
       ..._int32Le(sampleRate * 2),
       2, 0, 16, 0,
-      0x64, 0x61, 0x74, 0x61, // "data"
+      0x64, 0x61, 0x74, 0x61,
       ..._int32Le(dataSize),
     ];
     for (int i = 0; i < header.length; i++) {
@@ -100,22 +149,18 @@ class AppSoundEngine {
       double sample = 0.0;
 
       if (type == 'BOWLED') {
-        // Wooden stump crash ("Battery Bold")
-        sample = (sin(2 * pi * (180 - t * 250) * t) * 0.6 + (rng.nextDouble() * 2 - 1) * 0.4) * env;
+        sample = (sin(2 * pi * (175 - t * 220) * t) * 0.55 + (rng.nextDouble() * 2 - 1) * 0.35) * env;
       } else if (type == 'NO_BALL') {
-        // Broadcast No-Ball Siren
-        final freq = 480 + 320 * sin(2 * pi * 6 * t);
-        sample = sin(2 * pi * freq * t) * 0.75 * env;
+        final freq = 460 + 280 * sin(2 * pi * 6 * t);
+        sample = sin(2 * pi * freq * t) * 0.65 * env;
       } else if (type == 'AIRHORN') {
-        // DJ Stadium Airhorn
-        sample = (sin(2 * pi * 390 * t) + 0.6 * sin(2 * pi * 780 * t) + 0.4 * sin(2 * pi * 585 * t)) * 0.45 * env;
+        sample = (sin(2 * pi * 390 * t) + 0.6 * sin(2 * pi * 780 * t)) * 0.45 * env;
       } else if (type == 'LASER') {
-        final freq = 1400 - (t * 2400);
-        sample = sin(2 * pi * freq.clamp(120, 1600) * t) * 0.7 * env;
+        final freq = 1350 - (t * 2300);
+        sample = sin(2 * pi * freq.clamp(110, 1500) * t) * 0.6 * env;
       } else {
-        // Bat Crack + Stadium Crowd Roar
-        final crack = (t < 0.06) ? sin(2 * pi * 540 * t) * 0.9 : 0.0;
-        final roar = (rng.nextDouble() * 2 - 1) * 0.35 * env;
+        final crack = (t < 0.045) ? sin(2 * pi * 520 * t) * 0.85 : 0.0;
+        final roar = (rng.nextDouble() * 2 - 1) * 0.25 * env;
         sample = (crack + roar).clamp(-1.0, 1.0);
       }
 
@@ -194,7 +239,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> {
                     style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Color(0xFF00E5FF)),
                   ),
                   Text(
-                    '320kbps World Audio • Kannada/Hindi Real Voice AI',
+                    'Full-Length 320kbps Top 50 • Real Single Voice AI',
                     style: TextStyle(fontSize: 10, color: Colors.amberAccent),
                   ),
                 ],
@@ -223,9 +268,9 @@ class _MasterHomeShellState extends State<MasterHomeShell> {
         type: BottomNavigationBarType.fixed,
         selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.library_music), label: '1. World DJ Audio'),
-          BottomNavigationBarItem(icon: Icon(Icons.sports_cricket), label: '2. Live Commentary'),
-          BottomNavigationBarItem(icon: Icon(Icons.record_voice_over), label: '3. Voice Clone & Pro'),
+          BottomNavigationBarItem(icon: Icon(Icons.library_music), label: '1. Top 50 Full Audio'),
+          BottomNavigationBarItem(icon: Icon(Icons.sports_cricket), label: '2. Pro Commentary'),
+          BottomNavigationBarItem(icon: Icon(Icons.record_voice_over), label: '3. Real Voice & 50+ FX'),
         ],
       ),
     );

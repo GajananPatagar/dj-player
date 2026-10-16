@@ -27,57 +27,139 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Safely Generate Android Folder Without Touching lib/main.dart
+      - name: Safely Generate Android Folder Without Touching lib/
         run: |
           if [ ! -d "android" ]; then
             flutter create --platforms=android --org com.gajanan.djplaycommentry --project-name dj_player /tmp/shell
             cp -r /tmp/shell/android ./android
           fi
-          echo "Verifying lib/main.dart entry point:"
           grep -n "void main()" lib/main.dart
 
-      - name: Inject Native Android Hardware TTS Into MainActivity.kt (Zero KGP Plugin Warning)
+      - name: Inject HD Neural Voice Selector & Real MediaRecorder Into MainActivity.kt
         run: |
           MAIN_KT=$(find android/app/src/main -name "MainActivity.kt" | head -n 1)
           if [ -n "$MAIN_KT" ]; then
             PKG_LINE=$(head -n 1 "$MAIN_KT")
             cat << 'KTEOF' > "$MAIN_KT"
           $PKG_LINE
+          import android.media.MediaRecorder
           import android.os.Bundle
           import android.speech.tts.TextToSpeech
+          import android.speech.tts.Voice
           import io.flutter.embedding.android.FlutterActivity
           import io.flutter.embedding.engine.FlutterEngine
           import io.flutter.plugin.common.MethodChannel
+          import java.io.File
           import java.util.Locale
 
           class MainActivity: FlutterActivity(), TextToSpeech.OnInitListener {
               private var tts: TextToSpeech? = null
+              private var ttsReady: Boolean = false
+              private var recorder: MediaRecorder? = null
+              private var currentRecordPath: String? = null
+
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
                   tts = TextToSpeech(this, this)
               }
-              override fun onInit(status: Int) {}
+
+              override fun onInit(status: Int) {
+                  ttsReady = (status == TextToSpeech.SUCCESS)
+              }
+
+              private fun selectBestNaturalVoice(locale: Locale) {
+                  try {
+                      val voices = tts?.voices ?: return
+                      var bestVoice: Voice? = null
+                      for (v in voices) {
+                          if (v.locale.language == locale.language) {
+                              if (bestVoice == null || v.quality > bestVoice.quality || v.name.contains("network", true) || v.name.contains("wavenet", true)) {
+                                  bestVoice = v
+                              }
+                          }
+                      }
+                      if (bestVoice != null) {
+                          tts?.voice = bestVoice
+                      } else {
+                          tts?.language = locale
+                      }
+                  } catch (_: Exception) {
+                      tts?.language = locale
+                  }
+              }
+
               override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
                   super.configureFlutterEngine(flutterEngine)
                   MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dj_native_tts").setMethodCallHandler { call, result ->
-                      if (call.method == "speak") {
-                          val text = call.argument<String>("text") ?: ""
-                          val lang = call.argument<String>("lang") ?: "kn-IN"
-                          val pitch = (call.argument<Double>("pitch") ?: 1.0).toFloat()
-                          val rate = (call.argument<Double>("rate") ?: 1.0).toFloat()
-                          tts?.language = Locale.forLanguageTag(lang)
-                          tts?.setPitch(pitch)
-                          tts?.setSpeechRate(rate)
-                          tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "dj_utt")
-                          result.success(true)
-                      } else {
-                          result.notImplemented()
+                      when (call.method) {
+                          "speak" -> {
+                              if (!ttsReady || tts == null) {
+                                  result.success(false)
+                                  return@setMethodCallHandler
+                              }
+                              val text = call.argument<String>("text") ?: ""
+                              val lang = call.argument<String>("lang") ?: "kn-IN"
+                              val pitch = (call.argument<Double>("pitch") ?: 1.0).toFloat()
+                              val rate = (call.argument<Double>("rate") ?: 0.98).toFloat()
+                              val locale = Locale.forLanguageTag(lang)
+                              val avail = tts?.isLanguageAvailable(locale) ?: TextToSpeech.LANG_NOT_SUPPORTED
+                              if (avail < TextToSpeech.LANG_AVAILABLE) {
+                                  result.success(false)
+                                  return@setMethodCallHandler
+                              }
+                              tts?.stop()
+                              selectBestNaturalVoice(locale)
+                              tts?.setPitch(pitch)
+                              tts?.setSpeechRate(rate)
+                              val speakRes = tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "dj_single_utt")
+                              result.success(speakRes == TextToSpeech.SUCCESS)
+                          }
+                          "stopSpeak" -> {
+                              tts?.stop()
+                              result.success(true)
+                          }
+                          "startRecord" -> {
+                              try {
+                                  recorder?.release()
+                                  val name = call.argument<String>("name") ?: "voice_clip"
+                                  val outFile = File(filesDir, "${name}.m4a")
+                                  currentRecordPath = outFile.absolutePath
+                                  recorder = MediaRecorder().apply {
+                                      setAudioSource(MediaRecorder.AudioSource.MIC)
+                                      setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                                      setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                                      setAudioEncodingBitRate(128000)
+                                      setAudioSamplingRate(44100)
+                                      setOutputFile(currentRecordPath)
+                                      prepare()
+                                      start()
+                                  }
+                                  result.success(currentRecordPath)
+                              } catch (e: Exception) {
+                                  result.success(null)
+                              }
+                          }
+                          "stopRecord" -> {
+                              try {
+                                  recorder?.stop()
+                                  recorder?.release()
+                                  recorder = null
+                                  result.success(currentRecordPath)
+                              } catch (e: Exception) {
+                                  recorder?.release()
+                                  recorder = null
+                                  result.success(currentRecordPath)
+                              }
+                          }
+                          else -> result.notImplemented()
                       }
                   }
               }
+
               override fun onDestroy() {
                   tts?.stop()
                   tts?.shutdown()
+                  recorder?.release()
                   super.onDestroy()
               }
           }
@@ -85,7 +167,7 @@ jobs:
             sed -i "s|\$PKG_LINE|$PKG_LINE|g" "$MAIN_KT"
           fi
 
-      - name: Set App Name to "DJ Play and Commentry App", Cleartext HTTP & High-Class Icon
+      - name: Set App Name, Cleartext Traffic, Audio Permissions & High-Class Icon
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST" ]; then

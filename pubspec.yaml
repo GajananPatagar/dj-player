@@ -1,7 +1,7 @@
-name: dj_player_app
-description: Decoupled Professional Media Workstation
+name: dj_player
+description: DJ Play and Commentry App - World 320kbps Audio & Kannada/Hindi Cricket Commentary
 publish_to: 'none'
-version: 1.0.0+1
+version: 20.0.0+40
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -9,18 +9,13 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  http: ^1.1.0
-  dio: ^5.4.0
-  just_audio: ^0.9.36
-  shared_preferences: ^2.2.3
-  path_provider: ^2.1.1
-  permission_handler: ^11.3.1
-  dart_des: ^1.0.2
-
-dev_dependencies:
-  flutter_test:
-    sdk: flutter
-  flutter_lints: ^3.0.0
+  http: any
+  audioplayers: any
+  flutter_tts: any
+  shared_preferences: any
+  path_provider: any
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/icon.png

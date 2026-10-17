@@ -1,3 +1,4 @@
+import 'entry_music_data.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -58,6 +59,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
   void initState() {
     super.initState();
     _setupListeners();
+    MasterVolumeController.page1MusicVolume.addListener(() { _player.setVolume(MasterVolumeController.page1MusicVolume.value); });
     _loadSavedVaults();
     _fetchDailyTop50('Kannada');
   }

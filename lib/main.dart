@@ -7,6 +7,8 @@ import 'package:audioplayers/audioplayers.dart';
 import 'audio_studio.dart';
 import 'cricket_studio.dart';
 import 'voice_and_pro_hub.dart';
+import 'entry_music_data.dart';
+import 'entry_music_studio.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,11 +21,11 @@ class AppSoundEngine {
   static final AudioPlayer _sfxPlayer = AudioPlayer();
   static bool _isSpeakingLock = false;
 
-  /// Speaks with ONLY ONE engine at a time (Zero Double Voice!)
-  /// Priority 1: User's Real Recorded Human Voice Clip (if recorded for this event)
-  /// Priority 2: Android High-Definition Natural Neural Voice (or Cloud Neural if selected)
   static Future<void> speakRealVoice(String text, String langMode, {String? eventKey}) async {
     if (text.trim().isEmpty) return;
+    final double voiceVol = MasterVolumeController.page2VoiceVolume.value;
+    if (voiceVol <= 0.01) return;
+
     if (_isSpeakingLock) {
       try {
         await _nativeChannel.invokeMethod('stopSpeak');
@@ -35,11 +37,11 @@ class AppSoundEngine {
     try {
       final profile = VoiceCloneProfileStore.activeProfile;
 
-      // 1. If user recorded a real human voice clip for this ball outcome, play their REAL voice!
       if (eventKey != null) {
         final String? recordedPath = VoiceCloneProfileStore.recordedEventClips[eventKey];
         if (recordedPath != null && File(recordedPath).existsSync()) {
           await _voicePlayer.stop();
+          await _voicePlayer.setVolume(voiceVol);
           await _voicePlayer.play(DeviceFileSource(recordedPath));
           _isSpeakingLock = false;
           return;
@@ -56,7 +58,6 @@ class AppSoundEngine {
         tl = 'en';
       }
 
-      // 2. Single Engine Selection: Never run Native TTS and Cloud TTS at the same time!
       if (!profile.preferCloudVoiceOnly) {
         final bool? nativeSpoke = await _nativeChannel.invokeMethod<bool>('speak', {
           'text': text,
@@ -70,13 +71,13 @@ class AppSoundEngine {
         }
       }
 
-      // 3. Fallback (or user-selected) Single Cloud Neural Broadcast Stream
       final String cleanText = text.length > 185 ? text.substring(0, 185) : text;
       final String url = 'https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=' +
           tl +
           '&q=' +
           Uri.encodeComponent(cleanText);
       await _voicePlayer.stop();
+      await _voicePlayer.setVolume(voiceVol);
       await _voicePlayer.play(UrlSource(url));
       await _voicePlayer.setPlaybackRate(profile.speed.clamp(0.75, 1.35));
     } catch (_) {
@@ -105,6 +106,7 @@ class AppSoundEngine {
     try {
       if (File(path).existsSync()) {
         await _voicePlayer.stop();
+        await _voicePlayer.setVolume(MasterVolumeController.page2VoiceVolume.value);
         await _voicePlayer.play(DeviceFileSource(path));
       }
     } catch (_) {}
@@ -112,9 +114,11 @@ class AppSoundEngine {
 
   static Future<void> playSynthesizedSfx(String type) async {
     try {
+      final double sfxVol = MasterVolumeController.page3SfxVolume.value;
+      if (sfxVol <= 0.01) return;
       final bytes = _buildWavBytes(type);
       await _sfxPlayer.stop();
-      await _sfxPlayer.setVolume(0.45); // Balanced so it never drowns out commentary
+      await _sfxPlayer.setVolume(sfxVol);
       await _sfxPlayer.play(BytesSource(bytes));
     } catch (_) {}
   }
@@ -209,6 +213,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> {
     AudioStudioScreen(),
     CricketCommentaryScreen(),
     VoiceCloneAndProHubScreen(),
+    EntryMusicStudioScreen(),
   ];
 
   @override
@@ -239,7 +244,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> {
                     style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Color(0xFF00E5FF)),
                   ),
                   Text(
-                    'Full-Length 320kbps Top 50 • Real Single Voice AI',
+                    '320kbps Top 50 • Live Commentary • Smart Entry BGM',
                     style: TextStyle(fontSize: 10, color: Colors.amberAccent),
                   ),
                 ],
@@ -266,11 +271,13 @@ class _MasterHomeShellState extends State<MasterHomeShell> {
         selectedItemColor: const Color(0xFF00E5FF),
         unselectedItemColor: Colors.white54,
         type: BottomNavigationBarType.fixed,
-        selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+        selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 10),
+        unselectedLabelStyle: const TextStyle(fontSize: 10),
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.library_music), label: '1. Top 50 Full Audio'),
-          BottomNavigationBarItem(icon: Icon(Icons.sports_cricket), label: '2. Pro Commentary'),
-          BottomNavigationBarItem(icon: Icon(Icons.record_voice_over), label: '3. Real Voice & 50+ FX'),
+          BottomNavigationBarItem(icon: Icon(Icons.library_music), label: '1. Top 50 Audio'),
+          BottomNavigationBarItem(icon: Icon(Icons.sports_cricket), label: '2. Commentary'),
+          BottomNavigationBarItem(icon: Icon(Icons.record_voice_over), label: '3. Real Voice'),
+          BottomNavigationBarItem(icon: Icon(Icons.bolt), label: '4. Entry & Mixer'),
         ],
       ),
     );

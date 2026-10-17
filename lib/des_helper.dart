@@ -1,8 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-/// Decrypts JioSaavn's official encrypted_media_url (DES-ECB, key: "38346591")
-/// into full-length 320kbps / 160kbps aac.saavncdn.com audio URLs.
 class SaavnDesDecryptor {
   static const List<int> _keyBytes = [51, 56, 51, 52, 54, 53, 57, 49]; // "38346591"
 
@@ -63,7 +61,7 @@ class SaavnDesDecryptor {
     ],
     [
       10, 0, 9, 14, 6, 3, 15, 5, 1, 13, 12, 7, 11, 4, 2, 8,
-      13, 7, 0, 9, 3, 4, 6, 10, 2, 8, 5, 14, 12, 11, 15, 1,
+      13, 7, 0, 9, 3, 4, 6, 10, 2, 8, 5, 4, 12, 11, 15, 1,
       13, 6, 4, 9, 8, 15, 3, 0, 11, 1, 2, 12, 5, 10, 14, 7,
       1, 10, 13, 0, 6, 9, 8, 7, 4, 15, 14, 3, 11, 5, 2, 12
     ],
@@ -173,6 +171,27 @@ class SaavnDesDecryptor {
     return List<int>.generate(64, (i) => preFp[_fp[i] - 1]);
   }
 
+  /// Generates a canonical fingerprint of a song title so duplicate uploads across
+  /// different compilations/albums are 100% blocked!
+  static String canonicalFingerprint(String rawTitle) {
+    String s = rawTitle.toLowerCase();
+    // Strip movie/source suffixes inside brackets or after hyphens
+    s = s.replaceAll(RegExp(r'\(.*?\)|\[.*?\]'), '');
+    if (s.contains(' - ')) {
+      s = s.split(' - ').first;
+    }
+    s = s
+        .replaceAll('full video', '')
+        .replaceAll('full song', '')
+        .replaceAll('lyrical', '')
+        .replaceAll('original motion picture soundtrack', '')
+        .replaceAll(RegExp(r'[^a-z0-9]'), '');
+    if (s.length > 22) {
+      s = s.substring(0, 22);
+    }
+    return s.isEmpty ? rawTitle.toLowerCase().trim() : s;
+  }
+
   static List<String> decryptToFullUrls(String? encryptedBase64, String? previewUrl) {
     final List<String> urls = [];
     if (encryptedBase64 != null && encryptedBase64.isNotEmpty) {
@@ -201,7 +220,6 @@ class SaavnDesDecryptor {
       } catch (_) {}
     }
 
-    // Also upgrade media_preview_url into full-length aac.saavncdn.com stream
     if (previewUrl != null && previewUrl.startsWith('http')) {
       final String fullFromPreview = previewUrl
           .replaceAll('preview.saavncdn.com', 'aac.saavncdn.com')

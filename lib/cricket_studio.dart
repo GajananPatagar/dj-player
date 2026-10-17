@@ -1,3 +1,4 @@
+import 'entry_music_data.dart';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'main.dart';
@@ -376,6 +377,9 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
 
     // Play balanced SFX and single natural voice
     AppSoundEngine.playSynthesizedSfx(eventType);
+    if (eventType == 'SIX' || eventType == 'FOUR' || eventType == 'BOWLED' || eventType == 'CAUGHT') {
+      MasterVolumeController.autoCricketStingerTrigger.value = eventType + '_' + DateTime.now().millisecondsSinceEpoch.toString();
+    }
     AppSoundEngine.speakRealVoice(line, _commLanguage, eventKey: eventType);
   }
 

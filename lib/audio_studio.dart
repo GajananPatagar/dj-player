@@ -167,7 +167,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
             final int playCount =
                 int.tryParse((item['play_count'] ?? moreInfo['play_count'] ?? '25000').toString()) ?? 25000;
 
-            if (durSec > 0 && durSec <= 42) continue;
+            if (durSec < 50) continue;
 
             // In Trending Mode, block old pre-2023 songs so only fresh 2024-2026 hits appear!
             if (isTrendingMode && year < 2023) continue;
@@ -178,7 +178,8 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
 
             final String? encUrl = (moreInfo['encrypted_media_url'] ?? item['encrypted_media_url'])?.toString();
             final String? prevUrl = (moreInfo['vlink'] ?? item['media_preview_url'])?.toString();
-            final List<String> fullUrls = SaavnDesDecryptor.decryptToFullUrls(encUrl, prevUrl);
+            final bool has320 = (moreInfo['320kbps']?.toString() == 'true');
+            final List<String> fullUrls = SaavnDesDecryptor.decryptToFullUrls(encUrl, null, has320: has320);
             if (fullUrls.isEmpty) continue;
 
             seenIds.add(id);
@@ -272,21 +273,17 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
       }
 
       final List urls = track['urls'] as List? ?? [];
-      for (int i = 0; i < urls.length; i++) {
-        try {
-          final targetUrl = urls[i].toString();
-          await _player.stop();
-          await _player.setVolume(targetVol);
-          await _player.play(UrlSource(targetUrl));
-          await _player.setPlaybackRate(_playbackSpeed);
-          if (mounted) {
-            setState(() {
-              _statusBadge = '🟢 Playing: ' + track['title'].toString() + ' [320kbps]';
-            });
-          }
-          _isBusySwitching = false;
-          return;
-        } catch (_) {}
+      final String? verifiedUrl = await SaavnDesDecryptor.resolvePlayableStreamUrl(urls);
+      if (verifiedUrl != null) {
+        await _player.stop();
+        await _player.setVolume(targetVol);
+        await _player.play(UrlSource(verifiedUrl));
+        await _player.setPlaybackRate(_playbackSpeed);
+        if (mounted) {
+          setState(() {
+            _statusBadge = '🟢 Playing Full Song: ' + track['title'].toString();
+          });
+        }
       }
     } finally {
       _isBusySwitching = false;

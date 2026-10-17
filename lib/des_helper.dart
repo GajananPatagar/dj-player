@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:http/http.dart' as http;
 
 class SaavnDesDecryptor {
   static const List<int> _keyBytes = [51, 56, 51, 52, 54, 53, 57, 49]; // "38346591"
@@ -42,6 +43,11 @@ class SaavnDesDecryptor {
   ];
 
   static const List<int> _p = [
+    16, 7, 20, 21, 29, 12, 28, 17, 1, 15, 31, 26, 5, 18, 23, 10,
+    2, 8, 24, 14, 32, 27, 3, 9, 19, 13, 30, 6, 22, 11, 4, 25
+  ];
+
+  static const List<int> _pStandard = [
     16, 7, 20, 21, 29, 12, 28, 17, 1, 15, 23, 26, 5, 18, 31, 10,
     2, 8, 24, 14, 32, 27, 3, 9, 19, 13, 30, 6, 22, 11, 4, 25
   ];
@@ -61,7 +67,7 @@ class SaavnDesDecryptor {
     ],
     [
       10, 0, 9, 14, 6, 3, 15, 5, 1, 13, 12, 7, 11, 4, 2, 8,
-      13, 7, 0, 9, 3, 4, 6, 10, 2, 8, 5, 4, 12, 11, 15, 1,
+      13, 7, 0, 9, 3, 4, 6, 10, 2, 8, 5, 14, 12, 11, 15, 1,
       13, 6, 4, 9, 8, 15, 3, 0, 11, 1, 2, 12, 5, 10, 14, 7,
       1, 10, 13, 0, 6, 9, 8, 7, 4, 15, 14, 3, 11, 5, 2, 12
     ],
@@ -163,7 +169,7 @@ class SaavnDesDecryptor {
         }
       }
 
-      final List<int> fRes = List<int>.generate(32, (i) => sOut[_p[i] - 1]);
+      final List<int> fRes = List<int>.generate(32, (i) => sOut[_pStandard[i] - 1]);
       r = List<int>.generate(32, (i) => prevL[i] ^ fRes[i]);
     }
 
@@ -171,11 +177,8 @@ class SaavnDesDecryptor {
     return List<int>.generate(64, (i) => preFp[_fp[i] - 1]);
   }
 
-  /// Generates a canonical fingerprint of a song title so duplicate uploads across
-  /// different compilations/albums are 100% blocked!
   static String canonicalFingerprint(String rawTitle) {
     String s = rawTitle.toLowerCase();
-    // Strip movie/source suffixes inside brackets or after hyphens
     s = s.replaceAll(RegExp(r'\(.*?\)|\[.*?\]'), '');
     if (s.contains(' - ')) {
       s = s.split(' - ').first;
@@ -192,45 +195,75 @@ class SaavnDesDecryptor {
     return s.isEmpty ? rawTitle.toLowerCase().trim() : s;
   }
 
-  static List<String> decryptToFullUrls(String? encryptedBase64, String? previewUrl) {
+  /// Decrypts ONLY full-length encrypted_media_url streams (Never uses 15-sec preview.saavncdn.com!)
+  /// Orders _320.mp4 vs _160.mp4 accurately based on the track's official has320 flag.
+  static List<String> decryptToFullUrls(
+    String? encryptedBase64,
+    String? unusedPreviewUrl, {
+    bool has320 = true,
+  }) {
     final List<String> urls = [];
-    if (encryptedBase64 != null && encryptedBase64.isNotEmpty) {
-      try {
-        final Uint8List cipher = base64Decode(encryptedBase64.trim());
-        final List<int> outBytes = [];
-        for (int offset = 0; offset + 8 <= cipher.length; offset += 8) {
-          final blockBits = _bytesToBits(cipher.sublist(offset, offset + 8));
-          final decBits = _decryptBlock(blockBits);
-          outBytes.addAll(_bitsToBytes(decBits));
+    if (encryptedBase64 == null || encryptedBase64.trim().isEmpty) return urls;
+
+    try {
+      final String cleanedB64 = encryptedBase64.trim().replaceAll(r'\/', '/').replaceAll(' ', '+');
+      final Uint8List cipher = base64Decode(cleanedB64);
+      final List<int> outBytes = [];
+      for (int offset = 0; offset + 8 <= cipher.length; offset += 8) {
+        final blockBits = _bytesToBits(cipher.sublist(offset, offset + 8));
+        final decBits = _decryptBlock(blockBits);
+        outBytes.addAll(_bitsToBytes(decBits));
+      }
+      if (outBytes.isNotEmpty) {
+        final int pad = outBytes.last;
+        if (pad > 0 && pad <= 8 && outBytes.length >= pad) {
+          outBytes.removeRange(outBytes.length - pad, outBytes.length);
         }
-        if (outBytes.isNotEmpty) {
-          final int pad = outBytes.last;
-          if (pad > 0 && pad <= 8 && outBytes.length >= pad) {
-            outBytes.removeRange(outBytes.length - pad, outBytes.length);
+        String rawUrl = utf8.decode(outBytes, allowMalformed: true).trim();
+        // Clean any trailing non-printable characters
+        rawUrl = rawUrl.replaceAll(RegExp(r'[^\x20-\x7E]'), '');
+        if (rawUrl.startsWith('http://')) {
+          rawUrl = rawUrl.replaceFirst('http://', 'https://');
+        }
+        if (rawUrl.startsWith('https://')) {
+          // Never allow 15-second or 30-second preview servers
+          if (rawUrl.contains('preview.saavncdn.com') || rawUrl.contains('_p.mp4')) {
+            return [];
           }
-          final String rawUrl = utf8.decode(outBytes, allowMalformed: true).trim();
-          if (rawUrl.startsWith('http')) {
-            final String u320 = rawUrl.replaceAll('_96.', '_320.').replaceAll('_160.', '_320.');
-            final String u160 = rawUrl.replaceAll('_96.', '_160.').replaceAll('_320.', '_160.');
+          final String u320 = rawUrl.replaceAll('_96.', '_320.').replaceAll('_160.', '_320.');
+          final String u160 = rawUrl.replaceAll('_96.', '_160.').replaceAll('_320.', '_160.');
+          final String u96 = rawUrl.replaceAll('_320.', '_96.').replaceAll('_160.', '_96.');
+
+          if (has320) {
             urls.add(u320);
             if (!urls.contains(u160)) urls.add(u160);
-            if (!urls.contains(rawUrl)) urls.add(rawUrl);
+          } else {
+            urls.add(u160);
+            if (!urls.contains(u320)) urls.add(u320);
           }
+          if (!urls.contains(u96)) urls.add(u96);
+        }
+      }
+    } catch (_) {}
+    return urls;
+  }
+
+  /// Verifies which stream quality (320kbps vs 160kbps) is live on the CDN before ExoPlayer starts
+  /// so AudioPlayer NEVER hits an HTTP 404 dead stream!
+  static Future<String?> resolvePlayableStreamUrl(List<dynamic> candidateUrls) async {
+    for (final raw in candidateUrls) {
+      final String u = raw.toString();
+      if (!u.startsWith('http')) continue;
+      try {
+        final res = await http.head(
+          Uri.parse(u),
+          headers: {'User-Agent': 'Mozilla/5.0 (Android 14; Mobile)'},
+        ).timeout(const Duration(milliseconds: 1800));
+        if (res.statusCode >= 200 && res.statusCode < 400) {
+          return u;
         }
       } catch (_) {}
     }
-
-    if (previewUrl != null && previewUrl.startsWith('http')) {
-      final String fullFromPreview = previewUrl
-          .replaceAll('preview.saavncdn.com', 'aac.saavncdn.com')
-          .replaceAll('_96_p.mp4', '_320.mp4')
-          .replaceAll('_96_p.mp3', '_320.mp3');
-      final String medFromPreview = previewUrl
-          .replaceAll('preview.saavncdn.com', 'aac.saavncdn.com')
-          .replaceAll('_96_p.mp4', '_160.mp4');
-      if (!urls.contains(fullFromPreview)) urls.add(fullFromPreview);
-      if (!urls.contains(medFromPreview)) urls.add(medFromPreview);
-    }
-    return urls;
+    return candidateUrls.isNotEmpty ? candidateUrls.first.toString() : null;
   }
 }

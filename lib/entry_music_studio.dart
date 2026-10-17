@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'des_helper.dart';
 import 'entry_music_data.dart';
+import 'main.dart';
 
 class EntryMusicStudioScreen extends StatefulWidget {
   const EntryMusicStudioScreen({super.key});
@@ -19,10 +21,11 @@ class _EntryMusicStudioScreenState extends State<EntryMusicStudioScreen> {
   List<Map<String, dynamic>> _activeEntryQueue = [];
   Map<String, dynamic>? _nowPlayingEntry;
   int _queueCursor = 0;
+  int? _pendingSeekSec;
 
   String _viewTab = 'ONLINE'; // ONLINE, FAV, OFFLINE
   String _selectedCategory = 'ALL_1000';
-  String _statusText = '⚡ Strict Entry & Encourage Mode Active (0 Normal Songs!)';
+  String _statusText = '⚡ Verified Full-Length Mass Entry & Encourage Studio Ready';
 
   bool _isPlaying = false;
   bool _isLoading = false;
@@ -55,14 +58,22 @@ class _EntryMusicStudioScreenState extends State<EntryMusicStudioScreen> {
     _entryPlayer.onPositionChanged.listen((pos) {
       if (mounted) setState(() => _position = pos);
     });
+    // Wait until the stream is buffered and reports duration BEFORE seeking!
+    // This prevents Android MediaPlayer from crashing or stopping on start!
     _entryPlayer.onDurationChanged.listen((dur) {
       if (mounted) setState(() => _duration = dur);
+      if (_pendingSeekSec != null && _pendingSeekSec! > 0 && dur.inSeconds > _pendingSeekSec! + 10) {
+        final int targetSec = _pendingSeekSec!;
+        _pendingSeekSec = null;
+        _entryPlayer.seek(Duration(seconds: targetSec));
+      } else {
+        _pendingSeekSec = null;
+      }
     });
     _entryPlayer.onPlayerComplete.listen((_) {
       _playNextInEntryQueue();
     });
 
-    // Listen for Page 2 Cricket Boundary/Wicket auto-stinger requests
     MasterVolumeController.autoCricketStingerTrigger.addListener(() {
       final ev = MasterVolumeController.autoCricketStingerTrigger.value;
       if (ev != null && MasterVolumeController.autoPlayEntryOnCricketBoundaryOrWicket) {
@@ -73,14 +84,13 @@ class _EntryMusicStudioScreenState extends State<EntryMusicStudioScreen> {
     _loadCategoryTracks('ALL_1000', append: false);
   }
 
-  /// Plays a 6-second high-bass stadium entry burst when a 4, 6, or Wicket happens on Page 2
   Future<void> _triggerShortStadiumBurst() async {
     if (_onlineEntryTracks.isEmpty) return;
     _autoStingerStopTimer?.cancel();
     final int nextIdx = (_queueCursor + 1) % _onlineEntryTracks.length;
     _activeEntryQueue = List<Map<String, dynamic>>.from(_onlineEntryTracks);
     await _playQueueIndex(nextIdx, forceVolume: 0.85);
-    _autoStingerStopTimer = Timer(const Duration(seconds: 7), () {
+    _autoStingerStopTimer = Timer(const Duration(seconds: 8), () {
       _entryPlayer.pause();
     });
   }
@@ -97,7 +107,7 @@ class _EntryMusicStudioScreenState extends State<EntryMusicStudioScreen> {
         _viewTab = 'ONLINE';
         _selectedCategory = catKey;
         _isLoading = true;
-        _statusText = '🔄 Extracting Strict Entry & Player Encourage Sounds Only...';
+        _statusText = '🔄 Loading Verified Full-Length Mass Entry & Encourage Tracks...';
       });
     }
 
@@ -110,9 +120,9 @@ class _EntryMusicStudioScreenState extends State<EntryMusicStudioScreen> {
     if (mounted) {
       setState(() {
         if (append) {
-          final existingFp = _onlineEntryTracks.map((e) => e['id']).toSet();
+          final existingIds = _onlineEntryTracks.map((e) => e['id']).toSet();
           for (final item in fetched) {
-            if (!existingFp.contains(item['id'])) {
+            if (!existingIds.contains(item['id'])) {
               _onlineEntryTracks.add(item);
             }
           }
@@ -126,7 +136,7 @@ class _EntryMusicStudioScreenState extends State<EntryMusicStudioScreen> {
         _isLoading = false;
         _statusText = '🟢 ' +
             _onlineEntryTracks.length.toString() +
-            ' Verified Entry & Encourage Tracks (0 Normal Songs, 0 Duplicates)';
+            ' Full-Length Mass Entry Tracks Ready (0 Short Clips, 0 Normal Songs)';
       });
     }
   }
@@ -190,7 +200,7 @@ class _EntryMusicStudioScreenState extends State<EntryMusicStudioScreen> {
     final track = _activeEntryQueue[qIdx];
     final String id = track['id'].toString();
     final String title = track['title'].toString();
-    final int durSec = (track['durationSec'] as int?) ?? 120;
+    final int durSec = (track['durationSec'] as int?) ?? 180;
     final int smartDropSec = EntryMusicHarvester.computeSmartEntryDropSecond(id, title, durSec);
 
     if (mounted) {
@@ -198,31 +208,34 @@ class _EntryMusicStudioScreenState extends State<EntryMusicStudioScreen> {
         _queueCursor = qIdx;
         _nowPlayingEntry = Map<String, dynamic>.from(track);
         _nowPlayingEntry!['smartDropSec'] = smartDropSec;
-        _statusText = '🔥 Blasting Entry BGM: $title';
+        _statusText = '⚡ Connecting Full-Length Stream: $title...';
       });
     }
 
+    // 1. Check Offline Saved File First
     if (track['localPath'] != null) {
       final file = File(track['localPath'].toString());
       if (await file.exists()) {
+        _pendingSeekSec = _smartAutoCutEnabled ? smartDropSec : 0;
         await _entryPlayer.stop();
         await _entryPlayer.setVolume(activeVol);
         await _entryPlayer.play(DeviceFileSource(file.path));
-        if (_smartAutoCutEnabled && smartDropSec > 0) {
-          await _entryPlayer.seek(Duration(seconds: smartDropSec));
-        }
+        if (mounted) setState(() => _statusText = '🔥 Blasting Offline Entry: $title');
         return;
       }
     }
 
+    // 2. Verify Live HTTP 200 CDN Stream Before ExoPlayer Plays (Zero 404 Failures!)
     final List urls = track['urls'] as List? ?? [];
-    for (final u in urls) {
+    final String? workingUrl = await SaavnDesDecryptor.resolvePlayableStreamUrl(urls);
+    if (workingUrl != null) {
       try {
+        _pendingSeekSec = _smartAutoCutEnabled ? smartDropSec : 0;
         await _entryPlayer.stop();
         await _entryPlayer.setVolume(activeVol);
-        await _entryPlayer.play(UrlSource(u.toString()));
-        if (_smartAutoCutEnabled && smartDropSec > 0 && (durSec == 0 || durSec > smartDropSec + 8)) {
-          await _entryPlayer.seek(Duration(seconds: smartDropSec));
+        await _entryPlayer.play(UrlSource(workingUrl));
+        if (mounted) {
+          setState(() => _statusText = '🔥 Blasting Full Entry BGM: $title');
         }
         return;
       } catch (_) {}
@@ -278,7 +291,7 @@ class _EntryMusicStudioScreenState extends State<EntryMusicStudioScreen> {
         SnackBar(
           duration: const Duration(seconds: 2),
           backgroundColor: Colors.teal.shade800,
-          content: Text('⬇ Downloading Entry Sound Offline: ${trk['title']}...'),
+          content: Text('⬇ Downloading Full Entry Track Offline: ${trk['title']}...'),
         ),
       );
     }
@@ -292,7 +305,7 @@ class _EntryMusicStudioScreenState extends State<EntryMusicStudioScreen> {
           content: Text(
             ok
                 ? '✅ Saved to Offline Entry Playlist: ${trk['title']}'
-                : '⚠️ Download busy on this mirror—tap play first or retry.',
+                : '⚠️ Stream busy—tap play first or retry.',
             style: const TextStyle(fontWeight: FontWeight.bold),
           ),
         ),
@@ -324,7 +337,6 @@ class _EntryMusicStudioScreenState extends State<EntryMusicStudioScreen> {
 
                 return Column(
                   children: [
-                    // Status Strip
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -352,7 +364,7 @@ class _EntryMusicStudioScreenState extends State<EntryMusicStudioScreen> {
                       child: ListView(
                         padding: const EdgeInsets.all(10),
                         children: [
-                          // 1. SMART ENTRY VOLUME AUTO-FADER & MASTER MIXER
+                          // 1. SMART ENTRY VOLUME AUTO-FADER
                           Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
@@ -552,14 +564,14 @@ class _EntryMusicStudioScreenState extends State<EntryMusicStudioScreen> {
                                     ),
                                     SwitchListTile(
                                       contentPadding: EdgeInsets.zero,
-                                      title: const Text('⚡ Smart Dynamic Entry Auto-Cut (Starts at Exact Beat Drop)',
+                                      title: const Text('⚡ Smart Dynamic Entry Auto-Cut (Seeks After Buffer)',
                                           style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                                       value: _smartAutoCutEnabled,
                                       onChanged: (v) => setState(() => _smartAutoCutEnabled = v),
                                     ),
                                     SwitchListTile(
                                       contentPadding: EdgeInsets.zero,
-                                      title: const Text('🏏 Auto-Blast 7s Entry BGM on Cricket 6, 4 & Wickets',
+                                      title: const Text('🏏 Auto-Blast 8s Entry BGM on Cricket 6, 4 & Wickets',
                                           style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.amberAccent)),
                                       value: MasterVolumeController.autoPlayEntryOnCricketBoundaryOrWicket,
                                       onChanged: (v) => setState(
@@ -590,7 +602,7 @@ class _EntryMusicStudioScreenState extends State<EntryMusicStudioScreen> {
                           ),
                           const SizedBox(height: 8),
 
-                          // 3. QUICK STADIUM ENCOURAGE PADS
+                          // 3. INSTANT OFFLINE STADIUM SYNTH + ONLINE CATEGORY PADS
                           Row(
                             children: [
                               _quickTriggerButton('🎺 KANNADA MASS', Colors.amber.shade800, () {
@@ -598,6 +610,7 @@ class _EntryMusicStudioScreenState extends State<EntryMusicStudioScreen> {
                               }),
                               const SizedBox(width: 5),
                               _quickTriggerButton('6️⃣ SIXER BASS', Colors.deepPurpleAccent, () {
+                                AppSoundEngine.playSynthesizedSfx('AIRHORN');
                                 _loadCategoryTracks('SIXER_DROP', append: false);
                               }),
                               const SizedBox(width: 5),
@@ -606,6 +619,7 @@ class _EntryMusicStudioScreenState extends State<EntryMusicStudioScreen> {
                               }),
                               const SizedBox(width: 5),
                               _quickTriggerButton('🎯 OUT BGM', Colors.redAccent, () {
+                                AppSoundEngine.playSynthesizedSfx('BOWLED');
                                 _loadCategoryTracks('WICKET_OUT', append: false);
                               }),
                             ],
@@ -678,7 +692,7 @@ class _EntryMusicStudioScreenState extends State<EntryMusicStudioScreen> {
                                     ? '📥 Offline Entry Playlist (${visibleList.length})'
                                     : (_viewTab == 'FAV'
                                         ? '❤️ Favorite Entry Sounds (${visibleList.length})'
-                                        : '🎵 Verified Entry & Encourage Sounds (${visibleList.length})'),
+                                        : '🎵 Verified Full Entry & Encourage Sounds (${visibleList.length})'),
                                 style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.amberAccent),
                               ),
                               if (_viewTab == 'ONLINE')
@@ -722,15 +736,29 @@ class _EntryMusicStudioScreenState extends State<EntryMusicStudioScreen> {
                                 margin: const EdgeInsets.symmetric(vertical: 3),
                                 child: ListTile(
                                   dense: true,
-                                  leading: ClipRRect(
-                                    borderRadius: BorderRadius.circular(6),
-                                    child: Image.network(
-                                      trk['cover'].toString(),
-                                      width: 44,
-                                      height: 44,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => const Icon(Icons.bolt, color: Colors.amber),
-                                    ),
+                                  leading: Stack(
+                                    alignment: Alignment.bottomRight,
+                                    children: [
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(6),
+                                        child: Image.network(
+                                          trk['cover'].toString(),
+                                          width: 44,
+                                          height: 44,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) => const Icon(Icons.bolt, color: Colors.amber),
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                                        color: Colors.black87,
+                                        child: Text(
+                                          (trk['durationStr'] ?? 'Full').toString(),
+                                          style: const TextStyle(
+                                              fontSize: 8, color: Colors.greenAccent, fontWeight: FontWeight.bold),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                   title: Text(
                                     '#${idx + 1} • ${trk['title']}',
@@ -744,7 +772,7 @@ class _EntryMusicStudioScreenState extends State<EntryMusicStudioScreen> {
                                   ),
                                   subtitle: Text(
                                     (isThisPlaying ? '🔊 BLASTING • ' : '') +
-                                        '⚡ Drop @ ${_fmtSec(dropSec)} • ${trk['artist']}',
+                                        '⚡ Drop @ ${_fmtSec(dropSec)} • ${trk['quality'] ?? '320kbps FULL'}',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(fontSize: 10, color: Color(0xFF00E676)),

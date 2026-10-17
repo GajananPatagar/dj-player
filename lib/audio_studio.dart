@@ -1,4 +1,3 @@
-import 'entry_music_data.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -8,6 +7,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'des_helper.dart';
+import 'entry_music_data.dart';
 
 class AudioStudioScreen extends StatefulWidget {
   const AudioStudioScreen({super.key});
@@ -34,32 +34,38 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
   ];
 
   String _selectedLang = 'Kannada';
-  String _viewMode = 'SONGS'; // SONGS, FAVORITES, OFFLINE, YT_PLAYLISTS
+  String _viewMode = 'SONGS'; // SONGS, FAVORITES, OFFLINE
   String _statusBadge = '🟢 Direct 320kbps Full-Song Engine Ready';
-  String _eqPreset = 'Bass Boost';
   bool _isLoading = false;
   bool _isBusySwitching = false;
 
+  // Separate Search List vs Active Playback Queue (Fixes the Now-Playing Glitch!)
   List<Map<String, dynamic>> _tracks = [];
   List<Map<String, dynamic>> _offlineTracks = [];
   List<Map<String, dynamic>> _favoriteTracks = [];
-  int _currentIndex = -1;
+  List<Map<String, dynamic>> _playbackQueue = [];
+  Map<String, dynamic>? _nowPlayingTrack;
+  int _queueIndex = -1;
+
   bool _isPlaying = false;
   bool _loopCurrent = false;
   bool _shuffleMode = false;
+  bool _isTalkoverDucked = false;
   double _playbackSpeed = 1.0;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
   Duration? _abLoopStart;
   Duration? _abLoopEnd;
-  Timer? _sleepTimer;
-  int _sleepMinutesLeft = 0;
 
   @override
   void initState() {
     super.initState();
     _setupListeners();
-    MasterVolumeController.page1MusicVolume.addListener(() { _player.setVolume(MasterVolumeController.page1MusicVolume.value); });
+    MasterVolumeController.page1MusicVolume.addListener(() {
+      if (!_isTalkoverDucked) {
+        _player.setVolume(MasterVolumeController.page1MusicVolume.value);
+      }
+    });
     _loadSavedVaults();
     _fetchDailyTop50('Kannada');
   }
@@ -76,8 +82,8 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
       if (mounted) setState(() => _duration = dur);
     });
     _player.onPlayerComplete.listen((_) {
-      if (_loopCurrent && _currentIndex >= 0) {
-        _playTrackAtIndex(_currentIndex);
+      if (_loopCurrent && _nowPlayingTrack != null) {
+        _playFromQueueIndex(_queueIndex);
       } else {
         _playNext();
       }
@@ -113,7 +119,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
   }
 
   String _formatSecs(int totalSec) {
-    if (totalSec <= 0) return 'Full Song';
+    if (totalSec <= 0) return 'Full';
     final int m = totalSec ~/ 60;
     final int s = totalSec % 60;
     return m.toString() + ':' + (s < 10 ? '0' + s.toString() : s.toString());
@@ -126,10 +132,9 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
       _viewMode = 'SONGS';
     });
 
-    // Multi-query aggregation to guarantee 50+ full-length trending tracks for each language
     final List<String> subQueries = [
       lang + ' Top 50 Superhit Songs',
-      lang + ' Latest Hit Songs 2026',
+      lang + ' Latest Blockbuster Hits',
       lang + ' DJ Remix Nonstop Hits',
     ];
     await _runDirectFullSongSearch(subQueries, isTop50: true);
@@ -141,19 +146,17 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
     setState(() => _viewMode = 'SONGS');
     await _runDirectFullSongSearch([
       q,
-      q + ' Full Song',
-      q + ' Remix',
+      q + ' Hit Song',
     ], isTop50: false);
   }
 
-  /// Queries Official JioSaavn API directly (Pages 1 & 2, n=50) + decrypts full-length 320kbps URLs
   Future<void> _runDirectFullSongSearch(List<String> queries, {required bool isTop50}) async {
     if (mounted) {
       setState(() {
         _isLoading = true;
         _statusBadge = isTop50
-            ? '🔄 Loading Daily Top 50 Full-Length ' + _selectedLang + ' Songs...'
-            : '🔄 Searching 50+ Full-Length 320kbps Songs...';
+            ? '🔄 Loading Daily Top 50 Famous ' + _selectedLang + ' Full Songs...'
+            : '🔄 Searching Famous Full-Length 320kbps Songs...';
       });
     }
 
@@ -165,10 +168,9 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
       'Accept': 'application/json, text/plain, */*',
     };
 
-    // Method 1: Official Direct www.jiosaavn.com/api.php (v4 + v3 with DES-ECB Decryption)
     for (final q in queries) {
       for (int page = 1; page <= 2; page++) {
-        if (aggregated.length >= 60) break;
+        if (aggregated.length >= 65) break;
         try {
           final String directUrl =
               'https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&api_version=4&ctx=web6dot0&n=40&p=' +
@@ -187,9 +189,9 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
               final String? encUrl = (moreInfo['encrypted_media_url'] ?? item['encrypted_media_url'])?.toString();
               final String? prevUrl = (moreInfo['vlink'] ?? item['media_preview_url'])?.toString();
               final int durSec = int.tryParse((moreInfo['duration'] ?? item['duration'] ?? '0').toString()) ?? 0;
+              final int playCount = int.tryParse((item['play_count'] ?? moreInfo['play_count'] ?? '10000').toString()) ?? 10000;
 
-              // Skip short 30s clips—only keep full songs!
-              if (durSec > 0 && durSec <= 35) continue;
+              if (durSec > 0 && durSec <= 40) continue;
 
               final List<String> fullUrls = SaavnDesDecryptor.decryptToFullUrls(encUrl, prevUrl);
               if (fullUrls.isEmpty) continue;
@@ -209,6 +211,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
                 'cover': cover,
                 'urls': fullUrls,
                 'durationStr': _formatSecs(durSec),
+                'playCount': playCount,
                 'quality': '320kbps FULL (' + _formatSecs(durSec) + ')',
                 'isOffline': false,
               });
@@ -218,100 +221,63 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
       }
     }
 
-    // Method 2: Community High-Res Full-Song Mirrors if additional tracks needed
-    final List<String> mirrorBases = [
-      'https://saavn.sumit.co/api',
-      'https://saavn.dev/api',
-      'https://jiosaavn-api-privatecvc2.vercel.app'
-    ];
-    if (aggregated.length < 35) {
-      for (final base in mirrorBases) {
-        try {
-          final uri = Uri.parse(
-              base + '/search/songs?query=' + Uri.encodeComponent(queries.first) + '&limit=40');
-          final res = await http.get(uri).timeout(const Duration(seconds: 6));
-          if (res.statusCode == 200) {
-            final body = jsonDecode(res.body);
-            final List rawList = (body['data'] != null && body['data']['results'] != null)
-                ? body['data']['results']
-                : (body['results'] ?? []);
-            for (final item in rawList) {
-              final String id = (item['id'] ?? '').toString();
-              if (id.isEmpty || seenIds.contains(id)) continue;
-              final List<String> urls = [];
-              if (item['downloadUrl'] is List) {
-                final dList = item['downloadUrl'] as List;
-                for (int i = dList.length - 1; i >= 0; i--) {
-                  final u = dList[i]['url'] ?? dList[i]['link'];
-                  if (u != null && u.toString().startsWith('http')) urls.add(u.toString());
-                }
-              }
-              if (urls.isEmpty) continue;
-              final int durSec = int.tryParse((item['duration'] ?? '240').toString()) ?? 240;
-              seenIds.add(id);
-
-              String cover = 'https://via.placeholder.com/150';
-              if (item['image'] is List && (item['image'] as List).isNotEmpty) {
-                final lastImg = (item['image'] as List).last;
-                cover = (lastImg['url'] ?? lastImg['link'] ?? cover).toString();
-              }
-
-              aggregated.add({
-                'id': id,
-                'title': _cleanStr((item['name'] ?? item['title'] ?? 'Song').toString()),
-                'artist': _cleanStr((item['primaryArtists'] ?? item['subtitle'] ?? 'Artist').toString()),
-                'cover': cover,
-                'urls': urls,
-                'durationStr': _formatSecs(durSec),
-                'quality': '320kbps FULL (' + _formatSecs(durSec) + ')',
-                'isOffline': false,
-              });
-            }
-          }
-          if (aggregated.length >= 50) break;
-        } catch (_) {}
-      }
+    // Sort by popularity so famous hits appear first
+    if (isTop50) {
+      aggregated.sort((a, b) => ((b['playCount'] ?? 0) as int).compareTo((a['playCount'] ?? 0) as int));
     }
 
     if (mounted) {
       setState(() {
         _tracks = aggregated;
         _isLoading = false;
-        _statusBadge = '🟢 Loaded ' + aggregated.length.toString() + ' FULL-LENGTH 320kbps Songs';
+        _statusBadge = '🟢 Loaded ' + aggregated.length.toString() + ' Famous Full-Length Songs';
       });
     }
   }
 
-  List<Map<String, dynamic>> _currentActiveList() {
+  List<Map<String, dynamic>> _currentVisibleList() {
     if (_viewMode == 'OFFLINE') return _offlineTracks;
     if (_viewMode == 'FAVORITES') return _favoriteTracks;
     return _tracks;
   }
 
-  Future<void> _playTrackAtIndex(int index) async {
+  /// Locks the clicked list into _playbackQueue and sets _nowPlayingTrack independently
+  /// so searching new songs NEVER changes the currently playing song display!
+  Future<void> _startPlaybackFromVisibleList(int index) async {
+    final visible = _currentVisibleList();
+    if (index < 0 || index >= visible.length) return;
+    _playbackQueue = List<Map<String, dynamic>>.from(visible);
+    await _playFromQueueIndex(index);
+  }
+
+  Future<void> _playFromQueueIndex(int qIdx) async {
     if (_isBusySwitching) return;
-    final list = _currentActiveList();
-    if (index < 0 || index >= list.length) return;
+    if (_playbackQueue.isEmpty || qIdx < 0 || qIdx >= _playbackQueue.length) return;
 
     _isBusySwitching = true;
+    final track = _playbackQueue[qIdx];
+
     if (mounted) {
       setState(() {
-        _currentIndex = index;
+        _queueIndex = qIdx;
+        _nowPlayingTrack = Map<String, dynamic>.from(track);
         _abLoopStart = null;
         _abLoopEnd = null;
-        _statusBadge = '⚡ Starting Full-Length 320kbps Stream...';
+        _statusBadge = '⚡ Starting Full Song: ' + track['title'].toString();
       });
     }
 
-    final track = list[index];
     try {
+      final double targetVol = _isTalkoverDucked ? 0.15 : MasterVolumeController.page1MusicVolume.value;
+
       if (track['isOffline'] == true && track['localPath'] != null) {
         final file = File(track['localPath'].toString());
         if (await file.exists()) {
           await _player.stop();
+          await _player.setVolume(targetVol);
           await _player.play(DeviceFileSource(file.path));
           await _player.setPlaybackRate(_playbackSpeed);
-          if (mounted) setState(() => _statusBadge = '🟢 Playing Full Song From Offline Vault');
+          if (mounted) setState(() => _statusBadge = '🟢 Playing Offline Full Song: ' + track['title'].toString());
           _isBusySwitching = false;
           return;
         }
@@ -322,11 +288,12 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
         try {
           final targetUrl = urls[i].toString();
           await _player.stop();
+          await _player.setVolume(targetVol);
           await _player.play(UrlSource(targetUrl));
           await _player.setPlaybackRate(_playbackSpeed);
           if (mounted) {
             setState(() {
-              _statusBadge = '🟢 Playing Full Song: ' + track['title'].toString() + ' [320kbps]';
+              _statusBadge = '🟢 Playing: ' + track['title'].toString() + ' [320kbps]';
             });
           }
           _isBusySwitching = false;
@@ -339,20 +306,26 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
   }
 
   void _playNext() {
-    final list = _currentActiveList();
-    if (list.isEmpty) return;
-    if (_shuffleMode && list.length > 1) {
-      final next = DateTime.now().millisecond % list.length;
-      _playTrackAtIndex(next);
+    if (_playbackQueue.isEmpty) return;
+    if (_shuffleMode && _playbackQueue.length > 1) {
+      final next = DateTime.now().millisecond % _playbackQueue.length;
+      _playFromQueueIndex(next);
     } else {
-      _playTrackAtIndex((_currentIndex + 1) % list.length);
+      _playFromQueueIndex((_queueIndex + 1) % _playbackQueue.length);
     }
   }
 
   void _playPrev() {
-    final list = _currentActiveList();
-    if (list.isEmpty) return;
-    _playTrackAtIndex((_currentIndex - 1 + list.length) % list.length);
+    if (_playbackQueue.isEmpty) return;
+    _playFromQueueIndex((_queueIndex - 1 + _playbackQueue.length) % _playbackQueue.length);
+  }
+
+  void _toggleTalkoverDuck() {
+    setState(() {
+      _isTalkoverDucked = !_isTalkoverDucked;
+      final double v = _isTalkoverDucked ? 0.15 : MasterVolumeController.page1MusicVolume.value;
+      _player.setVolume(v);
+    });
   }
 
   Future<void> _toggleFavorite(Map<String, dynamic> track) async {
@@ -411,25 +384,6 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
     }
   }
 
-  void _setSleepTimer(int mins) {
-    _sleepTimer?.cancel();
-    setState(() => _sleepMinutesLeft = mins);
-    if (mins <= 0) return;
-    _sleepTimer = Timer.periodic(const Duration(minutes: 1), (t) {
-      if (!mounted) {
-        t.cancel();
-        return;
-      }
-      if (_sleepMinutesLeft <= 1) {
-        t.cancel();
-        _player.pause();
-        setState(() => _sleepMinutesLeft = 0);
-      } else {
-        setState(() => _sleepMinutesLeft -= 1);
-      }
-    });
-  }
-
   String _fmtDuration(Duration d) {
     final mins = d.inMinutes;
     final secs = d.inSeconds % 60;
@@ -438,10 +392,9 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final activeList = _currentActiveList();
-    final currentTrack = (_currentIndex >= 0 && _currentIndex < activeList.length)
-        ? activeList[_currentIndex]
-        : null;
+    final visibleList = _currentVisibleList();
+    final playingTrack = _nowPlayingTrack;
+    final String? playingId = playingTrack?['id']?.toString();
 
     return Column(
       children: [
@@ -467,7 +420,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
           ),
         ),
 
-        // Search Input + Quick Filter Buttons
+        // Search Input + Filter Buttons
         Padding(
           padding: const EdgeInsets.all(8.0),
           child: Column(
@@ -479,7 +432,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
                       controller: _searchCtrl,
                       style: const TextStyle(fontSize: 13),
                       decoration: InputDecoration(
-                        hintText: 'Search any full song, movie, DJ remix or artist...',
+                        hintText: 'Search any song, movie, DJ remix or artist...',
                         filled: true,
                         fillColor: const Color(0xFF11192B),
                         suffixIcon: _searchCtrl.text.isNotEmpty
@@ -516,13 +469,6 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
                   children: [
                     _modeButton('🔥 Top 50 (' + _tracks.length.toString() + ')', 'SONGS', () {
                       setState(() => _viewMode = 'SONGS');
-                    }),
-                    const SizedBox(width: 6),
-                    _modeButton('📺 YT Nonstop Mix', 'YT', () {
-                      final q = _searchCtrl.text.trim().isEmpty
-                          ? _selectedLang + ' DJ Nonstop Jukebox'
-                          : _searchCtrl.text.trim();
-                      _searchUserQuery(q);
                     }),
                     const SizedBox(width: 6),
                     _modeButton('❤️ Favorites (' + _favoriteTracks.length.toString() + ')', 'FAVORITES', () {
@@ -564,8 +510,8 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
           ),
         ),
 
-        // Full-Length Master DJ Deck
-        if (currentTrack != null)
+        // Locked Master DJ Deck (Never glitches when searching new songs!)
+        if (playingTrack != null)
           Container(
             margin: const EdgeInsets.all(8),
             padding: const EdgeInsets.all(10),
@@ -581,7 +527,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
                     ClipRRect(
                       borderRadius: BorderRadius.circular(8),
                       child: Image.network(
-                        currentTrack['cover'].toString(),
+                        playingTrack['cover'].toString(),
                         width: 48,
                         height: 48,
                         fit: BoxFit.cover,
@@ -599,13 +545,13 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            currentTrack['title'].toString(),
+                            playingTrack['title'].toString(),
                             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                           Text(
-                            currentTrack['artist'].toString(),
+                            playingTrack['artist'].toString(),
                             style: const TextStyle(fontSize: 11, color: Colors.amberAccent),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -639,6 +585,17 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
                       spacing: 4,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
+                        TextButton(
+                          style: TextButton.styleFrom(
+                            backgroundColor: _isTalkoverDucked ? Colors.redAccent : Colors.white10,
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          ),
+                          onPressed: _toggleTalkoverDuck,
+                          child: Text(
+                            _isTalkoverDucked ? '🎙 MIC DUCK ON' : '🎙 DUCK 15%',
+                            style: const TextStyle(fontSize: 9, color: Colors.white, fontWeight: FontWeight.bold),
+                          ),
+                        ),
                         IconButton(
                           tooltip: 'Shuffle',
                           icon: Icon(Icons.shuffle, size: 16, color: _shuffleMode ? Colors.amber : Colors.white54),
@@ -648,26 +605,6 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
                           tooltip: 'Loop Song',
                           icon: Icon(Icons.repeat_one, size: 16, color: _loopCurrent ? Colors.amber : Colors.white54),
                           onPressed: () => setState(() => _loopCurrent = !_loopCurrent),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            setState(() {
-                              if (_abLoopStart == null) {
-                                _abLoopStart = _position;
-                              } else if (_abLoopEnd == null) {
-                                _abLoopEnd = _position;
-                              } else {
-                                _abLoopStart = null;
-                                _abLoopEnd = null;
-                              }
-                            });
-                          },
-                          child: Text(
-                            _abLoopStart == null
-                                ? 'A-B'
-                                : (_abLoopEnd == null ? 'A Set' : 'A-B ON'),
-                            style: const TextStyle(fontSize: 10, color: Colors.cyanAccent),
-                          ),
                         ),
                         DropdownButton<double>(
                           value: _playbackSpeed,
@@ -694,17 +631,19 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
             ),
           ),
 
-        // Full-Length Track List (50+ items)
+        // Track List
         Expanded(
           child: _isLoading
               ? const Center(child: CircularProgressIndicator())
               : ListView.builder(
-                  itemCount: activeList.length,
+                  itemCount: visibleList.length,
                   itemBuilder: (ctx, idx) {
-                    final trk = activeList[idx];
+                    final trk = visibleList[idx];
+                    final isThisPlaying = (playingId != null && trk['id'].toString() == playingId);
                     final isFav = _favoriteTracks.any((e) => e['id'] == trk['id']);
+                    final isOff = _offlineTracks.any((e) => e['id'] == trk['id']);
                     return Card(
-                      color: (_currentIndex == idx) ? const Color(0xFF1A2947) : const Color(0xFF11192B),
+                      color: isThisPlaying ? const Color(0xFF1E3A8A) : const Color(0xFF11192B),
                       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       child: ListTile(
                         leading: Stack(
@@ -734,10 +673,17 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
                           (idx + 1).toString() + '. ' + trk['title'].toString(),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: isThisPlaying ? Colors.amberAccent : Colors.white,
+                          ),
                         ),
                         subtitle: Text(
-                          trk['artist'].toString() + ' • ' + trk['quality'].toString(),
+                          (isThisPlaying ? '🔊 NOW PLAYING • ' : '') +
+                              trk['artist'].toString() +
+                              ' • ' +
+                              trk['quality'].toString(),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(fontSize: 11, color: Colors.cyanAccent),
@@ -751,12 +697,26 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
                               onPressed: () => _toggleFavorite(trk),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.download_for_offline, color: Colors.greenAccent, size: 22),
+                              icon: Icon(
+                                isOff ? Icons.offline_pin : Icons.download_for_offline,
+                                color: isOff ? Colors.amberAccent : Colors.greenAccent,
+                                size: 22,
+                              ),
                               onPressed: () => _downloadFullTrackOffline(trk),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.play_circle_fill, color: Color(0xFF00E5FF), size: 30),
-                              onPressed: () => _playTrackAtIndex(idx),
+                              icon: Icon(
+                                (isThisPlaying && _isPlaying) ? Icons.pause_circle_filled : Icons.play_circle_fill,
+                                color: const Color(0xFF00E5FF),
+                                size: 30,
+                              ),
+                              onPressed: () {
+                                if (isThisPlaying) {
+                                  _isPlaying ? _player.pause() : _player.resume();
+                                } else {
+                                  _startPlaybackFromVisibleList(idx);
+                                }
+                              },
                             ),
                           ],
                         ),

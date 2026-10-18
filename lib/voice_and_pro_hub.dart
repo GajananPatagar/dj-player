@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'main.dart';
 
@@ -44,35 +45,55 @@ class VoiceCloneAndProHubScreen extends StatefulWidget {
 }
 
 class _VoiceCloneAndProHubScreenState extends State<VoiceCloneAndProHubScreen> {
+  final Random _rng = Random();
   String _selectedEventToRecord = 'SIX';
   bool _isRecordingMic = false;
   String _recordStatus = 'Tap Record to capture real human voice from your microphone';
+  String _tossResultBanner = 'Tap Flip Toss to announce live coin toss!';
 
-  // PA System Crossover & Amp Limiter Controls (Fire 57 Tops + S8118 Subwoofers + PA 7.5)
   double _subBass8118Gain = 0.85;
   double _fire57TopClarity = 0.78;
-  int _crossoverHz = 100;
-  bool _paLimiterActive = true;
+  final int _crossoverHz = 100;
+  final bool _paLimiterActive = true;
 
   final List<String> _recordableEvents = ['SIX', 'FOUR', 'BOWLED', 'CAUGHT', 'RUN_OUT', 'NO_BALL', 'WIDE', 'DOT'];
 
   final List<Map<String, String>> _launchpadPads = const [
     {'label': '📢 AIRHORN', 'sfx': 'AIRHORN'},
-    {'label': '🔊 S8118 SUB DROP', 'sfx': 'SUB_DROP'},
-    {'label': '🥁 PUNERI DHOL', 'sfx': 'DHOL'},
-    {'label': '🎺 IPL TRUMPET', 'sfx': 'TRUMPET'},
+    {'label': '🔊 S8118 SUB', 'sfx': 'SUB_DROP'},
+    {'label': '🥁 DHOL BEAT', 'sfx': 'DHOL'},
+    {'label': '🎺 TRUMPET', 'sfx': 'TRUMPET'},
     {'label': '⚡ LASER DROP', 'sfx': 'LASER'},
     {'label': '🏟 CROWD ROAR', 'sfx': 'CROWD'},
     {'label': '🪵 STUMP CRASH', 'sfx': 'BOWLED'},
-    {'label': '🚨 FREE-HIT SIREN', 'sfx': 'NO_BALL'},
+    {'label': '🚨 NB SIREN', 'sfx': 'NO_BALL'},
+    {'label': '💓 DRS HEART', 'sfx': 'HEARTBEAT'},
+    {'label': '🔔 BELL GONG', 'sfx': 'BELL'},
+    {'label': '🌪 BASS RISER', 'sfx': 'RISER'},
+    {'label': '🛑 MUTE ALL', 'sfx': 'MUTE_ALL'},
   ];
+
+  void _flipLiveCoinToss() {
+    AppSoundEngine.playSynthesizedSfx('BELL');
+    final bool heads = _rng.nextBool();
+    final bool batFirst = _rng.nextBool();
+    final String side = heads ? 'HEADS' : 'TAILS';
+    final String decision = batFirst ? 'ಮೊದಲು ಬ್ಯಾಟಿಂಗ್ (BAT FIRST)' : 'ಮೊದಲು ಬೌಲಿಂಗ್ (BOWL FIRST)';
+    setState(() {
+      _tossResultBanner = '🪙 TOSS: ' + side + ' — Elected to ' + decision;
+    });
+    AppSoundEngine.speakRealVoice(
+      'ಟಾಸ್ ಪ್ರಕಟಣೆ! ನಾಣ್ಯ ಚಿಮ್ಮಲಾಗಿದೆ... ' + side + ' ಬಂದಿದೆ! ಟಾಸ್ ಗೆದ್ದ ತಂಡ ' + decision + ' ಆಯ್ಕೆ ಮಾಡಿಕೊಂಡಿದೆ!',
+      'KANNADA',
+    );
+  }
 
   Future<void> _toggleRealMicRecording() async {
     if (!_isRecordingMic) {
-      final path = await AppSoundEngine.startMicRecording('real_voice_$_selectedEventToRecord');
+      final path = await AppSoundEngine.startMicRecording('real_voice_' + _selectedEventToRecord);
       setState(() {
         _isRecordingMic = true;
-        _recordStatus = '🔴 RECORDING REAL VOICE FOR [$_selectedEventToRecord]... Speak now!';
+        _recordStatus = '🔴 RECORDING REAL VOICE FOR [' + _selectedEventToRecord + ']... Speak now!';
         if (path != null) {
           VoiceCloneProfileStore.recordedEventClips[_selectedEventToRecord] = path;
         }
@@ -83,7 +104,7 @@ class _VoiceCloneAndProHubScreenState extends State<VoiceCloneAndProHubScreen> {
         _isRecordingMic = false;
         if (savedPath != null && savedPath.isNotEmpty) {
           VoiceCloneProfileStore.recordedEventClips[_selectedEventToRecord] = savedPath;
-          _recordStatus = '✅ Saved Real Human Voice for [$_selectedEventToRecord]!';
+          _recordStatus = '✅ Saved Real Human Voice for [' + _selectedEventToRecord + ']!';
         }
       });
     }
@@ -95,7 +116,7 @@ class _VoiceCloneAndProHubScreenState extends State<VoiceCloneAndProHubScreen> {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
-        // 1. PA SYSTEM CROSSOVER & SUBWOOFER DSP RACK
+        // 1. PA SYSTEM CROSSOVER & SPEAKER TEST RACK
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -110,27 +131,48 @@ class _VoiceCloneAndProHubScreenState extends State<VoiceCloneAndProHubScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text(
-                    '🔊 PRO PA SYSTEM DSP & CROSSOVER RACK',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Colors.amberAccent),
+                    '🔊 PRO PA SYSTEM DSP & SPEAKER TEST RACK',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Colors.amberAccent),
                   ),
                   Chip(
                     backgroundColor: _paLimiterActive ? Colors.green.shade800 : Colors.grey.shade800,
-                    label: Text(_paLimiterActive ? 'PA 7.5 LIMITER ON' : 'LIMITER OFF',
-                        style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold)),
+                    label: const Text('PA 7.5 LIMITER ON',
+                        style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),
-              Text('S8118 Subwoofer Punch (40Hz–$_crossoverHz Hz): ${(_subBass8118Gain * 100).toInt()}%',
-                  style: const TextStyle(fontSize: 11, color: Colors.cyanAccent)),
+              Text(
+                'S8118 Subwoofer Punch (40Hz–' + _crossoverHz.toString() + 'Hz): ' + (_subBass8118Gain * 100).toInt().toString() + '%',
+                style: const TextStyle(fontSize: 11, color: Colors.cyanAccent),
+              ),
               Slider(
                 value: _subBass8118Gain,
                 onChanged: (v) => setState(() => _subBass8118Gain = v),
               ),
-              Text('Fire 57 Top Speaker Vocal Clarity (3.5kHz): ${(_fire57TopClarity * 100).toInt()}%',
-                  style: const TextStyle(fontSize: 11, color: Colors.greenAccent)),
+              Text(
+                'Fire 57 Top Speaker Vocal Clarity (3.5kHz): ' + (_fire57TopClarity * 100).toInt().toString() + '%',
+                style: const TextStyle(fontSize: 11, color: Colors.greenAccent),
+              ),
               Slider(
                 value: _fire57TopClarity,
                 onChanged: (v) => setState(() => _fire57TopClarity = v),
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => AppSoundEngine.playSynthesizedSfx('SUB_TEST_50HZ'),
+                      child: const Text('🔊 50Hz S8118 Sub Test', style: TextStyle(fontSize: 10)),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => AppSoundEngine.playSynthesizedSfx('TOP_TEST_1KHZ'),
+                      child: const Text('📢 1kHz Fire 57 Top Test', style: TextStyle(fontSize: 10)),
+                    ),
+                  ),
+                ],
               ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
@@ -146,7 +188,7 @@ class _VoiceCloneAndProHubScreenState extends State<VoiceCloneAndProHubScreen> {
         ),
         const SizedBox(height: 12),
 
-        // 2. LAUNCHPAD STINGER MATRIX
+        // 2. 12-PAD LAUNCHPAD + COIN TOSS SIMULATOR
         Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
@@ -157,25 +199,40 @@ class _VoiceCloneAndProHubScreenState extends State<VoiceCloneAndProHubScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('🎛 8-PAD INSTANT STADIUM & DJ LAUNCHPAD (0ms LATENCY)',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF00E5FF))),
-              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('🎛 12-PAD STADIUM & DJ LAUNCHPAD',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF00E5FF))),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black),
+                    icon: const Icon(Icons.monetization_on, size: 15),
+                    label: const Text('🪙 FLIP TOSS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900)),
+                    onPressed: _flipLiveCoinToss,
+                  ),
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Text(_tossResultBanner, style: const TextStyle(fontSize: 11, color: Colors.greenAccent)),
+              ),
               GridView.count(
                 crossAxisCount: 4,
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 mainAxisSpacing: 6,
                 crossAxisSpacing: 6,
-                childAspectRatio: 1.4,
+                childAspectRatio: 1.45,
                 children: _launchpadPads.map((pad) {
+                  final bool isMute = pad['sfx'] == 'MUTE_ALL';
                   return ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF1E293B),
+                      backgroundColor: isMute ? Colors.red.shade900 : const Color(0xFF1E293B),
                       foregroundColor: Colors.amberAccent,
                       padding: const EdgeInsets.all(4),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
-                        side: const BorderSide(color: Colors.cyanAccent),
+                        side: BorderSide(color: isMute ? Colors.redAccent : Colors.cyanAccent),
                       ),
                     ),
                     onPressed: () => AppSoundEngine.playSynthesizedSfx(pad['sfx']!),
@@ -242,7 +299,9 @@ class _VoiceCloneAndProHubScreenState extends State<VoiceCloneAndProHubScreen> {
                       ),
                       icon: Icon(_isRecordingMic ? Icons.stop_circle : Icons.mic),
                       label: Text(
-                        _isRecordingMic ? '⏹ STOP & SAVE REAL VOICE' : '🎙 RECORD REAL VOICE FOR $_selectedEventToRecord',
+                        _isRecordingMic
+                            ? '⏹ STOP & SAVE REAL VOICE'
+                            : ('🎙 RECORD REAL VOICE FOR ' + _selectedEventToRecord),
                         style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11),
                       ),
                       onPressed: _toggleRealMicRecording,

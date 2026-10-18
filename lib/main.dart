@@ -23,7 +23,6 @@ class AppSoundEngine {
   static bool _isSpeakingLock = false;
   static bool hardwareVolumeEntryMode = false;
 
-  // Phonetic Dictionary for Natural Kannada & Hindi Pronunciation of Local Names
   static const Map<String, String> _knPhonetics = {
     'gajanan': 'ಗಜಾನನ',
     'patagar': 'ಪಟಗಾರ',
@@ -82,19 +81,34 @@ class AppSoundEngine {
           MasterVolumeController.page4EntryVolume.value = 0.0;
         } else if (dir == 'UP') {
           final cur = MasterVolumeController.page4EntryVolume.value;
-          MasterVolumeController.page4EntryVolume.value = (cur <= 0.02) ? 0.85 : (cur + 0.15).clamp(0.0, 1.0);
+          MasterVolumeController.page4EntryVolume.value =
+              (cur <= 0.02) ? 0.85 : (cur + 0.15).clamp(0.0, 1.0);
         }
       }
     });
   }
 
-  static Future<void> speakRealVoice(String rawText, String langMode, {String? eventKey, String? coCommentatorText}) async {
+  static Future<void> panicMuteAll() async {
+    try {
+      await _nativeChannel.invokeMethod('stopSpeak');
+      await _voicePlayer.stop();
+      await _sfxPlayer.stop();
+      MasterVolumeController.page4EntryVolume.value = 0.0;
+    } catch (_) {}
+  }
+
+  static Future<void> speakRealVoice(
+    String rawText,
+    String langMode, {
+    String? eventKey,
+    String? coCommentatorText,
+  }) async {
     if (rawText.trim().isEmpty) return;
     final double voiceVol = MasterVolumeController.page2VoiceVolume.value;
     if (voiceVol <= 0.01) return;
 
-    final String fullText = coCommentatorText != null && coCommentatorText.isNotEmpty
-        ? '$rawText ... $coCommentatorText'
+    final String fullText = (coCommentatorText != null && coCommentatorText.isNotEmpty)
+        ? (rawText + ' ... ' + coCommentatorText)
         : rawText;
     final String phoneticText = applyPhonetics(fullText, langMode);
 
@@ -143,8 +157,13 @@ class AppSoundEngine {
         }
       }
 
-      final String cleanText = phoneticText.length > 185 ? phoneticText.substring(0, 185) : phoneticText;
-      final String url = 'https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=$tl&q=${Uri.encodeComponent(cleanText)}';
+      final String cleanText =
+          phoneticText.length > 185 ? phoneticText.substring(0, 185) : phoneticText;
+      final String url =
+          'https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=' +
+              tl +
+              '&q=' +
+              Uri.encodeComponent(cleanText);
       await _voicePlayer.stop();
       await _voicePlayer.setVolume(voiceVol);
       await _voicePlayer.play(UrlSource(url));
@@ -182,6 +201,10 @@ class AppSoundEngine {
   }
 
   static Future<void> playSynthesizedSfx(String type) async {
+    if (type == 'MUTE_ALL') {
+      await panicMuteAll();
+      return;
+    }
     try {
       final double sfxVol = MasterVolumeController.page3SfxVolume.value;
       if (sfxVol <= 0.01) return;
@@ -194,7 +217,10 @@ class AppSoundEngine {
 
   static Uint8List _buildWavBytes(String type) {
     const int sampleRate = 22050;
-    final double durationSec = (type == 'CROWD' || type == 'SIX' || type == 'DHOL') ? 0.95 : 0.42;
+    final double durationSec =
+        (type == 'CROWD' || type == 'SIX' || type == 'DHOL' || type == 'HEARTBEAT' || type == 'RISER')
+            ? 1.15
+            : 0.48;
     final int numSamples = (sampleRate * durationSec).toInt();
     final int dataSize = numSamples * 2;
     final ByteData bd = ByteData(44 + dataSize);
@@ -233,13 +259,25 @@ class AppSoundEngine {
         sample = sin(2 * pi * freq.clamp(100, 1500) * t) * 0.65 * env;
       } else if (type == 'SUB_DROP') {
         final freq = (130 - t * 95).clamp(38.0, 130.0);
-        sample = sin(2 * pi * freq * t) * 0.85 * env;
+        sample = sin(2 * pi * freq * t) * 0.88 * env;
       } else if (type == 'DHOL') {
         final pulse = (sin(2 * pi * 6.5 * t) > 0) ? 1.0 : 0.25;
-        sample = sin(2 * pi * 115 * t) * pulse * 0.75 * env;
+        sample = sin(2 * pi * 115 * t) * pulse * 0.78 * env;
       } else if (type == 'TRUMPET') {
         final f = (t < 0.2) ? 523.25 : ((t < 0.4) ? 659.25 : 783.99);
-        sample = (sin(2 * pi * f * t) + 0.4 * sin(4 * pi * f * t)) * 0.5 * env;
+        sample = (sin(2 * pi * f * t) + 0.4 * sin(4 * pi * f * t)) * 0.55 * env;
+      } else if (type == 'HEARTBEAT') {
+        final thump = ((t % 0.45) < 0.12) ? 1.0 : 0.05;
+        sample = sin(2 * pi * 62 * t) * thump * 0.9;
+      } else if (type == 'BELL') {
+        sample = (sin(2 * pi * 880 * t) + 0.5 * sin(2 * pi * 1760 * t)) * 0.5 * env;
+      } else if (type == 'RISER') {
+        final freq = 120 + (t * 950);
+        sample = sin(2 * pi * freq * t) * (t / durationSec).clamp(0.1, 0.85);
+      } else if (type == 'SUB_TEST_50HZ') {
+        sample = sin(2 * pi * 50 * t) * 0.85;
+      } else if (type == 'TOP_TEST_1KHZ') {
+        sample = sin(2 * pi * 1000 * t) * 0.55;
       } else {
         final crack = (t < 0.045) ? sin(2 * pi * 520 * t) * 0.85 : 0.0;
         final roar = (rng.nextDouble() * 2 - 1) * 0.28 * env;
@@ -318,11 +356,11 @@ class _MasterHomeShellState extends State<MasterHomeShell> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'DJ Play and Commentry App v100',
+                    'DJ Play and Commentry App v200',
                     style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFF00E5FF)),
                   ),
                   Text(
-                    'PA DSP • Dual Banter • Undo Ball • Walkout BGM',
+                    '320k Audio • DRS & Innings • PA DSP • Entry Fader',
                     style: TextStyle(fontSize: 10, color: Colors.amberAccent),
                   ),
                 ],
@@ -332,9 +370,9 @@ class _MasterHomeShellState extends State<MasterHomeShell> {
         ),
         actions: [
           IconButton(
-            tooltip: 'Sub Bass Drop',
-            icon: const Icon(Icons.speaker, color: Colors.cyanAccent),
-            onPressed: () => AppSoundEngine.playSynthesizedSfx('SUB_DROP'),
+            tooltip: 'Panic Mute All',
+            icon: const Icon(Icons.volume_off, color: Colors.redAccent),
+            onPressed: () => AppSoundEngine.panicMuteAll(),
           ),
           IconButton(
             tooltip: 'DJ Airhorn',

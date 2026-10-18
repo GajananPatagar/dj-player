@@ -1,8 +1,9 @@
-import 'entry_music_data.dart';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'main.dart';
 import 'voice_and_pro_hub.dart';
+import 'entry_music_data.dart';
 
 class CricketCommentaryScreen extends StatefulWidget {
   const CricketCommentaryScreen({super.key});
@@ -16,26 +17,30 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
 
   final TextEditingController _teamACtrl = TextEditingController(text: 'Karnataka Lions');
   final TextEditingController _teamBCtrl = TextEditingController(text: 'Mumbai Warriors');
-  final TextEditingController _targetCtrl = TextEditingController(text: '0');
+  final TextEditingController _targetCtrl = TextEditingController(text: '180');
+  final TextEditingController _maxOversCtrl = TextEditingController(text: '20');
   final TextEditingController _squadACtrl = TextEditingController(
-      text: 'Virat Kohli, KL Rahul, Rajat Patidar, Glenn Maxwell, Devdutt Padikkal, Dinesh Karthik, Mayank Agarwal, Shreyas Gopal, Prasidh Krishna, Mohammed Siraj, Vyshak Vijaykumar');
+      text: 'Gajanan Patagar, Virat Kohli, KL Rahul, Rajat Patidar, Darshan, Glenn Maxwell, Devdutt Padikkal, Dinesh Karthik, Manjunath, Mohammed Siraj, Prashanth');
   final TextEditingController _squadBCtrl = TextEditingController(
       text: 'Rohit Sharma, Jasprit Bumrah, Hardik Pandya, Suryakumar Yadav, Ishan Kishan, Ravindra Jadeja, Kuldeep Yadav, Mohammed Shami, Axar Patel, Arshdeep Singh, Yuzvendra Chahal');
 
   List<String> _squadA = [];
   List<String> _squadB = [];
 
-  String _striker = 'Virat Kohli';
-  String _nonStriker = 'KL Rahul';
+  String _striker = 'Gajanan Patagar';
+  String _nonStriker = 'Virat Kohli';
   String _bowler = 'Jasprit Bumrah';
   String _wk = 'Ishan Kishan';
   String _fielder = 'Ravindra Jadeja';
   String _commLanguage = 'KANNADA'; // KANNADA, HINDI, ENGLISH
   String _shotZone = 'Long-On';
+  bool _dualCommentatorBanter = true;
+  bool _autoWalkoutBgmOnWicket = true;
 
   int _runs = 0;
   int _wickets = 0;
   int _legalBalls = 0;
+  int _consecutiveWickets = 0;
   int _partnershipRuns = 0;
   int _partnershipBalls = 0;
   bool _freeHit = false;
@@ -46,6 +51,7 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
   final List<String> _thisOver = [];
   final List<String> _fallOfWickets = [];
   final List<String> _feed = [];
+  final List<Map<String, dynamic>> _undoHistoryStack = [];
   final Set<String> _usedTournamentLines = {};
 
   final List<String> _zones = [
@@ -63,6 +69,72 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
   void initState() {
     super.initState();
     _loadSquads();
+  }
+
+  void _saveUndoSnapshot() {
+    _undoHistoryStack.add({
+      'runs': _runs,
+      'wickets': _wickets,
+      'legalBalls': _legalBalls,
+      'consecutiveWickets': _consecutiveWickets,
+      'partnershipRuns': _partnershipRuns,
+      'partnershipBalls': _partnershipBalls,
+      'freeHit': _freeHit,
+      'striker': _striker,
+      'nonStriker': _nonStriker,
+      'bowler': _bowler,
+      'batterRuns': Map<String, int>.from(_batterRuns),
+      'batterBalls': Map<String, int>.from(_batterBalls),
+      'bowlerWickets': Map<String, int>.from(_bowlerWickets),
+      'bowlerRuns': Map<String, int>.from(_bowlerRuns),
+      'thisOver': List<String>.from(_thisOver),
+      'fallOfWickets': List<String>.from(_fallOfWickets),
+      'feed': List<String>.from(_feed),
+    });
+    if (_undoHistoryStack.length > 30) {
+      _undoHistoryStack.removeAt(0);
+    }
+  }
+
+  void _undoLastBall() {
+    if (_undoHistoryStack.isEmpty) return;
+    final snap = _undoHistoryStack.removeLast();
+    setState(() {
+      _runs = snap['runs'] as int;
+      _wickets = snap['wickets'] as int;
+      _legalBalls = snap['legalBalls'] as int;
+      _consecutiveWickets = snap['consecutiveWickets'] as int;
+      _partnershipRuns = snap['partnershipRuns'] as int;
+      _partnershipBalls = snap['partnershipBalls'] as int;
+      _freeHit = snap['freeHit'] as bool;
+      _striker = snap['striker'] as String;
+      _nonStriker = snap['nonStriker'] as String;
+      _bowler = snap['bowler'] as String;
+      _batterRuns
+        ..clear()
+        ..addAll(snap['batterRuns'] as Map<String, int>);
+      _batterBalls
+        ..clear()
+        ..addAll(snap['batterBalls'] as Map<String, int>);
+      _bowlerWickets
+        ..clear()
+        ..addAll(snap['bowlerWickets'] as Map<String, int>);
+      _bowlerRuns
+        ..clear()
+        ..addAll(snap['bowlerRuns'] as Map<String, int>);
+      _thisOver
+        ..clear()
+        ..addAll(snap['thisOver'] as List<String>);
+      _fallOfWickets
+        ..clear()
+        ..addAll(snap['fallOfWickets'] as List<String>);
+      _feed
+        ..clear()
+        ..addAll(snap['feed'] as List<String>);
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(duration: Duration(seconds: 1), content: Text('⏪ Last ball undone! Score restored.')),
+    );
   }
 
   void _loadSquads() {
@@ -87,7 +159,42 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
     });
   }
 
-  String _oversText() => (_legalBalls ~/ 6).toString() + '.' + (_legalBalls % 6).toString();
+  String _oversText() => '${_legalBalls ~/ 6}.${_legalBalls % 6}';
+
+  String _buildCoCommentatorBanter(String eventType, String? incomingBatter) {
+    if (!_dualCommentatorBanter) return '';
+    final int target = int.tryParse(_targetCtrl.text) ?? 0;
+    final int maxOvers = int.tryParse(_maxOversCtrl.text) ?? 20;
+    final int ballsLeft = (maxOvers * 6) - _legalBalls;
+    final int runsNeeded = target > _runs ? (target - _runs) : 0;
+
+    if (_commLanguage == 'KANNADA') {
+      if (incomingBatter != null) {
+        return 'ಹೌದು! ಈಗ ಹೊಸ ಬ್ಯಾಟ್ಸ್‌ಮನ್ $incomingBatter ಕ್ರೀಸ್‌ಗೆ ಎಂಟ್ರಿ ಕೊಡುತ್ತಿದ್ದಾರೆ! ಸ್ಟೇಡಿಯಂನಲ್ಲಿ ಎಂಟ್ರಿ ಮ್ಯೂಸಿಕ್ ಮೊಳಗುತ್ತಿದೆ!';
+      }
+      if (_consecutiveWickets == 2) {
+        return 'ಗಮನಿಸಿ! $_bowler ಈಗ ಹ್ಯಾಟ್ರಿಕ್ ವಿಕೆಟ್ ಅವಕಾಶದಲ್ಲಿದ್ದಾರೆ!';
+      }
+      if (target > 0 && ballsLeft > 0 && runsNeeded > 0 && (eventType == 'SIX' || eventType == 'FOUR')) {
+        return 'ಪಂದ್ಯ ರೋಚಕವಾಗಿದೆ! ಗೆಲ್ಲಲು ಇನ್ನು $ballsLeft ಎಸೆತಗಳಲ್ಲಿ $runsNeeded ರನ್ ಬೇಕಾಗಿದೆ!';
+      }
+      if (eventType == 'SIX') {
+        return 'ಎಂತಹ ಪವರ್ ಹಿಟ್ಟಿಂಗ್! $_shotZone ಮೇಲೆ ಚೆಂಡು ರಾಕೆಟ್ ವೇಗದಲ್ಲಿ ಹಾರಿಹೋಗಿದೆ!';
+      }
+    } else if (_commLanguage == 'HINDI') {
+      if (incomingBatter != null) {
+        return 'जी हाँ! अब नए बल्लेबाज़ $incomingBatter मैदान में उतर रहे हैं और धमाकेदार एंट्री म्यूज़िक बज रहा है!';
+      }
+      if (target > 0 && ballsLeft > 0 && runsNeeded > 0 && (eventType == 'SIX' || eventType == 'FOUR')) {
+        return 'मुकाबला रोमांचक मोड़ पर! अब $ballsLeft गेंदों में $runsNeeded रनों की ज़रूरत है!';
+      }
+    } else {
+      if (incomingBatter != null) {
+        return 'And here walks out $incomingBatter to the crease as the stadium entry music blasts!';
+      }
+    }
+    return '';
+  }
 
   String _generateNonRepeatingLine(String eventType) {
     final teamA = _teamACtrl.text.trim();
@@ -98,186 +205,122 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
       switch (eventType) {
         case 'SIX':
           pool = [
-            'ಅದ್ಭುತವಾದ ಸಿಕ್ಸರ್! ' + _bowler + ' ಎಸೆದ ಚೆಂಡನ್ನು ' + _striker + ' ' + _shotZone + ' ಮೇಲಿಂದ ಸ್ಟೇಡಿಯಂ ಆಚೆಗಟ್ಟಿದ್ದಾರೆ! ಆರು ರನ್‌ಗಳು!',
-            'ಬೃಹತ್ ಸಿಕ್ಸರ್! ' + _striker + ' ಅವರ ಬ್ಯಾಟ್‌ನಿಂದ ಸಿಡಿದ ಚೆಂಡು ನೇರವಾಗಿ ಪ್ರೇಕ್ಷಕರ ಗ್ಯಾಲರಿಗೆ ಹೋಗಿ ಬಿದ್ದಿದೆ! ಈಗ ' + _striker + ' ಅವರ ಮೊತ್ತ ' + sRuns.toString() + ' ರನ್!',
-            'ಎಂತಹ ಭರ್ಜರಿ ಹೊಡೆತ! ' + _bowler + ' ಅವರ ಬೌಲಿಂಗ್‌ನಲ್ಲಿ ' + _striker + ' ಆಕರ್ಷಕ ಸಿಕ್ಸರ್ ಬಾರಿಸಿದ್ದಾರೆ! ' + teamA + ' ತಂಡದ ಮೊತ್ತ ' + _runs.toString() + ' ಕ್ಕೆ ಏರಿದೆ!'
+            'ಅದ್ಭುತವಾದ ಸಿಕ್ಸರ್! $_bowler ಎಸೆದ ಚೆಂಡನ್ನು $_striker $_shotZone ಮೇಲಿಂದ ಸ್ಟೇಡಿಯಂ ಆಚೆಗಟ್ಟಿದ್ದಾರೆ! ಆರು ರನ್‌ಗಳು!',
+            'ಬೃಹತ್ ಸಿಕ್ಸರ್! $_striker ಅವರ ಬ್ಯಾಟ್‌ನಿಂದ ಸಿಡಿದ ಚೆಂಡು ನೇರವಾಗಿ ಪ್ರೇಕ್ಷಕರ ಗ್ಯಾಲರಿಗೆ ಹೋಗಿ ಬಿದ್ದಿದೆ! ಈಗ $_striker ಮೊತ್ತ $sRuns ರನ್!',
+            'ಬೆಂಕಿ ಹೊಡೆತ! $_bowler ಬೌಲಿಂಗ್‌ನಲ್ಲಿ $_striker ಭರ್ಜರಿ ಸಿಕ್ಸರ್ ಬಾರಿಸಿದ್ದಾರೆ! $teamA ಮೊತ್ತ $_runs ಕ್ಕೆ ಏರಿದೆ!'
           ];
           break;
         case 'FOUR':
           pool = [
-            'ಮನೋಹರವಾದ ಬೌಂಡರಿ! ' + _striker + ' ಹೊಡೆದ ಚೆಂಡನ್ನು ತಡೆಯಲು ಫೀಲ್ಡರ್ ' + _fielder + ' ಡೈವ್ ಮಾಡಿದರೂ ಸಾಧ್ಯವಾಗಲಿಲ್ಲ! ನಾಲ್ಕು ರನ್‌ಗಳು!',
-            'ಸೂಪರ್ ಶಾಟ್! ' + _bowler + ' ಎಸೆತಕ್ಕೆ ' + _striker + ' ಬ್ಯಾಟ್‌ನಿಂದ ' + _shotZone + ' ದಿಕ್ಕಿನಲ್ಲಿ ಮಿಂಚಿನ ವೇಗದ ಬೌಂಡರಿ!',
-            'ಗ್ಯಾಪ್‌ನಲ್ಲಿ ಅದ್ಭುತ ಹೊಡೆತ! ಫೀಲ್ಡರ್ ' + _fielder + ' ಚೆಂಡನ್ನು ಬೆನ್ನಟ್ಟಿದರೂ ಚೆಂಡು ಬೌಂಡರಿ ಗೆರೆ ದಾಟಿದೆ! ನಾಲ್ಕು ರನ್!'
+            'ಮನೋಹರವಾದ ಬೌಂಡರಿ! $_striker ಹೊಡೆದ ಚೆಂಡನ್ನು ತಡೆಯಲು ಫೀಲ್ಡರ್ $_fielder ಡೈವ್ ಮಾಡಿದರೂ ಸಾಧ್ಯವಾಗಲಿಲ್ಲ! ನಾಲ್ಕು ರನ್!',
+            'ಸೂಪರ್ ಶಾಟ್! $_bowler ಎಸೆತಕ್ಕೆ $_striker ಬ್ಯಾಟ್‌ನಿಂದ $_shotZone ದಿಕ್ಕಿನಲ್ಲಿ ಮಿಂಚಿನ ವೇಗದ ಬೌಂಡರಿ!'
           ];
           break;
         case 'BOWLED':
           pool = [
-            'ಬ್ಯಾಟರಿ ಬೋಲ್ಡ್! ಕ್ಲೀನ್ ಬೌಲ್ಡ್! ' + _bowler + ' ಎಸೆದ ವೇಗದ ಯಾರ್ಕರ್‌ಗೆ ' + _striker + ' ಅವರ ಸ್ಟಂಪ್ಸ್ ಹಾರಿಹೋಗಿದೆ! ವಿಕೆಟ್ ಕೀಪರ್ ' + _wk + ' ಸಂಭ್ರಮಿಸುತ್ತಿದ್ದಾರೆ!',
-            'ಕ್ಲೀನ್ ಬೌಲ್ಡ್! ಎಂತಹ ಅದ್ಭುತ ಎಸೆತ! ' + _bowler + ' ಅವರ ಬೆಂಕಿಯಂತಹ ಚೆಂಡು ನೇರವಾಗಿ ವಿಕೆಟ್‌ಗೆ ಬಡಿದಿದೆ! ' + _striker + ' ಔಟ್ ಆಗಿ ಪೆವಿಲಿಯನ್ ಕಡೆಗೆ ನಡೆಯುತ್ತಿದ್ದಾರೆ!',
-            'ಬ್ಯಾಟರಿ ಬೋಲ್ಡ್! ಮಿಡಲ್ ಸ್ಟಂಪ್ ಉರುಳಿಬಿದ್ದಿದೆ! ' + _bowler + ' ಅವರಿಗೆ ಭರ್ಜರಿ ವಿಕೆಟ್!'
+            'ಬ್ಯಾಟರಿ ಬೋಲ್ಡ್! ಕ್ಲೀನ್ ಬೌಲ್ಡ್! $_bowler ಎಸೆದ ವೇಗದ ಯಾರ್ಕರ್‌ಗೆ $_striker ಅವರ ಸ್ಟಂಪ್ಸ್ ಹಾರಿಹೋಗಿದೆ! ವಿಕೆಟ್ ಕೀಪರ್ $_wk ಸಂಭ್ರಮಿಸುತ್ತಿದ್ದಾರೆ!',
+            'ಕ್ಲೀನ್ ಬೌಲ್ಡ್! ಎಂತಹ ಅದ್ಭುತ ಎಸೆತ! $_bowler ಅವರ ಬೆಂಕಿಯಂತಹ ಚೆಂಡು ನೇರವಾಗಿ ವಿಕೆಟ್‌ಗೆ ಬಡಿದಿದೆ!'
           ];
           break;
         case 'CAUGHT':
           pool = [
-            'ಗಾಳಿಯಲ್ಲಿ ಚೆಂಡು ಮತ್ತು ಅದ್ಭುತ ಕ್ಯಾಚ್! ' + _striker + ' ಹೊಡೆದ ಚೆಂಡನ್ನು ಫೀಲ್ಡರ್ ' + _fielder + ' ಯಾವುದೇ ತಪ್ಪಿಲ್ಲದೆ ಹಿಡಿದಿದ್ದಾರೆ! ' + _bowler + 'ಗೆ ವಿಕೆಟ್!',
-            'ಸೂಪರ್ ಡೈವಿಂಗ್ ಕ್ಯಾಚ್! ' + _fielder + ' ಹಾರಿ ಹಿಡಿದ ಅದ್ಭುತ ಕ್ಯಾಚ್‌ಗೆ ' + _striker + ' ಔಟ್ ಆಗಿದ್ದಾರೆ!'
+            'ಗಾಳಿಯಲ್ಲಿ ಚೆಂಡು ಮತ್ತು ಅದ್ಭುತ ಕ್ಯಾಚ್! $_striker ಹೊಡೆದ ಚೆಂಡನ್ನು ಫೀಲ್ಡರ್ $_fielder ಯಾವುದೇ ತಪ್ಪಿಲ್ಲದೆ ಹಿಡಿದಿದ್ದಾರೆ! $_bowler ಗೆ ವಿಕೆಟ್!'
           ];
           break;
         case 'CAUGHT_WK':
           pool = [
-            'ಬ್ಯಾಟ್‌ನ ಅಂಚಿಗೆ ತಗುಲಿ ವಿಕೆಟ್ ಕೀಪರ್ ಕೈ ಸೇರಿದೆ! ' + _bowler + ' ಎಸೆತದಲ್ಲಿ ವಿಕೆಟ್ ಕೀಪರ್ ' + _wk + ' ಅದ್ಭುತ ಕ್ಯಾಚ್ ಹಿಡಿದಿದ್ದಾರೆ! ' + _striker + ' ಔಟ್!'
+            'ಬ್ಯಾಟ್‌ನ ಅಂಚಿಗೆ ತಗುಲಿ ವಿಕೆಟ್ ಕೀಪರ್ ಕೈ ಸೇರಿದೆ! $_bowler ಎಸೆತದಲ್ಲಿ ವಿಕೆಟ್ ಕೀಪರ್ $_wk ಅದ್ಭುತ ಕ್ಯಾಚ್ ಹಿಡಿದಿದ್ದಾರೆ!'
           ];
           break;
         case 'RUN_OUT':
           pool = [
-            'ಡೈರೆಕ್ಟ್ ಹಿಟ್ ರನ್ ಔಟ್! ' + _striker + ' ಮತ್ತು ' + _nonStriker + ' ನಡುವೆ ಗೊಂದಲ! ಫೀಲ್ಡರ್ ' + _fielder + ' ಎಸೆದ ಚೆಂಡು ನೇರವಾಗಿ ವಿಕೆಟ್‌ಗೆ ಬಡಿದಿದೆ!'
+            'ಡೈರೆಕ್ಟ್ ಹಿಟ್ ರನ್ ಔಟ್! $_striker ಮತ್ತು $_nonStriker ನಡುವೆ ಗೊಂದಲ! ಫೀಲ್ಡರ್ $_fielder ಎಸೆದ ಚೆಂಡು ನೇರವಾಗಿ ವಿಕೆಟ್‌ಗೆ ಬಡಿದಿದೆ!'
           ];
           break;
         case 'STUMPED':
           pool = [
-            'ಮಿಂಚಿನ ಸ್ಟಂಪಿಂಗ್! ' + _striker + ' ಮುಂದೆ ಬಂದು ಹೊಡೆಯಲು ಪ್ರಯತ್ನಿಸಿದರು, ಆದರೆ ವಿಕೆಟ್ ಕೀಪರ್ ' + _wk + ' ಕ್ಷಣಮಾತ್ರದಲ್ಲಿ ಬೇಲ್ಸ್ ಹಾರಿಸಿದ್ದಾರೆ!'
+            'ಮಿಂಚಿನ ಸ್ಟಂಪಿಂಗ್! $_striker ಮುಂದೆ ಬಂದು ಹೊಡೆಯಲು ಪ್ರಯತ್ನಿಸಿದರು, ಆದರೆ ವಿಕೆಟ್ ಕೀಪರ್ $_wk ಕ್ಷಣಮಾತ್ರದಲ್ಲಿ ಬೇಲ್ಸ್ ಹಾರಿಸಿದ್ದಾರೆ!'
           ];
           break;
         case 'LBW':
           pool = [
-            'ಜೋರಾದ ಅಪೀಲ್ ಮತ್ತು ಅಂಪೈರ್ ಬೆರಳು ಎತ್ತಿದ್ದಾರೆ! ಎಲ್‌ಬಿಡಬ್ಲ್ಯೂ ಔಟ್! ' + _bowler + ' ಎಸೆತ ನೇರವಾಗಿ ' + _striker + ' ಪ್ಯಾಡ್‌ಗೆ ಬಡಿದಿದೆ!'
+            'ಜೋರಾದ ಅಪೀಲ್ ಮತ್ತು ಅಂಪೈರ್ ಬೆರಳು ಎತ್ತಿದ್ದಾರೆ! ಎಲ್‌ಬಿಡಬ್ಲ್ಯೂ ಔಟ್! $_bowler ಎಸೆತ ನೇರವಾಗಿ $_striker ಪ್ಯಾಡ್‌ಗೆ ಬಡಿದಿದೆ!'
           ];
           break;
         case 'NO_BALL':
           pool = [
-            'ನೋ ಬಾಲ್! ' + _bowler + ' ಕ್ರೀಸ್ ಗೆರೆ ದಾಟಿದ್ದಾರೆ! ಒಂದು ಹೆಚ್ಚುವರಿ ರನ್ ಮತ್ತು ಮುಂದಿನ ಎಸೆತ ಫ್ರೀ ಹಿಟ್ ಆಗಿರುತ್ತದೆ!'
+            'ನೋ ಬಾಲ್! $_bowler ಕ್ರೀಸ್ ಗೆರೆ ದಾಟಿದ್ದಾರೆ! ಒಂದು ಹೆಚ್ಚುವರಿ ರನ್ ಮತ್ತು ಮುಂದಿನ ಎಸೆತ ಫ್ರೀ ಹಿಟ್ ಆಗಿರುತ್ತದೆ!'
           ];
           break;
         case 'WIDE':
           pool = [
-            'ವೈಡ್ ಬಾಲ್! ' + _bowler + ' ಲೆಗ್ ಸೈಡ್ ಆಚೆ ಎಸೆದಿದ್ದಾರೆ, ವಿಕೆಟ್ ಕೀಪರ್ ' + _wk + ' ಡೈವ್ ಮಾಡಿ ಚೆಂಡನ್ನು ತಡೆದಿದ್ದಾರೆ! ಒಂದು ಹೆಚ್ಚುವರಿ ರನ್!'
+            'ವೈಡ್ ಬಾಲ್! $_bowler ಲೆಗ್ ಸೈಡ್ ಆಚೆ ಎಸೆದಿದ್ದಾರೆ, ವಿಕೆಟ್ ಕೀಪರ್ $_wk ಡೈವ್ ಮಾಡಿ ಚೆಂಡನ್ನು ತಡೆದಿದ್ದಾರೆ!'
           ];
           break;
         case 'RUN_1':
           pool = [
-            'ಚುರುಕಾದ ಒಂದು ರನ್! ' + _striker + ' ಚೆಂಡನ್ನು ಗ್ಯಾಪ್‌ನಲ್ಲಿ ತಳ್ಳಿ ' + _nonStriker + ' ಜೊತೆ ವೇಗವಾಗಿ ಸ್ಟ್ರೈಕ್ ಬದಲಾಯಿಸಿದ್ದಾರೆ!'
+            'ಚುರುಕಾದ ಒಂದು ರನ್! $_striker ಚೆಂಡನ್ನು $_shotZone ಕಡೆಗೆ ತಳ್ಳಿ $_nonStriker ಜೊತೆ ಸ್ಟ್ರೈಕ್ ಬದಲಾಯಿಸಿದ್ದಾರೆ!'
           ];
           break;
         case 'RUN_2':
           pool = [
-            'ಅದ್ಭುತ ಓಟ! ' + _striker + ' ಮತ್ತು ' + _nonStriker + ' ಫೀಲ್ಡರ್ ' + _fielder + ' ಚೆಂಡನ್ನು ಎಸೆಯುವಷ್ಟರಲ್ಲಿ ಎರಡು ರನ್ ಪೂರೈಸಿದ್ದಾರೆ!'
+            'ಅದ್ಭುತ ಓಟ! $_striker ಮತ್ತು $_nonStriker ಫೀಲ್ಡರ್ $_fielder ಚೆಂಡನ್ನು ಎಸೆಯುವಷ್ಟರಲ್ಲಿ ಎರಡು ರನ್ ಪೂರೈಸಿದ್ದಾರೆ!'
           ];
           break;
         default:
           pool = [
-            'ಡಾಟ್ ಬಾಲ್! ' + _bowler + ' ಅವರ ನಿಖರವಾದ ಎಸೆತವನ್ನು ' + _striker + ' ರಕ್ಷಣಾತ್ಮಕವಾಗಿ ಆಡಿದ್ದಾರೆ. ಯಾವುದೇ ರನ್ ಇಲ್ಲ!'
+            'ಡಾಟ್ ಬಾಲ್! $_bowler ಅವರ ನಿಖರವಾದ ಎಸೆತವನ್ನು $_striker ರಕ್ಷಣಾತ್ಮಕವಾಗಿ ಆಡಿದ್ದಾರೆ.'
           ];
       }
     } else if (_commLanguage == 'HINDI') {
       switch (eventType) {
         case 'SIX':
           pool = [
-            'शानदार छक्का! ' + _bowler + ' की गेंद पर ' + _striker + ' का ' + _shotZone + ' के ऊपर से गगनचुंबी प्रहार! छह रन!',
-            'धमाकेदार सिक्सर! ' + _striker + ' ने गेंद को दर्शकों के बीच पहुंचा दिया! ' + _striker + ' अब ' + sRuns.toString() + ' रन पर!'
+            'शानदार छक्का! $_bowler की गेंद पर $_striker का $_shotZone के ऊपर से गगनचुंबी प्रहार! छह रन!'
           ];
           break;
         case 'FOUR':
           pool = [
-            'कड़क चौका! ' + _striker + ' का लाजवाब शॉट, फील्डर ' + _fielder + ' ने डाइव लगाई लेकिन गेंद गोली की रफ़्तार से बाउंड्री के पार चार रन!'
+            'कड़क चौका! $_striker का लाजवाब शॉट, फील्डर $_fielder ने डाइव लगाई लेकिन गेंद गोली की रफ़्तार से बाउंड्री के पार!'
           ];
           break;
         case 'BOWLED':
           pool = [
-            'बैटरी बोल्ड! क्लीन बोल्ड! ' + _bowler + ' की सटीक यॉर्कर ने ' + _striker + ' के स्टंप्स हवा में उड़ा दिए! विकेटकीपर ' + _wk + ' जश्न मनाते हुए!'
-          ];
-          break;
-        case 'CAUGHT':
-          pool = [
-            'हवा में गेंद और शानदार कैच! फील्डर ' + _fielder + ' ने बाउंड्री पर बेहतरीन कैच लपका! ' + _bowler + ' को मिली विकेट!'
-          ];
-          break;
-        case 'CAUGHT_WK':
-          pool = [
-            'बल्ले का बाहरी किनारा और विकेटकीपर ' + _wk + ' के दस्तानों में सुरक्षित कैच! ' + _striker + ' आउट!'
-          ];
-          break;
-        case 'RUN_OUT':
-          pool = [
-            'डायरेक्ट हिट और रन आउट! फील्डर ' + _fielder + ' का सीधा थ्रो स्टंप्स पर लगा और ' + _striker + ' क्रीज़ से बाहर!'
-          ];
-          break;
-        case 'STUMPED':
-          pool = [
-            'बिजली की रफ़्तार से स्टंपिंग! विकेटकीपर ' + _wk + ' ने पलक झपकते ही गिल्लियां बिखेर दीं!'
-          ];
-          break;
-        case 'LBW':
-          pool = [
-            'ज़ोरदार अपील और अंपायर की उंगली हवा में! एलबीडब्ल्यू आउट! ' + _bowler + ' ने ' + _striker + ' को फंसाया!'
-          ];
-          break;
-        case 'NO_BALL':
-          pool = [
-            'नो बॉल! ' + _bowler + ' का पैर क्रीज़ से बाहर! अगली गेंद होगी फ्री हिट!'
-          ];
-          break;
-        case 'WIDE':
-          pool = [
-            'वाइड बॉल! अंपायर ने दोनों हाथ फैलाए, टीम को मिला एक अतिरिक्त रन!'
-          ];
-          break;
-        case 'RUN_1':
-          pool = [
-            'हल्के हाथों से खेला ' + _striker + ' ने और तेज़ी से दौड़कर एक रन पूरा किया!'
-          ];
-          break;
-        case 'RUN_2':
-          pool = [
-            'गैप में शॉट और ' + _striker + ' तथा ' + _nonStriker + ' ने दौड़कर दो रन पूरे किए!'
+            'बैटरी बोल्ड! क्लीन बोल्ड! $_bowler की सटीक यॉर्कर ने $_striker के स्टंप्स हवा में उड़ा दिए!'
           ];
           break;
         default:
           pool = [
-            'डॉट बॉल! ' + _bowler + ' की सटीक गेंद, ' + _striker + ' ने सम्मान दिया।'
+            '$_bowler की शानदार गेंद $_striker को, फील्डर $_fielder ने तेज़ी से गेंद को रोका!'
           ];
       }
     } else {
-      switch (eventType) {
-        case 'SIX':
-          pool = [
-            'MASSIVE SIX! ' + _striker + ' launches ' + _bowler + ' high over ' + _shotZone + ' into the crowd for six runs!'
-          ];
-          break;
-        case 'FOUR':
-          pool = [
-            'CRACKING FOUR! ' + _striker + ' pierces the gap past ' + _fielder + ' at ' + _shotZone + ' for a boundary!'
-          ];
-          break;
-        case 'BOWLED':
-          pool = [
-            'BATTERY BOLD! CLEAN BOWLED! ' + _bowler + ' shatters ' + _striker + 's stumps right in front of keeper ' + _wk + '!'
-          ];
-          break;
-        default:
-          pool = [
-            _bowler + ' bowls to ' + _striker + ', fielded cleanly by ' + _fielder + '.'
-          ];
-      }
+      pool = [
+        '$eventType! $_bowler bowls to $_striker towards $_shotZone, fielded by $_fielder with $_wk behind the stumps!'
+      ];
     }
 
     String chosen = pool[_rng.nextInt(pool.length)];
     final catchphrase = VoiceCloneProfileStore.activeProfile.catchphrase.trim();
     if (catchphrase.isNotEmpty) {
-      chosen = catchphrase + '! ' + chosen;
+      chosen = '$catchphrase! $chosen';
     }
     if (_usedTournamentLines.contains(chosen)) {
-      chosen = chosen + ' (' + _runs.toString() + ' ವಿಕೆಟ್ ' + _wickets.toString() + ')';
+      chosen = '$chosen ($_runs/$_wickets)';
     }
     _usedTournamentLines.add(chosen);
     return chosen;
   }
 
   void _triggerBall(String eventType) {
+    _saveUndoSnapshot();
+
     bool legal = true;
     bool rotate = false;
     bool isWicket = false;
     int addedRuns = 0;
     String badge = '0';
+    String? incomingBatterName;
 
     if (_freeHit &&
         (eventType == 'BOWLED' || eventType == 'CAUGHT' || eventType == 'CAUGHT_WK' || eventType == 'STUMPED' || eventType == 'LBW')) {
@@ -287,28 +330,34 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
     switch (eventType) {
       case 'DOT':
         badge = '0';
+        _consecutiveWickets = 0;
         break;
       case 'RUN_1':
         addedRuns = 1;
         rotate = true;
         badge = '1';
+        _consecutiveWickets = 0;
         break;
       case 'RUN_2':
         addedRuns = 2;
         badge = '2';
+        _consecutiveWickets = 0;
         break;
       case 'RUN_3':
         addedRuns = 3;
         rotate = true;
         badge = '3';
+        _consecutiveWickets = 0;
         break;
       case 'FOUR':
         addedRuns = 4;
         badge = '4';
+        _consecutiveWickets = 0;
         break;
       case 'SIX':
         addedRuns = 6;
         badge = '6';
+        _consecutiveWickets = 0;
         break;
       case 'BOWLED':
       case 'CAUGHT':
@@ -317,6 +366,7 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
       case 'STUMPED':
       case 'LBW':
         _wickets += 1;
+        _consecutiveWickets += 1;
         isWicket = true;
         badge = 'W';
         break;
@@ -353,7 +403,6 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
 
     setState(() {
       _thisOver.add(badge);
-      _feed.insert(0, '[' + _oversText() + '] ' + line);
       if (rotate) {
         final t = _striker;
         _striker = _nonStriker;
@@ -361,11 +410,12 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
       }
       if (isWicket && _squadA.isNotEmpty) {
         _bowlerWickets[_bowler] = (_bowlerWickets[_bowler] ?? 0) + 1;
-        _fallOfWickets.add(_runs.toString() + '/' + _wickets.toString() + ' (' + _striker + ')');
+        _fallOfWickets.add('$_runs/$_wickets ($_striker)');
         _partnershipRuns = 0;
         _partnershipBalls = 0;
         final nextIdx = (_wickets + 1) % _squadA.length;
-        _striker = _squadA[nextIdx];
+        incomingBatterName = _squadA[nextIdx];
+        _striker = incomingBatterName!;
       }
       if (legal && _legalBalls % 6 == 0) {
         _thisOver.clear();
@@ -375,13 +425,32 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
       }
     });
 
-    // Play balanced SFX and single natural voice
+    final String banter = _buildCoCommentatorBanter(eventType, incomingBatterName);
+    setState(() {
+      _feed.insert(0, '[${_oversText()}] $line ${banter.isNotEmpty ? "\n🎙 Co-Comm: $banter" : ""}');
+    });
+
     AppSoundEngine.playSynthesizedSfx(eventType);
-    if (eventType == 'SIX' || eventType == 'FOUR' || eventType == 'BOWLED' || eventType == 'CAUGHT') {
-      MasterVolumeController.autoCricketStingerTrigger.value = eventType + '_' + DateTime.now().millisecondsSinceEpoch.toString();
+    if ((isWicket && _autoWalkoutBgmOnWicket) || eventType == 'SIX' || eventType == 'FOUR') {
+      MasterVolumeController.autoCricketStingerTrigger.value = '${eventType}_${DateTime.now().millisecondsSinceEpoch}';
     }
-    AppSoundEngine.speakRealVoice(line, _commLanguage, eventKey: eventType);
+    AppSoundEngine.speakRealVoice(line, _commLanguage, eventKey: eventType, coCommentatorText: banter);
   }
+
+  void _copyWhatsAppScorecard() {
+    final String summary = '🏏 *${_teamACtrl.text} vs ${_teamBCtrl.text}*\n'
+        '📊 Score: *$_runs/$_wickets (${_oversText()} Overs)*\n'
+        '🏏 *$Striker: ${_batterRuns[_striker] ?? 0}(${_batterBalls[_striker] ?? 0})\n'
+        '🏏 $_nonStriker: ${_batterRuns[_nonStriker] ?? 0}(${_batterBalls[_nonStriker] ?? 0})\n'
+        '⚾ $_bowler: ${_bowlerWickets[_bowler] ?? 0}-${_bowlerRuns[_bowler] ?? 0}\n'
+        '🔥 Powered by DJ Play and Commentry App v100';
+    Clipboard.setData(ClipboardData(text: summary));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('📋 WhatsApp Scorecard copied to clipboard!')),
+    );
+  }
+
+  String get $Striker => _striker;
 
   Widget _buildRoleDropdown(String label, String currentValue, List<String> items, ValueChanged<String?> onChanged) {
     final uniqueItems = <String>{currentValue, ...items}.toList();
@@ -400,7 +469,7 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
             isExpanded: true,
             style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
             items: uniqueItems
-                .map((p) => DropdownMenuItem(value: p, child: Text(label + ': ' + p, overflow: TextOverflow.ellipsis)))
+                .map((p) => DropdownMenuItem(value: p, child: Text('$label: $p', overflow: TextOverflow.ellipsis)))
                 .toList(),
             onChanged: onChanged,
           ),
@@ -417,7 +486,7 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
     return ListView(
       padding: const EdgeInsets.all(10),
       children: [
-        // Live Stadium Scoreboard
+        // Live Scoreboard Card + Undo + WhatsApp Share
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -433,41 +502,62 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(_teamACtrl.text + ' vs ' + _teamBCtrl.text,
+                      Text('${_teamACtrl.text} vs ${_teamBCtrl.text}',
                           style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 12)),
                       Text(
-                        _runs.toString() + '/' + _wickets.toString() + ' (' + _oversText() + ' Ov)',
-                        style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: Colors.white),
+                        '$_runs/$_wickets (${_oversText()} Ov)',
+                        style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w900, color: Colors.white),
                       ),
                     ],
                   ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
+                  Row(
                     children: [
-                      if (_freeHit)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(color: Colors.redAccent, borderRadius: BorderRadius.circular(20)),
-                          child: const Text('🚨 FREE HIT', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 10)),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange.shade800,
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                         ),
-                      Text('Partnership: ' + _partnershipRuns.toString() + ' (' + _partnershipBalls.toString() + ')',
-                          style: const TextStyle(fontSize: 11, color: Colors.cyanAccent)),
-                      if (target > 0)
-                        Text('Need ' + runsNeeded.toString() + ' runs',
-                            style: const TextStyle(fontSize: 11, color: Colors.amberAccent, fontWeight: FontWeight.bold)),
+                        icon: const Icon(Icons.undo, size: 15),
+                        label: const Text('UNDO', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900)),
+                        onPressed: _undoLastBall,
+                      ),
+                      const SizedBox(width: 6),
+                      IconButton(
+                        tooltip: 'Copy WhatsApp Scorecard',
+                        icon: const Icon(Icons.share, color: Colors.greenAccent, size: 20),
+                        onPressed: _copyWhatsAppScorecard,
+                      ),
                     ],
                   ),
                 ],
               ),
+              if (target > 0 || _freeHit || _consecutiveWickets >= 2)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      if (target > 0)
+                        Text('Target $target • Need $runsNeeded runs',
+                            style: const TextStyle(fontSize: 11, color: Colors.amberAccent, fontWeight: FontWeight.bold)),
+                      if (_consecutiveWickets >= 2)
+                        const Text('🔥 HAT-TRICK BALL!',
+                            style: TextStyle(fontSize: 11, color: Colors.redAccent, fontWeight: FontWeight.w900)),
+                      if (_freeHit)
+                        const Text('🚨 FREE HIT!',
+                            style: TextStyle(fontSize: 11, color: Colors.redAccent, fontWeight: FontWeight.w900)),
+                    ],
+                  ),
+                ),
               const Divider(color: Colors.white24),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('🏏 *' + _striker + ' ' + (_batterRuns[_striker] ?? 0).toString() + '(' + (_batterBalls[_striker] ?? 0).toString() + ')',
+                  Text('🏏 *$_striker ${_batterRuns[_striker] ?? 0}(${_batterBalls[_striker] ?? 0})',
                       style: const TextStyle(fontSize: 11, color: Color(0xFF00E676), fontWeight: FontWeight.bold)),
-                  Text('🏃 ' + _nonStriker + ' ' + (_batterRuns[_nonStriker] ?? 0).toString() + '(' + (_batterBalls[_nonStriker] ?? 0).toString() + ')',
+                  Text('🏃 $_nonStriker ${_batterRuns[_nonStriker] ?? 0}(${_batterBalls[_nonStriker] ?? 0})',
                       style: const TextStyle(fontSize: 11, color: Colors.white70)),
-                  Text('⚾ ' + _bowler + ' ' + (_bowlerWickets[_bowler] ?? 0).toString() + '-' + (_bowlerRuns[_bowler] ?? 0).toString(),
+                  Text('⚾ $_bowler ${_bowlerWickets[_bowler] ?? 0}-${_bowlerRuns[_bowler] ?? 0}',
                       style: const TextStyle(fontSize: 11, color: Colors.cyanAccent, fontWeight: FontWeight.bold)),
                 ],
               ),
@@ -476,7 +566,7 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
         ),
         const SizedBox(height: 8),
 
-        // Language Selector (Kannada / Hindi / English)
+        // Language & Dual-Banter Toggles
         Row(
           children: ['KANNADA', 'HINDI', 'ENGLISH'].map((lang) {
             final active = (_commLanguage == lang);
@@ -489,20 +579,20 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
                     foregroundColor: active ? Colors.black : Colors.white,
                   ),
                   onPressed: () => setState(() => _commLanguage = lang),
-                  child: Text('🎙 ' + lang, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900)),
+                  child: Text('🎙 $lang', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900)),
                 ),
               ),
             );
           }).toList(),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
 
         // Step 1: Team & Squad Editor
         ExpansionTile(
           collapsedBackgroundColor: const Color(0xFF11192B),
           backgroundColor: const Color(0xFF11192B),
-          title: const Text('📋 Step 1: Enter Team Names, Target & 11-Player Squads',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF00E5FF))),
+          title: const Text('📋 Step 1: Teams, Target, Dual-Commentator & Walkout Settings',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF00E5FF))),
           children: [
             Padding(
               padding: const EdgeInsets.all(8.0),
@@ -511,18 +601,29 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
                   Row(
                     children: [
                       Expanded(child: TextField(controller: _teamACtrl, decoration: const InputDecoration(labelText: 'Batting Team'))),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
                       Expanded(child: TextField(controller: _teamBCtrl, decoration: const InputDecoration(labelText: 'Bowling Team'))),
-                      const SizedBox(width: 8),
-                      Expanded(child: TextField(controller: _targetCtrl, decoration: const InputDecoration(labelText: 'Target (Opt)'))),
+                      const SizedBox(width: 6),
+                      Expanded(child: TextField(controller: _targetCtrl, decoration: const InputDecoration(labelText: 'Target'))),
                     ],
                   ),
-                  TextField(controller: _squadACtrl, maxLines: 2, decoration: const InputDecoration(labelText: 'Batting Players (comma separated)')),
-                  TextField(controller: _squadBCtrl, maxLines: 2, decoration: const InputDecoration(labelText: 'Bowling Players (comma separated)')),
-                  const SizedBox(height: 8),
+                  TextField(controller: _squadACtrl, maxLines: 2, decoration: const InputDecoration(labelText: 'Batting Squad (comma separated)')),
+                  TextField(controller: _squadBCtrl, maxLines: 2, decoration: const InputDecoration(labelText: 'Bowling Squad (comma separated)')),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('🎙 Dual-Commentator Banter (Lead + Co-Commentator)', style: TextStyle(fontSize: 11)),
+                    value: _dualCommentatorBanter,
+                    onChanged: (v) => setState(() => _dualCommentatorBanter = v),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('👑 Auto-Blast Incoming Batter Walkout BGM on Wicket', style: TextStyle(fontSize: 11)),
+                    value: _autoWalkoutBgmOnWicket,
+                    onChanged: (v) => setState(() => _autoWalkoutBgmOnWicket = v),
+                  ),
                   ElevatedButton.icon(
                     icon: const Icon(Icons.check_circle),
-                    label: const Text('Save Squads & Update Dropdowns'),
+                    label: const Text('Save Squads & Update Players'),
                     onPressed: _loadSquads,
                   ),
                 ],
@@ -532,7 +633,7 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
         ),
         const SizedBox(height: 8),
 
-        // Step 2: Pre-Ball Role & Shot Direction Selector
+        // Step 2: Pre-Ball Role & 360 Wagon Wheel Zone Selector
         Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(color: const Color(0xFF11192B), borderRadius: BorderRadius.circular(10)),
@@ -542,7 +643,7 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('🎯 Step 2: Select Active Players Before Ball',
+                  const Text('🎯 Step 2: Active Players & 360° Wagon Wheel Zone',
                       style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.amber)),
                   TextButton.icon(
                     icon: const Icon(Icons.swap_horiz, size: 16),
@@ -566,7 +667,7 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
               Row(
                 children: [
                   _buildRoleDropdown('🤾 Fielder', _fielder, _squadB, (v) => setState(() => _fielder = v!)),
-                  _buildRoleDropdown('🧭 Shot Zone', _shotZone, _zones, (v) => setState(() => _shotZone = v!)),
+                  _buildRoleDropdown('🧭 360° Zone', _shotZone, _zones, (v) => setState(() => _shotZone = v!)),
                 ],
               ),
             ],
@@ -597,11 +698,13 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
             _actionButton('☝️ LBW OUT', Colors.brown, () => _triggerBall('LBW')),
             _actionButton('🚨 NO BALL', Colors.amber.shade800, () => _triggerBall('NO_BALL')),
             _actionButton('↔️ WIDE BALL', Colors.orange.shade800, () => _triggerBall('WIDE')),
-            _actionButton('🔄 RESET', Colors.grey.shade800, () {
+            _actionButton('🔄 RESET MATCH', Colors.grey.shade800, () {
+              _saveUndoSnapshot();
               setState(() {
                 _runs = 0;
                 _wickets = 0;
                 _legalBalls = 0;
+                _consecutiveWickets = 0;
                 _partnershipRuns = 0;
                 _partnershipBalls = 0;
                 _freeHit = false;
@@ -630,18 +733,18 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '🔊 Single-Channel Natural Voice: ' + VoiceCloneProfileStore.activeProfile.name + ' (' + _commLanguage + ')',
+                '🔊 Kannada/Hindi Phonetic AI + Dual Banter ($_commLanguage)',
                 style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF00E676)),
               ),
               if (_fallOfWickets.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
-                  child: Text('Fall of Wickets: ' + _fallOfWickets.join(' | '),
+                  child: Text('Fall of Wickets: ${_fallOfWickets.join(" | ")}',
                       style: const TextStyle(fontSize: 10, color: Colors.orangeAccent)),
                 ),
               const SizedBox(height: 6),
               if (_feed.isEmpty)
-                const Text('Tap any run or wicket button above to hear natural Kannada/Hindi/English commentary!',
+                const Text('Tap any run or wicket button above to hear live commentary!',
                     style: TextStyle(fontSize: 12, color: Colors.white70))
               else
                 ..._feed.take(10).map((line) => Padding(

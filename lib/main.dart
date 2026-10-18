@@ -12,6 +12,7 @@ import 'entry_music_studio.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  AppSoundEngine.initHardwareVolumeListener();
   runApp(const DjPlayCommentaryApp());
 }
 
@@ -20,11 +21,82 @@ class AppSoundEngine {
   static final AudioPlayer _voicePlayer = AudioPlayer();
   static final AudioPlayer _sfxPlayer = AudioPlayer();
   static bool _isSpeakingLock = false;
+  static bool hardwareVolumeEntryMode = false;
 
-  static Future<void> speakRealVoice(String text, String langMode, {String? eventKey}) async {
-    if (text.trim().isEmpty) return;
+  // Phonetic Dictionary for Natural Kannada & Hindi Pronunciation of Local Names
+  static const Map<String, String> _knPhonetics = {
+    'gajanan': 'ಗಜಾನನ',
+    'patagar': 'ಪಟಗಾರ',
+    'darshan': 'ದರ್ಶನ್',
+    'sudeep': 'ಸುದೀಪ್',
+    'yash': 'ಯಶ್',
+    'manjunath': 'ಮಂಜುನಾಥ್',
+    'prashanth': 'ಪ್ರಶಾಂತ್',
+    'virat': 'ವಿರಾಟ್',
+    'kohli': 'ಕೊಹ್ಲಿ',
+    'rahul': 'ರಾಹುಲ್',
+    'rohit': 'ರೋಹಿತ್',
+    'sharma': 'ಶರ್ಮಾ',
+    'bumrah': 'ಬುಮ್ರಾ',
+    'dhoni': 'ಧೋನಿ',
+    'jadeja': 'ಜಡೇಜಾ',
+    'hardik': 'ಹಾರ್ದಿಕ್',
+    'karthik': 'ಕಾರ್ತಿಕ್',
+    'padikkal': 'ಪಡಿಕ್ಕಲ್',
+    'siraj': 'ಸಿರಾಜ್',
+  };
+
+  static const Map<String, String> _hiPhonetics = {
+    'gajanan': 'गजानन',
+    'patagar': 'पटगार',
+    'darshan': 'दर्शन',
+    'virat': 'विराट',
+    'kohli': 'कोहली',
+    'rohit': 'रोहित',
+    'bumrah': 'बुमराह',
+    'dhoni': 'धोनी',
+    'jadeja': 'जडेजा',
+    'hardik': 'हार्दिक',
+  };
+
+  static String applyPhonetics(String text, String langMode) {
+    String out = text;
+    if (langMode == 'KANNADA') {
+      _knPhonetics.forEach((en, kn) {
+        out = out.replaceAll(RegExp(en, caseSensitive: false), kn);
+      });
+    } else if (langMode == 'HINDI') {
+      _hiPhonetics.forEach((en, hi) {
+        out = out.replaceAll(RegExp(en, caseSensitive: false), hi);
+      });
+    }
+    return out;
+  }
+
+  static void initHardwareVolumeListener() {
+    _nativeChannel.setMethodCallHandler((call) async {
+      if (!hardwareVolumeEntryMode) return;
+      if (call.method == 'onVolumeKey') {
+        final String dir = (call.arguments ?? '').toString();
+        if (dir == 'DOWN') {
+          MasterVolumeController.page4EntryVolume.value = 0.0;
+        } else if (dir == 'UP') {
+          final cur = MasterVolumeController.page4EntryVolume.value;
+          MasterVolumeController.page4EntryVolume.value = (cur <= 0.02) ? 0.85 : (cur + 0.15).clamp(0.0, 1.0);
+        }
+      }
+    });
+  }
+
+  static Future<void> speakRealVoice(String rawText, String langMode, {String? eventKey, String? coCommentatorText}) async {
+    if (rawText.trim().isEmpty) return;
     final double voiceVol = MasterVolumeController.page2VoiceVolume.value;
     if (voiceVol <= 0.01) return;
+
+    final String fullText = coCommentatorText != null && coCommentatorText.isNotEmpty
+        ? '$rawText ... $coCommentatorText'
+        : rawText;
+    final String phoneticText = applyPhonetics(fullText, langMode);
 
     if (_isSpeakingLock) {
       try {
@@ -60,7 +132,7 @@ class AppSoundEngine {
 
       if (!profile.preferCloudVoiceOnly) {
         final bool? nativeSpoke = await _nativeChannel.invokeMethod<bool>('speak', {
-          'text': text,
+          'text': phoneticText,
           'lang': locale,
           'pitch': profile.pitch,
           'rate': profile.speed,
@@ -71,11 +143,8 @@ class AppSoundEngine {
         }
       }
 
-      final String cleanText = text.length > 185 ? text.substring(0, 185) : text;
-      final String url = 'https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=' +
-          tl +
-          '&q=' +
-          Uri.encodeComponent(cleanText);
+      final String cleanText = phoneticText.length > 185 ? phoneticText.substring(0, 185) : phoneticText;
+      final String url = 'https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=$tl&q=${Uri.encodeComponent(cleanText)}';
       await _voicePlayer.stop();
       await _voicePlayer.setVolume(voiceVol);
       await _voicePlayer.play(UrlSource(url));
@@ -125,7 +194,7 @@ class AppSoundEngine {
 
   static Uint8List _buildWavBytes(String type) {
     const int sampleRate = 22050;
-    final double durationSec = (type == 'CROWD' || type == 'SIX') ? 0.9 : 0.35;
+    final double durationSec = (type == 'CROWD' || type == 'SIX' || type == 'DHOL') ? 0.95 : 0.42;
     final int numSamples = (sampleRate * durationSec).toInt();
     final int dataSize = numSamples * 2;
     final ByteData bd = ByteData(44 + dataSize);
@@ -153,18 +222,27 @@ class AppSoundEngine {
       double sample = 0.0;
 
       if (type == 'BOWLED') {
-        sample = (sin(2 * pi * (175 - t * 220) * t) * 0.55 + (rng.nextDouble() * 2 - 1) * 0.35) * env;
+        sample = (sin(2 * pi * (175 - t * 220) * t) * 0.6 + (rng.nextDouble() * 2 - 1) * 0.35) * env;
       } else if (type == 'NO_BALL') {
         final freq = 460 + 280 * sin(2 * pi * 6 * t);
         sample = sin(2 * pi * freq * t) * 0.65 * env;
       } else if (type == 'AIRHORN') {
-        sample = (sin(2 * pi * 390 * t) + 0.6 * sin(2 * pi * 780 * t)) * 0.45 * env;
+        sample = (sin(2 * pi * 390 * t) + 0.6 * sin(2 * pi * 780 * t)) * 0.48 * env;
       } else if (type == 'LASER') {
-        final freq = 1350 - (t * 2300);
-        sample = sin(2 * pi * freq.clamp(110, 1500) * t) * 0.6 * env;
+        final freq = 1400 - (t * 2400);
+        sample = sin(2 * pi * freq.clamp(100, 1500) * t) * 0.65 * env;
+      } else if (type == 'SUB_DROP') {
+        final freq = (130 - t * 95).clamp(38.0, 130.0);
+        sample = sin(2 * pi * freq * t) * 0.85 * env;
+      } else if (type == 'DHOL') {
+        final pulse = (sin(2 * pi * 6.5 * t) > 0) ? 1.0 : 0.25;
+        sample = sin(2 * pi * 115 * t) * pulse * 0.75 * env;
+      } else if (type == 'TRUMPET') {
+        final f = (t < 0.2) ? 523.25 : ((t < 0.4) ? 659.25 : 783.99);
+        sample = (sin(2 * pi * f * t) + 0.4 * sin(4 * pi * f * t)) * 0.5 * env;
       } else {
         final crack = (t < 0.045) ? sin(2 * pi * 520 * t) * 0.85 : 0.0;
-        final roar = (rng.nextDouble() * 2 - 1) * 0.25 * env;
+        final roar = (rng.nextDouble() * 2 - 1) * 0.28 * env;
         sample = (crack + roar).clamp(-1.0, 1.0);
       }
 
@@ -240,11 +318,11 @@ class _MasterHomeShellState extends State<MasterHomeShell> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'DJ Play and Commentry App',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Color(0xFF00E5FF)),
+                    'DJ Play and Commentry App v100',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFF00E5FF)),
                   ),
                   Text(
-                    '320kbps Top 50 • Live Commentary • Smart Entry BGM',
+                    'PA DSP • Dual Banter • Undo Ball • Walkout BGM',
                     style: TextStyle(fontSize: 10, color: Colors.amberAccent),
                   ),
                 ],
@@ -253,6 +331,11 @@ class _MasterHomeShellState extends State<MasterHomeShell> {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Sub Bass Drop',
+            icon: const Icon(Icons.speaker, color: Colors.cyanAccent),
+            onPressed: () => AppSoundEngine.playSynthesizedSfx('SUB_DROP'),
+          ),
           IconButton(
             tooltip: 'DJ Airhorn',
             icon: const Icon(Icons.campaign, color: Colors.amberAccent),
@@ -276,7 +359,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> {
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.library_music), label: '1. Top 50 Audio'),
           BottomNavigationBarItem(icon: Icon(Icons.sports_cricket), label: '2. Commentary'),
-          BottomNavigationBarItem(icon: Icon(Icons.record_voice_over), label: '3. Real Voice'),
+          BottomNavigationBarItem(icon: Icon(Icons.tune), label: '3. PA & Launchpad'),
           BottomNavigationBarItem(icon: Icon(Icons.bolt), label: '4. Entry & Mixer'),
         ],
       ),

@@ -108,11 +108,23 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
       _viewMode = 'SONGS';
     });
 
+    final DateTime now = DateTime.now();
+    final int daySeed = now.year * 1000 + now.month * 35 + now.day;
+    final List<String> rotatingKeywords = [
+      ' Viral Chartbusters 2026',
+      ' Daily Top 50 Hits 2026',
+      ' Superhit Trending Songs 2026',
+      ' New Release Blockbusters 2026',
+      ' Nonstop DJ Remix Hits 2026',
+      ' Most Played Songs 2026',
+    ];
+    final String dailyFlavor1 = rotatingKeywords[daySeed % rotatingKeywords.length];
+    final String dailyFlavor2 = rotatingKeywords[(daySeed + 2) % rotatingKeywords.length];
     final List<String> subQueries = [
-      '$lang New Hit Songs 2026',
-      '$lang Latest Trending Songs 2025 2026',
-      '$lang Top Chartbusters 2026',
-      '$lang DJ Remix 2026',
+      lang + dailyFlavor1,
+      lang + dailyFlavor2,
+      '$lang Latest Trending Songs 2026',
+      '$lang Top Hits',
     ];
     await _runDirectFullSongSearch(subQueries, isTrendingMode: true);
   }
@@ -211,11 +223,14 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
 
     // In Trending Mode: Sort newest release years (2026, 2025) to the top, then by popularity!
     if (isTrendingMode) {
+      final int todaySalt = DateTime.now().day + DateTime.now().month * 31;
       aggregated.sort((a, b) {
         final int yA = (a['year'] ?? 2025) as int;
         final int yB = (b['year'] ?? 2025) as int;
         if (yB != yA) return yB.compareTo(yA);
-        return ((b['playCount'] ?? 0) as int).compareTo((a['playCount'] ?? 0) as int);
+        final int hashA = (a['id'].toString().hashCode ^ todaySalt) & 0x7fffffff;
+        final int hashB = (b['id'].toString().hashCode ^ todaySalt) & 0x7fffffff;
+        return hashB.compareTo(hashA);
       });
     }
 

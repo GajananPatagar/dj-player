@@ -35,7 +35,7 @@ jobs:
           fi
           grep -n "void main()" lib/main.dart
 
-      - name: Inject HD Neural Voice Selector & Real MediaRecorder Into MainActivity.kt
+      - name: Inject Hardware Noise-Canceled Karaoke Recorder, Vocal-Cut EQ & HD TTS Into MainActivity.kt
         run: |
           MAIN_KT=$(find android/app/src/main -name "MainActivity.kt" | head -n 1)
           if [ -n "$MAIN_KT" ]; then
@@ -43,9 +43,14 @@ jobs:
             cat << 'KTEOF' > "$MAIN_KT"
           $PKG_LINE
           import android.media.MediaRecorder
+          import android.media.audiofx.AcousticEchoCanceler
+          import android.media.audiofx.AutomaticGainControl
+          import android.media.audiofx.Equalizer
+          import android.media.audiofx.NoiseSuppressor
           import android.os.Bundle
           import android.speech.tts.TextToSpeech
           import android.speech.tts.Voice
+          import android.view.KeyEvent
           import io.flutter.embedding.android.FlutterActivity
           import io.flutter.embedding.engine.FlutterEngine
           import io.flutter.plugin.common.MethodChannel
@@ -57,6 +62,8 @@ jobs:
               private var ttsReady: Boolean = false
               private var recorder: MediaRecorder? = null
               private var currentRecordPath: String? = null
+              private var karaokeEq: Equalizer? = null
+              private var methodChannel: MethodChannel? = null
 
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
@@ -65,6 +72,15 @@ jobs:
 
               override fun onInit(status: Int) {
                   ttsReady = (status == TextToSpeech.SUCCESS)
+              }
+
+              override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+                  if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
+                      methodChannel?.invokeMethod("onVolumeKey", "UP")
+                  } else if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+                      methodChannel?.invokeMethod("onVolumeKey", "DOWN")
+                  }
+                  return super.onKeyDown(keyCode, event)
               }
 
               private fun selectBestNaturalVoice(locale: Locale) {
@@ -88,9 +104,83 @@ jobs:
                   }
               }
 
+              private fun applyKaraokeVocalCutEq(enabled: Boolean) {
+                  try {
+                      if (karaokeEq == null) {
+                          karaokeEq = Equalizer(0, 0)
+                      }
+                      karaokeEq?.enabled = enabled
+                      if (enabled && karaokeEq != null) {
+                          val bands = karaokeEq!!.numberOfBands.toInt()
+                          val range = karaokeEq!!.bandLevelRange
+                          val minLvl = range[0].toInt()
+                          val maxLvl = range[1].toInt()
+                          for (b in 0 until bands) {
+                              val freqHz = karaokeEq!!.getCenterFreq(b.toShort()) / 1000
+                              if (freqHz in 350..3800) {
+                                  // Attenuate lead vocal center frequencies to turn normal song into Karaoke
+                                  karaokeEq!!.setBandLevel(b.toShort(), (minLvl * 75 / 100).toShort())
+                              } else if (freqHz < 220) {
+                                  // Boost warm bass backing
+                                  karaokeEq!!.setBandLevel(b.toShort(), (maxLvl * 55 / 100).toShort())
+                              } else {
+                                  // Crisp high percussion
+                                  karaokeEq!!.setBandLevel(b.toShort(), (maxLvl * 35 / 100).toShort())
+                              }
+                          }
+                      }
+                  } catch (_: Exception) {}
+              }
+
+              private fun startIsolatedVoiceRecorder(fileName: String, useEchoCancelledSource: Boolean): String? {
+                  try {
+                      recorder?.release()
+                      val outFile = File(filesDir, fileName + ".m4a")
+                      currentRecordPath = outFile.absolutePath
+                      recorder = MediaRecorder().apply {
+                          // VOICE_COMMUNICATION activates Android Hardware AcousticEchoCanceler & NoiseSuppressor
+                          // so playing Karaoke backing music is subtracted from the mic and ONLY user singing is recorded!
+                          if (useEchoCancelledSource) {
+                              setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION)
+                          } else {
+                              setAudioSource(MediaRecorder.AudioSource.MIC)
+                          }
+                          setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                          setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                          setAudioEncodingBitRate(192000)
+                          setAudioSamplingRate(44100)
+                          setOutputFile(currentRecordPath)
+                          prepare()
+                          start()
+                      }
+                      return currentRecordPath
+                  } catch (_: Exception) {
+                      return try {
+                          recorder?.release()
+                          val outFile = File(filesDir, fileName + ".m4a")
+                          currentRecordPath = outFile.absolutePath
+                          recorder = MediaRecorder().apply {
+                              setAudioSource(MediaRecorder.AudioSource.MIC)
+                              setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                              setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                              setAudioEncodingBitRate(192000)
+                              setAudioSamplingRate(44100)
+                              setOutputFile(currentRecordPath)
+                              prepare()
+                              start()
+                          }
+                          currentRecordPath
+                      } catch (_: Exception) {
+                          null
+                      }
+                  }
+              }
+
               override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
                   super.configureFlutterEngine(flutterEngine)
-                  MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dj_native_tts").setMethodCallHandler { call, result ->
+                  val ch = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dj_native_tts")
+                  methodChannel = ch
+                  ch.setMethodCallHandler { call, result ->
                       when (call.method) {
                           "speak" -> {
                               if (!ttsReady || tts == null) {
@@ -118,26 +208,32 @@ jobs:
                               tts?.stop()
                               result.success(true)
                           }
-                          "startRecord" -> {
+                          "setKaraokeVocalCut" -> {
+                              val enabled = call.argument<Boolean>("enabled") ?: false
+                              applyKaraokeVocalCutEq(enabled)
+                              result.success(true)
+                          }
+                          "startCleanVocalRecord" -> {
+                              val name = call.argument<String>("name") ?: "karaoke_vocal"
+                              val path = startIsolatedVoiceRecorder(name, true)
+                              result.success(path)
+                          }
+                          "stopCleanVocalRecord" -> {
                               try {
+                                  recorder?.stop()
                                   recorder?.release()
-                                  val name = call.argument<String>("name") ?: "voice_clip"
-                                  val outFile = File(filesDir, "${name}.m4a")
-                                  currentRecordPath = outFile.absolutePath
-                                  recorder = MediaRecorder().apply {
-                                      setAudioSource(MediaRecorder.AudioSource.MIC)
-                                      setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-                                      setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                                      setAudioEncodingBitRate(128000)
-                                      setAudioSamplingRate(44100)
-                                      setOutputFile(currentRecordPath)
-                                      prepare()
-                                      start()
-                                  }
+                                  recorder = null
                                   result.success(currentRecordPath)
-                              } catch (e: Exception) {
-                                  result.success(null)
+                              } catch (_: Exception) {
+                                  recorder?.release()
+                                  recorder = null
+                                  result.success(currentRecordPath)
                               }
+                          }
+                          "startRecord" -> {
+                              val name = call.argument<String>("name") ?: "voice_clip"
+                              val path = startIsolatedVoiceRecorder(name, false)
+                              result.success(path)
                           }
                           "stopRecord" -> {
                               try {
@@ -145,7 +241,7 @@ jobs:
                                   recorder?.release()
                                   recorder = null
                                   result.success(currentRecordPath)
-                              } catch (e: Exception) {
+                              } catch (_: Exception) {
                                   recorder?.release()
                                   recorder = null
                                   result.success(currentRecordPath)
@@ -160,6 +256,7 @@ jobs:
                   tts?.stop()
                   tts?.shutdown()
                   recorder?.release()
+                  karaokeEq?.release()
                   super.onDestroy()
               }
           }
@@ -167,7 +264,7 @@ jobs:
             sed -i "s|\$PKG_LINE|$PKG_LINE|g" "$MAIN_KT"
           fi
 
-      - name: Set App Name, Cleartext Traffic, Audio Permissions & High-Class Icon
+      - name: Set App Name, Cleartext Traffic, Audio/DSP Permissions & High-Class Icon
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST" ]; then
@@ -176,7 +273,7 @@ jobs:
               sed -i 's/<application/<application android:usesCleartextTraffic="true"/' "$MANIFEST"
             fi
             if ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
-              sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <uses-permission android:name="android.permission.RECORD_AUDIO"\/>\n    <application/' "$MANIFEST"
+              sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <uses-permission android:name="android.permission.RECORD_AUDIO"\/>\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"\/>\n    <application/' "$MANIFEST"
             fi
           fi
           if [ -f "assets/icon.png" ]; then

@@ -9,6 +9,7 @@ import 'cricket_studio.dart';
 import 'voice_and_pro_hub.dart';
 import 'entry_music_data.dart';
 import 'entry_music_studio.dart';
+import 'karaoke_studio.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -330,6 +331,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> {
     CricketCommentaryScreen(),
     VoiceCloneAndProHubScreen(),
     EntryMusicStudioScreen(),
+    KaraokeStudioScreen(),
   ];
 
   @override
@@ -356,11 +358,11 @@ class _MasterHomeShellState extends State<MasterHomeShell> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'DJ Play and Commentry App v200',
+                    'DJ Play and Commentry App v300',
                     style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFF00E5FF)),
                   ),
                   Text(
-                    '320k Audio • DRS & Innings • PA DSP • Entry Fader',
+                    'Daily Top 50 • Cricket • PA DSP • Entry • AI Karaoke',
                     style: TextStyle(fontSize: 10, color: Colors.amberAccent),
                   ),
                 ],
@@ -395,10 +397,11 @@ class _MasterHomeShellState extends State<MasterHomeShell> {
         selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 10),
         unselectedLabelStyle: const TextStyle(fontSize: 10),
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.library_music), label: '1. Top 50 Audio'),
-          BottomNavigationBarItem(icon: Icon(Icons.sports_cricket), label: '2. Commentary'),
-          BottomNavigationBarItem(icon: Icon(Icons.tune), label: '3. PA & Launchpad'),
-          BottomNavigationBarItem(icon: Icon(Icons.bolt), label: '4. Entry & Mixer'),
+          BottomNavigationBarItem(icon: Icon(Icons.library_music), label: '1. Top 50'),
+          BottomNavigationBarItem(icon: Icon(Icons.sports_cricket), label: '2. Cricket'),
+          BottomNavigationBarItem(icon: Icon(Icons.tune), label: '3. PA & Pads'),
+          BottomNavigationBarItem(icon: Icon(Icons.bolt), label: '4. Entry BGM'),
+          BottomNavigationBarItem(icon: Icon(Icons.mic_external_on), label: '5. Karaoke'),
         ],
       ),
     );

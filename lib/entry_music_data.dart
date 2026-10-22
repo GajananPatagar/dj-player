@@ -366,8 +366,12 @@ class EntryMusicHarvester {
       queries = _buildStrictEntrySearchQueries(customQuery);
     } else {
       final List<String> pool = categorySeedQueries[categoryKey] ?? categorySeedQueries['ALL_1000']!;
+      final DateTime now = DateTime.now();
+      final int dailyOffset = (now.year * 365 + now.month * 31 + now.day) % pool.length;
       if (loadNextBatch) {
         _batchCursor = (_batchCursor + 4) % pool.length;
+      } else {
+        _batchCursor = dailyOffset;
       }
       for (int i = 0; i < pool.length; i++) {
         queries.add(pool[(_batchCursor + i) % pool.length]);
@@ -440,7 +444,12 @@ class EntryMusicHarvester {
       } catch (_) {}
     }
 
-    out.sort((a, b) => ((b['playCount'] ?? 0) as int).compareTo((a['playCount'] ?? 0) as int));
+    final int dailySalt = DateTime.now().day * 17 + DateTime.now().month * 31;
+    out.sort((a, b) {
+      final int hashA = (a['id'].toString().hashCode ^ dailySalt) & 0x7fffffff;
+      final int hashB = (b['id'].toString().hashCode ^ dailySalt) & 0x7fffffff;
+      return hashB.compareTo(hashA);
+    });
     return out;
   }
 }

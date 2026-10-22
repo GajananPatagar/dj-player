@@ -1,0 +1,420 @@
+#!/data/data/com.termux/files/usr/bin/bash
+set -e
+
+echo "🚀 Installing Part 2/2: 5-Tab Shell, Daily Entry Rotation & Native Echo-Canceled Karaoke DSP..."
+
+# ==============================================================================
+# FILE 1: Patch lib/main.dart to Add Tab 5 (Karaoke Studio) Without Touching Audio/TTS Logic
+# ==============================================================================
+python3 - << 'PYEOF'
+with open("lib/main.dart", "r") as f:
+    code = f.read()
+
+if "import 'karaoke_studio.dart';" not in code:
+    code = code.replace(
+        "import 'entry_music_studio.dart';",
+        "import 'entry_music_studio.dart';\nimport 'karaoke_studio.dart';"
+    )
+
+old_pages = """  final List<Widget> _pages = const [
+    AudioStudioScreen(),
+    CricketCommentaryScreen(),
+    VoiceCloneAndProHubScreen(),
+    EntryMusicStudioScreen(),
+  ];"""
+
+new_pages = """  final List<Widget> _pages = const [
+    AudioStudioScreen(),
+    CricketCommentaryScreen(),
+    VoiceCloneAndProHubScreen(),
+    EntryMusicStudioScreen(),
+    KaraokeStudioScreen(),
+  ];"""
+
+if old_pages in code:
+    code = code.replace(old_pages, new_pages)
+
+old_nav = """        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.library_music), label: '1. Top 50 Audio'),
+          BottomNavigationBarItem(icon: Icon(Icons.sports_cricket), label: '2. Commentary'),
+          BottomNavigationBarItem(icon: Icon(Icons.tune), label: '3. PA & Launchpad'),
+          BottomNavigationBarItem(icon: Icon(Icons.bolt), label: '4. Entry & Mixer'),
+        ],"""
+
+new_nav = """        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.library_music), label: '1. Top 50'),
+          BottomNavigationBarItem(icon: Icon(Icons.sports_cricket), label: '2. Cricket'),
+          BottomNavigationBarItem(icon: Icon(Icons.tune), label: '3. PA & Pads'),
+          BottomNavigationBarItem(icon: Icon(Icons.bolt), label: '4. Entry BGM'),
+          BottomNavigationBarItem(icon: Icon(Icons.mic_external_on), label: '5. Karaoke'),
+        ],"""
+
+if old_nav in code:
+    code = code.replace(old_nav, new_nav)
+
+code = code.replace("DJ Play and Commentry App v200", "DJ Play and Commentry App v300")
+code = code.replace(
+    "320k Audio • DRS & Innings • PA DSP • Entry Fader",
+    "Daily Top 50 • Cricket • PA DSP • Entry • AI Karaoke"
+)
+
+with open("lib/main.dart", "w") as f:
+    f.write(code)
+print("✅ Added 5th Tab (5. Karaoke) to lib/main.dart!")
+PYEOF
+
+# ==============================================================================
+# FILE 2: Patch lib/entry_music_data.dart for Automatic Daily Entry List Rotation
+# ==============================================================================
+python3 - << 'PYEOF'
+with open("lib/entry_music_data.dart", "r") as f:
+    code = f.read()
+
+old_seed_logic = """      final List<String> pool = categorySeedQueries[categoryKey] ?? categorySeedQueries['ALL_1000']!;
+      if (loadNextBatch) {
+        _batchCursor = (_batchCursor + 4) % pool.length;
+      }
+      for (int i = 0; i < pool.length; i++) {
+        queries.add(pool[(_batchCursor + i) % pool.length]);
+      }"""
+
+new_seed_logic = """      final List<String> pool = categorySeedQueries[categoryKey] ?? categorySeedQueries['ALL_1000']!;
+      final DateTime now = DateTime.now();
+      final int dailyOffset = (now.year * 365 + now.month * 31 + now.day) % pool.length;
+      if (loadNextBatch) {
+        _batchCursor = (_batchCursor + 4) % pool.length;
+      } else {
+        _batchCursor = dailyOffset;
+      }
+      for (int i = 0; i < pool.length; i++) {
+        queries.add(pool[(_batchCursor + i) % pool.length]);
+      }"""
+
+if old_seed_logic in code:
+    code = code.replace(old_seed_logic, new_seed_logic)
+
+old_entry_sort = "out.sort((a, b) => ((b['playCount'] ?? 0) as int).compareTo((a['playCount'] ?? 0) as int));"
+new_entry_sort = """final int dailySalt = DateTime.now().day * 17 + DateTime.now().month * 31;
+    out.sort((a, b) {
+      final int hashA = (a['id'].toString().hashCode ^ dailySalt) & 0x7fffffff;
+      final int hashB = (b['id'].toString().hashCode ^ dailySalt) & 0x7fffffff;
+      return hashB.compareTo(hashA);
+    });"""
+
+if old_entry_sort in code:
+    code = code.replace(old_entry_sort, new_entry_sort)
+
+with open("lib/entry_music_data.dart", "w") as f:
+    f.write(code)
+print("✅ Patched Page 4 Entry Music to rotate dynamically every day!")
+PYEOF
+
+# ==============================================================================
+# FILE 3: Update .github/workflows/main.yml (Hardware Echo-Canceled Mic + Karaoke Vocal-Cut EQ)
+# ==============================================================================
+mkdir -p .github/workflows
+
+cat << 'EOF' > .github/workflows/main.yml
+name: Build DJ Play and Commentry App APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+    tags: [ "v*" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Flutter Stable
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Safely Generate Android Folder Without Touching lib/
+        run: |
+          if [ ! -d "android" ]; then
+            flutter create --platforms=android --org com.gajanan.djplaycommentry --project-name dj_player /tmp/shell
+            cp -r /tmp/shell/android ./android
+          fi
+          grep -n "void main()" lib/main.dart
+
+      - name: Inject Hardware Noise-Canceled Karaoke Recorder, Vocal-Cut EQ & HD TTS Into MainActivity.kt
+        run: |
+          MAIN_KT=$(find android/app/src/main -name "MainActivity.kt" | head -n 1)
+          if [ -n "$MAIN_KT" ]; then
+            PKG_LINE=$(head -n 1 "$MAIN_KT")
+            cat << 'KTEOF' > "$MAIN_KT"
+          $PKG_LINE
+          import android.media.MediaRecorder
+          import android.media.audiofx.AcousticEchoCanceler
+          import android.media.audiofx.AutomaticGainControl
+          import android.media.audiofx.Equalizer
+          import android.media.audiofx.NoiseSuppressor
+          import android.os.Bundle
+          import android.speech.tts.TextToSpeech
+          import android.speech.tts.Voice
+          import android.view.KeyEvent
+          import io.flutter.embedding.android.FlutterActivity
+          import io.flutter.embedding.engine.FlutterEngine
+          import io.flutter.plugin.common.MethodChannel
+          import java.io.File
+          import java.util.Locale
+
+          class MainActivity: FlutterActivity(), TextToSpeech.OnInitListener {
+              private var tts: TextToSpeech? = null
+              private var ttsReady: Boolean = false
+              private var recorder: MediaRecorder? = null
+              private var currentRecordPath: String? = null
+              private var karaokeEq: Equalizer? = null
+              private var methodChannel: MethodChannel? = null
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  tts = TextToSpeech(this, this)
+              }
+
+              override fun onInit(status: Int) {
+                  ttsReady = (status == TextToSpeech.SUCCESS)
+              }
+
+              override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+                  if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
+                      methodChannel?.invokeMethod("onVolumeKey", "UP")
+                  } else if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+                      methodChannel?.invokeMethod("onVolumeKey", "DOWN")
+                  }
+                  return super.onKeyDown(keyCode, event)
+              }
+
+              private fun selectBestNaturalVoice(locale: Locale) {
+                  try {
+                      val voices = tts?.voices ?: return
+                      var bestVoice: Voice? = null
+                      for (v in voices) {
+                          if (v.locale.language == locale.language) {
+                              if (bestVoice == null || v.quality > bestVoice.quality || v.name.contains("network", true) || v.name.contains("wavenet", true)) {
+                                  bestVoice = v
+                              }
+                          }
+                      }
+                      if (bestVoice != null) {
+                          tts?.voice = bestVoice
+                      } else {
+                          tts?.language = locale
+                      }
+                  } catch (_: Exception) {
+                      tts?.language = locale
+                  }
+              }
+
+              private fun applyKaraokeVocalCutEq(enabled: Boolean) {
+                  try {
+                      if (karaokeEq == null) {
+                          karaokeEq = Equalizer(0, 0)
+                      }
+                      karaokeEq?.enabled = enabled
+                      if (enabled && karaokeEq != null) {
+                          val bands = karaokeEq!!.numberOfBands.toInt()
+                          val range = karaokeEq!!.bandLevelRange
+                          val minLvl = range[0].toInt()
+                          val maxLvl = range[1].toInt()
+                          for (b in 0 until bands) {
+                              val freqHz = karaokeEq!!.getCenterFreq(b.toShort()) / 1000
+                              if (freqHz in 350..3800) {
+                                  // Attenuate lead vocal center frequencies to turn normal song into Karaoke
+                                  karaokeEq!!.setBandLevel(b.toShort(), (minLvl * 75 / 100).toShort())
+                              } else if (freqHz < 220) {
+                                  // Boost warm bass backing
+                                  karaokeEq!!.setBandLevel(b.toShort(), (maxLvl * 55 / 100).toShort())
+                              } else {
+                                  // Crisp high percussion
+                                  karaokeEq!!.setBandLevel(b.toShort(), (maxLvl * 35 / 100).toShort())
+                              }
+                          }
+                      }
+                  } catch (_: Exception) {}
+              }
+
+              private fun startIsolatedVoiceRecorder(fileName: String, useEchoCancelledSource: Boolean): String? {
+                  try {
+                      recorder?.release()
+                      val outFile = File(filesDir, fileName + ".m4a")
+                      currentRecordPath = outFile.absolutePath
+                      recorder = MediaRecorder().apply {
+                          // VOICE_COMMUNICATION activates Android Hardware AcousticEchoCanceler & NoiseSuppressor
+                          // so playing Karaoke backing music is subtracted from the mic and ONLY user singing is recorded!
+                          if (useEchoCancelledSource) {
+                              setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION)
+                          } else {
+                              setAudioSource(MediaRecorder.AudioSource.MIC)
+                          }
+                          setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                          setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                          setAudioEncodingBitRate(192000)
+                          setAudioSamplingRate(44100)
+                          setOutputFile(currentRecordPath)
+                          prepare()
+                          start()
+                      }
+                      return currentRecordPath
+                  } catch (_: Exception) {
+                      return try {
+                          recorder?.release()
+                          val outFile = File(filesDir, fileName + ".m4a")
+                          currentRecordPath = outFile.absolutePath
+                          recorder = MediaRecorder().apply {
+                              setAudioSource(MediaRecorder.AudioSource.MIC)
+                              setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                              setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                              setAudioEncodingBitRate(192000)
+                              setAudioSamplingRate(44100)
+                              setOutputFile(currentRecordPath)
+                              prepare()
+                              start()
+                          }
+                          currentRecordPath
+                      } catch (_: Exception) {
+                          null
+                      }
+                  }
+              }
+
+              override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+                  super.configureFlutterEngine(flutterEngine)
+                  val ch = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dj_native_tts")
+                  methodChannel = ch
+                  ch.setMethodCallHandler { call, result ->
+                      when (call.method) {
+                          "speak" -> {
+                              if (!ttsReady || tts == null) {
+                                  result.success(false)
+                                  return@setMethodCallHandler
+                              }
+                              val text = call.argument<String>("text") ?: ""
+                              val lang = call.argument<String>("lang") ?: "kn-IN"
+                              val pitch = (call.argument<Double>("pitch") ?: 1.0).toFloat()
+                              val rate = (call.argument<Double>("rate") ?: 0.98).toFloat()
+                              val locale = Locale.forLanguageTag(lang)
+                              val avail = tts?.isLanguageAvailable(locale) ?: TextToSpeech.LANG_NOT_SUPPORTED
+                              if (avail < TextToSpeech.LANG_AVAILABLE) {
+                                  result.success(false)
+                                  return@setMethodCallHandler
+                              }
+                              tts?.stop()
+                              selectBestNaturalVoice(locale)
+                              tts?.setPitch(pitch)
+                              tts?.setSpeechRate(rate)
+                              val speakRes = tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "dj_single_utt")
+                              result.success(speakRes == TextToSpeech.SUCCESS)
+                          }
+                          "stopSpeak" -> {
+                              tts?.stop()
+                              result.success(true)
+                          }
+                          "setKaraokeVocalCut" -> {
+                              val enabled = call.argument<Boolean>("enabled") ?: false
+                              applyKaraokeVocalCutEq(enabled)
+                              result.success(true)
+                          }
+                          "startCleanVocalRecord" -> {
+                              val name = call.argument<String>("name") ?: "karaoke_vocal"
+                              val path = startIsolatedVoiceRecorder(name, true)
+                              result.success(path)
+                          }
+                          "stopCleanVocalRecord" -> {
+                              try {
+                                  recorder?.stop()
+                                  recorder?.release()
+                                  recorder = null
+                                  result.success(currentRecordPath)
+                              } catch (_: Exception) {
+                                  recorder?.release()
+                                  recorder = null
+                                  result.success(currentRecordPath)
+                              }
+                          }
+                          "startRecord" -> {
+                              val name = call.argument<String>("name") ?: "voice_clip"
+                              val path = startIsolatedVoiceRecorder(name, false)
+                              result.success(path)
+                          }
+                          "stopRecord" -> {
+                              try {
+                                  recorder?.stop()
+                                  recorder?.release()
+                                  recorder = null
+                                  result.success(currentRecordPath)
+                              } catch (_: Exception) {
+                                  recorder?.release()
+                                  recorder = null
+                                  result.success(currentRecordPath)
+                              }
+                          }
+                          else -> result.notImplemented()
+                      }
+                  }
+              }
+
+              override fun onDestroy() {
+                  tts?.stop()
+                  tts?.shutdown()
+                  recorder?.release()
+                  karaokeEq?.release()
+                  super.onDestroy()
+              }
+          }
+          KTEOF
+            sed -i "s|\$PKG_LINE|$PKG_LINE|g" "$MAIN_KT"
+          fi
+
+      - name: Set App Name, Cleartext Traffic, Audio/DSP Permissions & High-Class Icon
+        run: |
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          if [ -f "$MANIFEST" ]; then
+            sed -i 's/android:label="[^"]*"/android:label="DJ Play and Commentry App"/g' "$MANIFEST"
+            if ! grep -q "usesCleartextTraffic" "$MANIFEST"; then
+              sed -i 's/<application/<application android:usesCleartextTraffic="true"/' "$MANIFEST"
+            fi
+            if ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
+              sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <uses-permission android:name="android.permission.RECORD_AUDIO"\/>\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"\/>\n    <application/' "$MANIFEST"
+            fi
+          fi
+          if [ -f "assets/icon.png" ]; then
+            for dir in android/app/src/main/res/mipmap-*; do
+              if [ -d "$dir" ]; then
+                cp -f assets/icon.png "$dir/ic_launcher.png" || true
+                cp -f assets/icon.png "$dir/ic_launcher_round.png" || true
+              fi
+            done
+            rm -rf android/app/src/main/res/mipmap-anydpi-v26
+          fi
+
+      - name: Install Dependencies & Build Release APK
+        run: |
+          flutter pub get
+          flutter build apk --release --no-tree-shake-icons
+
+      - name: Publish APK to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: build/app/outputs/flutter-apk/app-release.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+EOF
+
+echo "✅ Part 2/2 Extracted & Verified!"

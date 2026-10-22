@@ -21,6 +21,12 @@ class AppSoundEngine {
   static const MethodChannel _nativeChannel = MethodChannel('dj_native_tts');
   static final AudioPlayer _voicePlayer = AudioPlayer();
   static final AudioPlayer _sfxPlayer = AudioPlayer();
+
+  static Future<void> boostAllPlayersMax(AudioPlayer p) async {
+    try {
+      await p.setVolume(1.0);
+    } catch (_) {}
+  }
   static bool _isSpeakingLock = false;
   static bool hardwareVolumeEntryMode = false;
 

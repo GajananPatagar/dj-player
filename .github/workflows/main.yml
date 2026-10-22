@@ -47,6 +47,7 @@ jobs:
           import android.media.MediaRecorder
           import android.media.MediaScannerConnection
           import android.media.audiofx.Equalizer
+          import android.media.audiofx.LoudnessEnhancer
           import android.media.audiofx.Virtualizer
           import android.os.Build
           import android.os.Bundle
@@ -114,12 +115,18 @@ jobs:
                   }
               }
 
+              private var loudnessEnhancer: LoudnessEnhancer? = null
+
               private fun applyKaraokeVocalCutEq(enabled: Boolean) {
                   try {
                       if (karaokeEq == null) karaokeEq = Equalizer(100, 0)
                       if (virtualizer == null) virtualizer = Virtualizer(100, 0)
+                      if (loudnessEnhancer == null) loudnessEnhancer = LoudnessEnhancer(0)
                       karaokeEq?.enabled = enabled
                       virtualizer?.enabled = enabled
+                      // Force +15dB Maximum Loudness & Gain Normalization across all speakers/headphones
+                      loudnessEnhancer?.setTargetGain(1500)
+                      loudnessEnhancer?.enabled = true
                       if (enabled) {
                           virtualizer?.setStrength(1000.toShort())
                           val bands = karaokeEq!!.numberOfBands.toInt()
@@ -130,7 +137,7 @@ jobs:
                               if (freqHz in 300..3600) {
                                   karaokeEq!!.setBandLevel(b.toShort(), minLvl.toShort())
                               } else {
-                                  karaokeEq!!.setBandLevel(b.toShort(), (maxLvl * 70 / 100).toShort())
+                                  karaokeEq!!.setBandLevel(b.toShort(), maxLvl.toShort())
                               }
                           }
                       }

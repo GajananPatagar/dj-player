@@ -121,8 +121,9 @@ class KaraokeEngine {
     };
 
     final List<String> subQueries = [
-      cleanQ,
       '$cleanQ Karaoke Instrumental',
+      '$cleanQ Backing Track',
+      cleanQ,
     ];
 
     for (final q in subQueries) {
@@ -185,11 +186,17 @@ class KaraokeEngine {
   ) async {
     final String cleanTitle = title.replaceAll(RegExp(r'\(.*?\)|\[.*?\]'), '').trim();
     final String firstArtist = artist.split(',').first.trim();
+    String movieName = '';
+    final RegExp movieReg = RegExp(r'"([^"]+)"');
+    final mMatch = movieReg.firstMatch(title);
+    if (mMatch != null) movieName = mMatch.group(1) ?? '';
 
-    // 1. Try LRCLIB Time-Synced LRC API
+    // 1. Try LRCLIB Time-Synced LRC API (Title Only + Title & Movie + Title & Artist)
     final List<String> searchQueries = [
-      '$cleanTitle $firstArtist',
       cleanTitle,
+      if (movieName.isNotEmpty) '$cleanTitle $movieName',
+      '$cleanTitle $firstArtist',
+      if (cleanTitle.split(' ').length >= 2) cleanTitle.split(' ').take(2).join(' '),
     ];
 
     for (final sq in searchQueries) {
@@ -215,7 +222,20 @@ class KaraokeEngine {
       } catch (_) {}
     }
 
-    // 2. Try Official JioSaavn Lyrics Endpoint
+    // 2A. Try Saavn.dev Lyrics Mirror + JioSaavn song.getDetails Lyrics
+    try {
+      final resMirror = await http.get(Uri.parse('https://saavn.dev/api/songs/$songId/lyrics')).timeout(const Duration(seconds: 4));
+      if (resMirror.statusCode == 200) {
+        final Map b = jsonDecode(resMirror.body);
+        final String? lyr = b['data']?['lyrics']?.toString();
+        if (lyr != null && lyr.trim().length > 20) {
+          final String cleaned = lyr.replaceAll('<br>', '\n').replaceAll('<br/>', '\n').replaceAll(RegExp(r'<[^>]*>'), '');
+          return _distributePlainLyricsOverTime(cleaned, durationSec);
+        }
+      }
+    } catch (_) {}
+
+    // 2B. Try Official JioSaavn Lyrics Endpoint
     try {
       final String sUrl =
           'https://www.jiosaavn.com/api.php?__call=lyrics.getLyrics&ctx=web6dot0&api_version=4&_format=json&_marker=0&lyrics_id=' +

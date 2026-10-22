@@ -69,11 +69,29 @@ class _KaraokeStudioScreenState extends State<KaraokeStudioScreen> {
   @override
   void initState() {
     super.initState();
+    _configureMultiTrackAudioFocus();
     KaraokeEngine.loadSavedTakes().then((_) {
       if (mounted) setState(() {});
     });
     _setupListeners();
     _runSongSearch('Kannada Hindi Trending Hits 2026');
+  }
+
+  Future<void> _configureMultiTrackAudioFocus() async {
+    try {
+      final ctx = AudioContext(
+        android: const AudioContextAndroid(
+          isSpeakerphoneOn: true,
+          stayAwake: true,
+          contentType: AndroidContentType.music,
+          usageType: AndroidUsageType.media,
+          audioFocus: AndroidAudioFocus.none,
+        ),
+      );
+      await _karaokeBackingPlayer.setAudioContext(ctx);
+      await _userVocalStemPlayer.setAudioContext(ctx);
+      await _choirHarmonyPlayer.setAudioContext(ctx);
+    } catch (_) {}
   }
 
   void _setupListeners() {
@@ -216,8 +234,10 @@ class _KaraokeStudioScreenState extends State<KaraokeStudioScreen> {
       await AppSoundEngine.startMicRecording(takeId);
     }
 
-    // Auto-Play Karaoke Backing Track from 0:00
-    await _karaokeBackingPlayer.setVolume(_karaokeMusicVol);
+    // Auto-Play Karaoke Backing Track from 0:00 (Attenuated so mic captures ONLY your voice!)
+    final bool isPureInst = _selectedSong?['isPureInstrumental'] == true;
+    final double recBackVol = isPureInst ? _karaokeMusicVol : (_karaokeMusicVol * 0.42).clamp(0.15, 0.65);
+    await _karaokeBackingPlayer.setVolume(recBackVol);
     await _karaokeBackingPlayer.play(UrlSource(_verifiedBackingUrl!));
   }
 
@@ -250,8 +270,16 @@ class _KaraokeStudioScreenState extends State<KaraokeStudioScreen> {
       );
       await KaraokeEngine.saveTake(take);
       setState(() {
-        _statusBanner = '✅ Studio Master Saved! Playing Original Karaoke + Your Polished Voice...';
+        _statusBanner = '✅ Saved to Phone /Download/DJ_Karaoke_*.m4a! Playing Mix Now...';
       });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.green.shade800,
+            content: Text('📲 Saved Recording to Phone Downloads folder & Studio Vault!'),
+          ),
+        );
+      }
       await _playDualStemStudioMaster(take);
     }
   }
@@ -274,9 +302,9 @@ class _KaraokeStudioScreenState extends State<KaraokeStudioScreen> {
       pitchRate = 0.97;
     }
 
-    // Start Original High-Res Karaoke Stream + Clean Recorded Vocal Stem in Sync
-    await _karaokeBackingPlayer.setVolume(_karaokeMusicVol);
-    await _userVocalStemPlayer.setVolume(_userVocalVol);
+    // Duck original vocal track to 32% while boosting User Singing Voice to 100% Lead!
+    await _karaokeBackingPlayer.setVolume((_karaokeMusicVol * 0.38).clamp(0.15, 0.85));
+    await _userVocalStemPlayer.setVolume(1.0);
     await _userVocalStemPlayer.setPlaybackRate(pitchRate.clamp(0.85, 1.18));
 
     if (_vocalSyncOffsetMs < 0) {
@@ -643,6 +671,20 @@ class _KaraokeStudioScreenState extends State<KaraokeStudioScreen> {
                               setState(() {});
                             },
                           ),
+                          OutlinedButton(
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                              side: const BorderSide(color: Colors.cyanAccent),
+                            ),
+                            onPressed: () async {
+                              await _stopAllPlayback();
+                              await _userVocalStemPlayer.setVolume(1.0);
+                              await _userVocalStemPlayer.play(DeviceFileSource(take.vocalFilePath));
+                              setState(() => _statusBanner = '🎤 Playing Your Isolated Recorded Voice Only!');
+                            },
+                            child: const Text('🎤 Voice', style: TextStyle(fontSize: 10, color: Colors.cyanAccent)),
+                          ),
+                          const SizedBox(width: 4),
                           ElevatedButton.icon(
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.amber,

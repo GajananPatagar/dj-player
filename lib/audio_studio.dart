@@ -288,17 +288,17 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> {
       }
 
       final List urls = track['urls'] as List? ?? [];
-      final String? verifiedUrl = await SaavnDesDecryptor.resolvePlayableStreamUrl(urls);
-      if (verifiedUrl != null) {
-        await _player.stop();
-        await _player.setVolume(targetVol);
-        await _player.play(UrlSource(verifiedUrl));
-        await _player.setPlaybackRate(_playbackSpeed);
-        if (mounted) {
-          setState(() {
-            _statusBadge = '🟢 Playing Full Song: ' + track['title'].toString();
-          });
-        }
+      for (final rawUrl in urls) {
+        try {
+          await _player.play(UrlSource(rawUrl.toString()), volume: targetVol);
+          await _player.setPlaybackRate(_playbackSpeed);
+          if (mounted) {
+            setState(() {
+              _statusBadge = '🟢 Playing Full Song: ' + track['title'].toString();
+            });
+          }
+          break;
+        } catch (_) {}
       }
     } finally {
       _isBusySwitching = false;

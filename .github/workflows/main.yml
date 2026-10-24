@@ -118,30 +118,7 @@ jobs:
               private var loudnessEnhancer: LoudnessEnhancer? = null
 
               private fun applyKaraokeVocalCutEq(enabled: Boolean) {
-                  try {
-                      if (karaokeEq == null) karaokeEq = Equalizer(100, 0)
-                      if (virtualizer == null) virtualizer = Virtualizer(100, 0)
-                      if (loudnessEnhancer == null) loudnessEnhancer = LoudnessEnhancer(0)
-                      karaokeEq?.enabled = enabled
-                      virtualizer?.enabled = enabled
-                      // Force +15dB Maximum Loudness & Gain Normalization across all speakers/headphones
-                      loudnessEnhancer?.setTargetGain(1500)
-                      loudnessEnhancer?.enabled = true
-                      if (enabled) {
-                          virtualizer?.setStrength(1000.toShort())
-                          val bands = karaokeEq!!.numberOfBands.toInt()
-                          val minLvl = karaokeEq!!.bandLevelRange[0].toInt()
-                          val maxLvl = karaokeEq!!.bandLevelRange[1].toInt()
-                          for (b in 0 until bands) {
-                              val freqHz = karaokeEq!!.getCenterFreq(b.toShort()) / 1000
-                              if (freqHz in 300..3600) {
-                                  karaokeEq!!.setBandLevel(b.toShort(), minLvl.toShort())
-                              } else {
-                                  karaokeEq!!.setBandLevel(b.toShort(), maxLvl.toShort())
-                              }
-                          }
-                      }
-                  } catch (_: Exception) {}
+                  // Pure untouched native media sound (No EQ distortion)
               }
 
               private fun startIsolatedVoiceRecorder(fileName: String, useEchoCancelledSource: Boolean): String? {
@@ -274,7 +251,7 @@ jobs:
                   tts?.stop()
                   tts?.shutdown()
                   recorder?.release()
-                  karaokeEq?.release()
+                  
                   super.onDestroy()
               }
           }

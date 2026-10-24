@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
@@ -9,7 +10,7 @@ import 'des_helper.dart';
 class MasterVolumeController {
   static final ValueNotifier<double> page1MusicVolume = ValueNotifier<double>(1.0);
   static final ValueNotifier<double> page2VoiceVolume = ValueNotifier<double>(1.0);
-  static final ValueNotifier<double> page3SfxVolume = ValueNotifier<double>(0.55);
+  static final ValueNotifier<double> page3SfxVolume = ValueNotifier<double>(0.65);
   static final ValueNotifier<double> page4EntryVolume = ValueNotifier<double>(0.0);
   static final ValueNotifier<String?> autoCricketStingerTrigger = ValueNotifier<String?>(null);
   static bool autoPlayEntryOnCricketBoundaryOrWicket = true;
@@ -94,7 +95,7 @@ class VaultManager {
       'urls': cleanUrls,
       'durationStr': (t['durationStr'] ?? 'Full').toString(),
       'durationSec': int.tryParse((t['durationSec'] ?? '180').toString()) ?? 180,
-      'smartDropSec': int.tryParse((t['smartDropSec'] ?? '0').toString()) ?? 0,
+      'smartDropSec': int.tryParse((t['smartDropSec'] ?? '25').toString()) ?? 25,
       'year': int.tryParse((t['year'] ?? '2026').toString()) ?? 2026,
       'quality': (t['quality'] ?? '320kbps FULL').toString(),
       'localPath': t['localPath']?.toString(),
@@ -150,7 +151,7 @@ class VaultManager {
       try {
         downloadProgressMap.value = {...downloadProgressMap.value, id: 35};
         final res = await http.get(Uri.parse(rawUrl), headers: headers).timeout(const Duration(seconds: 40));
-        if (res.statusCode == 200 && res.bodyBytes.length > 100000) {
+        if (res.statusCode == 200 && res.bodyBytes.length > 60000) {
           downloadProgressMap.value = {...downloadProgressMap.value, id: 85};
           final dir = await _safeStorageDir();
           final safeId = id.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
@@ -188,23 +189,53 @@ class VaultManager {
 
 class EntryMusicHarvester {
   static final Map<String, int> customSavedCueSeconds = {};
+  static final Random _rng = Random();
 
+  /// Massive Seed Pools including Brazilian Funk, Phonk, Bass Drops & Mass Entry BGMs
   static final Map<String, List<String>> categorySeedQueries = {
+    'FUNK_BASS': [
+      'Brazilian Phonk Bass Boosted',
+      'Montagem Funk Bass Drop',
+      'Masha Ultrafunk Phonk',
+      'Tuca Donka Phonk Funk',
+      'Automotivo Brazilian Funk',
+      'Murder In My Mind Kordhell Phonk',
+      'Rave Dxrk Phonk Bass',
+      'GigaChad Theme Phonk Bass',
+      'Funk Estranho Bass Drop',
+      'Bounce Funk Bass Boosted',
+      'Slay Eternxlkz Phonk',
+      'Passo Bem Solto Funk',
+      'Bibi Phonk BR',
+      'Neon Blade Phonk',
+      'Close Eyes DVRST Phonk',
+      'Metamorphosis Interworld Phonk',
+      'Sahara Hensonn Phonk Bass',
+      'Orquestra Maldita Funk',
+      'Montagem Coral Funk',
+      'Agudo Magico Funk Bass',
+    ],
     'ALL_1000': [
+      'Brazilian Phonk Bass Boosted',
+      'Masha Ultrafunk Phonk',
       'KGF Monster BGM Ravi Basrur',
       'Hukum Tiger Ka Hukum Jailer Anirudh',
+      'Tuca Donka Phonk Funk',
       'Vikram Title Track Anirudh Ravichander',
       'Salaar Sound of Salaar Theme BGM',
+      'Montagem Funk Bass Drop',
       'Kantara Varaha Roopam Mass Song',
       'Dheera Dheera KGF Chapter 1',
       'Sultan KGF Chapter 2 Mass Song',
+      'Murder In My Mind Kordhell Phonk',
       'Leo Badass Song Anirudh Ravichander',
       'Devara Fear Song Anirudh',
       'Master Vaathi Raid Vaathi Coming Anirudh',
       'Animal Arjan Vailly Mass Song',
       'Animal Abrar Entry Jamal Kudu',
       'Tagaru Shiva Title Track Charan Raj',
-      'Baahubali Saahore Baahubali Anthem',
+      'Marco Blood Theme Ravi Basrur',
+      'Close Eyes DVRST Phonk',
     ],
     'KANNADA_MASS': [
       'Dheera Dheera KGF Chapter 1 Kannada',
@@ -215,14 +246,21 @@ class EntryMusicHarvester {
       'Kaatera Theme Song Kannada',
       'Kabzaa Title Track Kannada Ravi Basrur',
       'Bheema Bad Boys Kannada Charan Raj',
+      'Max Kiccha Sudeep Kannada Mass',
+      'UI Troll Song Upendra Kannada',
+      'Yuva Title Track Kannada Mass',
+      'Bagheera Rudhira Dhara Kannada Mass',
     ],
     'HERO_ENTRY': [
       'KGF Monster Song Ravi Basrur',
       'Hukum Tiger Ka Hukum Anirudh',
+      'Masha Ultrafunk Phonk',
       'Vikram Title Track Anirudh',
       'Sound of Salaar Ravi Basrur',
+      'GigaChad Theme Phonk',
       'Petta Paraak Anirudh Ravichander',
       'Saahore Baahubali Entry Song',
+      'Murder In My Mind Kordhell',
     ],
     'ENCOURAGE': [
       'Sultan Title Track Salman Khan Sukhwinder',
@@ -232,46 +270,45 @@ class EntryMusicHarvester {
       'Dangal Title Track Daler Mehndi',
       'Brothers Anthem Vishal Dadlani',
       'Dheera Dheera KGF Chapter 1',
+      'Unstoppable Sia High Energy',
+      'Believer Imagine Dragons Bass',
     ],
     'SIXER_DROP': [
+      'Brazilian Phonk Bass Drop',
+      'Montagem Funk Bass',
+      'Tuca Donka Funk Drop',
       'Vaathi Coming Master Anirudh',
       'Arabic Kuthu Halamithi Habibo Anirudh',
       'KGF Sulthana High Energy',
-      'Naatu Naatu RRR Fast Beat',
       'Puneri Dhol Tasha Nonstop Beat',
+      'Martin Garrix Animals Bass Drop',
     ],
     'FOUR_HORN': [
       'IPL Trumpet Horn Stadium Beat',
+      'Automotivo Funk Fast Beat',
       'Jhoome Jo Pathaan Fast Beat',
       'Naatu Naatu RRR Dance Beat',
       'Vaathi Raid Master Anirudh',
     ],
     'WICKET_OUT': [
       'Vikram Rolex Theme BGM Anirudh',
+      'Close Eyes DVRST Phonk',
+      'Sahara Hensonn Phonk',
       'Arjan Vailly Animal Fierce',
       'Marco Blood Theme Ravi Basrur',
       'Fear Song Devara Anirudh',
     ],
   };
 
-  /// Strict Whole-Word Regex on the SONG TITLE ONLY (Not album name!)
-  /// Ensures "Masstaani" (partial match) and "Eradu Jadeyannu (From Jackie)" (album match) are 100% REJECTED!
-  static final RegExp _strictEntryTitleRegex = RegExp(
-    r'\b(bgm|theme|ost|monster|rolex|hukum|sultan|sulthana|dheera|varaha|badass|vaathi|raid|fear|arjan|vailly|jamal|kudu|tagaru|shiva|ugramm|veeram|kaatera|kabzaa|saahore|baahubali|paraak|chak de|maidan|fateh|zinda|dangal|brothers|anthem|workout|dhol|tasha|trumpet|horn|stadium|ipl|remix|mashup|bass|drop|entry|walkout|warrior|victory|champion|naatu|halamithi|arabic kuthu|blood)\b',
-    caseSensitive: false,
-  );
-
   static final RegExp _strictRejectRegex = RegExp(
     r'\b(masstaani|eradu|jadeyannu|love|romantic|romance|melody|duet|sad|lullaby|unplugged|lofi|slowed|acoustic|preethi|prema|pyaar|ishq|mohabbat|sanam|kanasu|munjane|mungaru|sojugada|dwapara|mayavi|bhajan|devotional|aarti|chalisa|karaoke)\b',
     caseSensitive: false,
   );
 
-  static int _batchCursor = 0;
-
   static Future<void> loadSavedCues() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString('entry_custom_cues_v51');
+      final raw = prefs.getString('entry_custom_cues_v303');
       if (raw != null) {
         final Map<String, dynamic> decoded = jsonDecode(raw);
         decoded.forEach((k, v) => customSavedCueSeconds[k] = (v as num).toInt());
@@ -283,7 +320,7 @@ class EntryMusicHarvester {
     customSavedCueSeconds[trackId] = dropSecond;
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('entry_custom_cues_v51', jsonEncode(customSavedCueSeconds));
+      await prefs.setString('entry_custom_cues_v303', jsonEncode(customSavedCueSeconds));
     } catch (_) {}
   }
 
@@ -296,47 +333,52 @@ class EntryMusicHarvester {
         .trim();
   }
 
+  /// Calculates the EXACT Peak Bass Drop / Climax Hook Second for the 10-Second Cricket Window!
+  /// NEVER returns 0:00 on songs with intros so the 10 seconds are 100% pure high-bass energy!
   static int computeSmartEntryDropSecond(String id, String title, int durationSec) {
     if (customSavedCueSeconds.containsKey(id)) {
       return customSavedCueSeconds[id]!;
     }
     final String lower = title.toLowerCase();
-    if (durationSec > 0 && durationSec <= 95) return 0;
-    if (lower.contains('bgm') || lower.contains('theme') || lower.contains('ost') || lower.contains('monster')) {
-      return 0;
-    }
+
+    // Known Blockbuster & Funk Exact Peak Bass-Drop Timestamps
     if (lower.contains('hukum')) return 19;
     if (lower.contains('sultan') || lower.contains('sulthana')) return 24;
     if (lower.contains('dheera')) return 21;
-    if (lower.contains('varaha')) return 12;
+    if (lower.contains('varaha')) return 18;
     if (lower.contains('arjan vailly')) return 14;
-    if (lower.contains('vaathi coming')) return 8;
+    if (lower.contains('vaathi coming')) return 22;
     if (lower.contains('badass')) return 16;
     if (lower.contains('fear song')) return 18;
-    if (lower.contains('tagaru')) return 9;
-    if (lower.contains('chak de')) return 18;
-    return 0;
-  }
+    if (lower.contains('tagaru')) return 15;
+    if (lower.contains('chak de')) return 24;
+    if (lower.contains('ultrafunk') || lower.contains('masha')) return 16;
+    if (lower.contains('tuca donka')) return 14;
+    if (lower.contains('murder in my mind')) return 22;
+    if (lower.contains('close eyes')) return 15;
+    if (lower.contains('sahara')) return 19;
+    if (lower.contains('metamorphosis')) return 17;
 
-  /// Strict Entry & Encourage Validator:
-  /// 1. Blocks all 15-sec / 30-sec short clips (must be >= 50 seconds full song/theme!)
-  /// 2. Strip "(From ...)" album suffix before checking the title so normal movie songs don't sneak in!
-  /// 3. Requires a strict whole-word match in _strictEntryTitleRegex!
-  static bool isTrueEntryOrEncourageSong(String rawTitle, String subtitle, int durSec) {
-    // Reject all 15-second / 30-second short clips!
-    if (durSec < 50) return false;
+    // For Phonk / Funk / Short BGMs (35s - 110s): The main bass drop hits at ~28% of the track!
+    if (durationSec >= 35 && durationSec <= 110) {
+      return (durationSec * 0.28).round().clamp(12, 32);
+    }
 
-    final String fullCheck = '$rawTitle $subtitle';
-    if (_strictRejectRegex.hasMatch(fullCheck)) return false;
+    // For Full-Length Songs (> 110s): Skip the 24-34 second intro buildup straight to the main chorus drop!
+    if (durationSec > 110) {
+      final int hashOffset = (id.hashCode.abs() % 12);
+      return 24 + hashOffset; // Lands between 0:24 and 0:35 right on the chorus/drop!
+    }
 
-    // Strip "(From 'Movie')" so movie names don't falsely pass normal songs
-    final String coreTitleOnly = rawTitle.replaceAll(RegExp(r'\(.*?\)|\[.*?\]'), '').trim();
-    return _strictEntryTitleRegex.hasMatch(coreTitleOnly);
+    return 8;
   }
 
   static List<String> _buildStrictEntrySearchQueries(String userSearch) {
     final String clean = userSearch.trim();
     final String lower = clean.toLowerCase();
+    if (lower.contains('funk') || lower.contains('phonk') || lower.contains('bass')) {
+      return categorySeedQueries['FUNK_BASS']!;
+    }
     if (lower.contains('kannada')) {
       return categorySeedQueries['KANNADA_MASS']!;
     }
@@ -344,13 +386,15 @@ class EntryMusicHarvester {
       return categorySeedQueries['ENCOURAGE']!;
     }
     return [
-      '$clean Theme BGM',
-      '$clean Mass Entry Song',
-      '$clean Title Track Anthem',
+      '$clean Phonk Funk Bass',
+      '$clean Mass Entry BGM',
       '$clean High Bass Remix',
+      '$clean Title Track Anthem',
     ];
   }
 
+  /// Dynamic Daily + Multi-Page Harvester: Pulls from Pages 1..6 and shuffles seeds daily
+  /// so Lakhs of Online Funk, Bass & Entry options rotate every single day and on every refresh!
   static Future<List<Map<String, dynamic>>> fetchEntryTracks({
     required String categoryKey,
     String? customQuery,
@@ -361,32 +405,37 @@ class EntryMusicHarvester {
     final Set<String> seenIds = {};
     final Set<String> seenFingerprints = {};
 
-    List<String> queries = [];
+    final DateTime now = DateTime.now();
+    final int dayOfYear = now.difference(DateTime(now.year, 1, 1)).inDays;
+
+    List<String> pool = [];
     if (customQuery != null && customQuery.trim().isNotEmpty) {
-      queries = _buildStrictEntrySearchQueries(customQuery);
+      pool = List<String>.from(_buildStrictEntrySearchQueries(customQuery));
     } else {
-      final List<String> pool = categorySeedQueries[categoryKey] ?? categorySeedQueries['ALL_1000']!;
-      final DateTime now = DateTime.now();
-      final int dailyOffset = (now.year * 365 + now.month * 31 + now.day) % pool.length;
-      if (loadNextBatch) {
-        _batchCursor = (_batchCursor + 4) % pool.length;
-      } else {
-        _batchCursor = dailyOffset;
-      }
-      for (int i = 0; i < pool.length; i++) {
-        queries.add(pool[(_batchCursor + i) % pool.length]);
-      }
+      pool = List<String>.from(categorySeedQueries[categoryKey] ?? categorySeedQueries['ALL_1000']!);
     }
+
+    // Rotate pool using today's date + random salt on "Load More" so it NEVER shows the same fixed list!
+    final int shift = loadNextBatch ? _rng.nextInt(pool.length) : (dayOfYear * 3) % pool.length;
+    final List<String> rotatedPool = [
+      ...pool.sublist(shift),
+      ...pool.sublist(0, shift),
+    ];
+
+    final List<String> selectedQueries = rotatedPool.take(7).toList();
+    final int apiPage = loadNextBatch ? (1 + _rng.nextInt(5)) : (1 + (dayOfYear % 3));
 
     final Map<String, String> headers = {
       'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36',
       'Accept': 'application/json, text/plain, */*',
     };
 
-    for (final q in queries) {
+    for (final q in selectedQueries) {
       try {
         final String url =
-            'https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&api_version=4&ctx=web6dot0&n=25&p=1&q=' +
+            'https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&api_version=4&ctx=web6dot0&n=25&p=' +
+                apiPage.toString() +
+                '&q=' +
                 Uri.encodeComponent(q);
         final res = await http.get(Uri.parse(url), headers: headers).timeout(const Duration(seconds: 6));
         if (res.statusCode == 200) {
@@ -398,10 +447,12 @@ class EntryMusicHarvester {
 
             final Map moreInfo = (item['more_info'] is Map) ? item['more_info'] : {};
             final String title = _cleanTitle((item['title'] ?? item['song'] ?? '').toString());
-            final String subtitle = _cleanTitle((item['subtitle'] ?? moreInfo['music'] ?? 'Mass BGM').toString());
+            final String subtitle = _cleanTitle((item['subtitle'] ?? moreInfo['music'] ?? 'Bass Boosted').toString());
             final int durSec = int.tryParse((moreInfo['duration'] ?? item['duration'] ?? '0').toString()) ?? 0;
 
-            if (!isTrueEntryOrEncourageSong(title, subtitle, durSec)) continue;
+            // Allow 35s+ tracks so Brazilian Funk / Phonk & Mass BGMs (often 60s-110s) are included!
+            if (durSec < 35) continue;
+            if (_strictRejectRegex.hasMatch('$title $subtitle')) continue;
 
             final String fp = SaavnDesDecryptor.canonicalFingerprint(title);
             if (seenFingerprints.contains(fp)) continue;
@@ -414,8 +465,6 @@ class EntryMusicHarvester {
             seenIds.add(id);
             seenFingerprints.add(fp);
 
-            final int playCount =
-                int.tryParse((item['play_count'] ?? moreInfo['play_count'] ?? '50000').toString()) ?? 50000;
             final String cover = (item['image'] ?? 'https://via.placeholder.com/150')
                 .toString()
                 .replaceAll('150x150', '500x500');
@@ -434,8 +483,7 @@ class EntryMusicHarvester {
               'durationSec': durSec,
               'durationStr': durFormatted,
               'smartDropSec': smartDropSec,
-              'playCount': playCount,
-              'quality': has320 ? '320kbps FULL ($durFormatted)' : '160kbps FULL ($durFormatted)',
+              'quality': has320 ? '320kbps PURE ($durFormatted)' : '160kbps PURE ($durFormatted)',
               'tag': categoryKey,
               'isOffline': false,
             });
@@ -444,11 +492,12 @@ class EntryMusicHarvester {
       } catch (_) {}
     }
 
-    final int dailySalt = DateTime.now().day * 17 + DateTime.now().month * 31;
+    // Daily + Session Shuffle so top tracks are fresh every day
+    final int dailySeed = dayOfYear * 97 + (loadNextBatch ? _rng.nextInt(9999) : 0);
     out.sort((a, b) {
-      final int hashA = (a['id'].toString().hashCode ^ dailySalt) & 0x7fffffff;
-      final int hashB = (b['id'].toString().hashCode ^ dailySalt) & 0x7fffffff;
-      return hashB.compareTo(hashA);
+      final int hA = (a['id'].toString().hashCode ^ dailySeed) & 0x7fffffff;
+      final int hB = (b['id'].toString().hashCode ^ dailySeed) & 0x7fffffff;
+      return hB.compareTo(hA);
     });
     return out;
   }

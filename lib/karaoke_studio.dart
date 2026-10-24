@@ -81,7 +81,7 @@ class _KaraokeStudioScreenState extends State<KaraokeStudioScreen> {
     try {
       final ctx = AudioContext(
         android: const AudioContextAndroid(
-          isSpeakerphoneOn: true,
+          isSpeakerphoneOn: false,
           stayAwake: true,
           contentType: AndroidContentType.music,
           usageType: AndroidUsageType.media,

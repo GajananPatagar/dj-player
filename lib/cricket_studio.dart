@@ -33,7 +33,13 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
   String _loadedDraftTitle = '';
   double _trimStartSec = 0.0;
   double _trimEndSec = 10.0;
-  double _maxDraftDurationSec = 60.0;
+  double _maxDraftDurationSec = 30.0;
+  double _presentPreviewSec = 0.0;
+  bool _isPreviewPlaying = false;
+  List<double> _spectrumBars = List<double>.filled(64, 0.35);
+  StreamSubscription? _posSub;
+  StreamSubscription? _durSub;
+  StreamSubscription? _stateSub;
   bool _isRecordingTileMic = false;
   bool _isExtractingMedia = false;
   final TextEditingController _reelShortUrlCtrl = TextEditingController();
@@ -42,6 +48,28 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
   @override
   void initState() {
     super.initState();
+    _posSub = RealTileStudioManager.realClipPlayer.onPositionChanged.listen((pos) {
+      if (mounted) {
+        setState(() => _presentPreviewSec = pos.inMilliseconds / 1000.0);
+      }
+    });
+    _durSub = RealTileStudioManager.realClipPlayer.onDurationChanged.listen((dur) {
+      if (mounted && dur.inMilliseconds > 500) {
+        final double totalS = (dur.inMilliseconds / 1000.0).clamp(2.0, 600.0);
+        setState(() {
+          _maxDraftDurationSec = totalS;
+          if (_trimEndSec > totalS || _trimEndSec <= _trimStartSec) {
+            _trimEndSec = totalS.clamp(1.0, 15.0);
+          }
+        });
+      }
+    });
+    _stateSub = RealTileStudioManager.realClipPlayer.onPlayerStateChanged.listen((st) {
+      if (mounted) {
+        setState(() => _isPreviewPlaying = (st == PlayerState.playing));
+      }
+    });
+
     RealTileStudioManager.init(
       onSharedMediaReceived: (shared) async {
         if (!mounted) return;
@@ -54,12 +82,10 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
           setState(() {
             _isExtractingMedia = false;
             if (path != null) {
-              _loadedDraftFilePath = path;
-              _loadedDraftTitle = 'Shared Reel / Short Audio';
-              _clipNameCtrl.text = 'Reel/Short Audio';
-              _trimStartSec = 0.0;
-              _trimEndSec = 10.0;
-              _lastSpokenBanner = '✅ Reel/Short Audio Extracted! Trim & Preview below before adding!';
+              _lastSpokenBanner = '✅ Exact Reel/Short Audio Extracted! Trim with Spectrum below!';
+              _loadDraftFileAndComputeSpectrum(path, 'Exact Reel / Short Audio');
+            } else {
+              _lastSpokenBanner = '⚠️ Could not extract direct audio from that link—try sharing the video or another Reel/Short.';
             }
           });
         }
@@ -1232,21 +1258,24 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
     final String key = tile['key'].toString();
     final String emotion = tile['emotion'].toString();
 
-    // If REAL Mode is active, play user's added/trimmed Real Audio clip for this Tile + Language!
+    // STRICT REAL MODE: Play ONLY user's added/trimmed Real Audio clip (NEVER play AI voice in REAL mode!)
     if (RealTileStudioManager.isRealAudioMode) {
+      await AppSoundEngine.panicMuteAll();
       final playedClip = await RealTileStudioManager.playRealClipForTile(key, _commLanguage);
       if (playedClip != null) {
         setState(() {
-          _lastSpokenBanner = '🎵 [REAL AUDIO • $_commLanguage] Playing: ${playedClip.title} '
+          _lastSpokenBanner = '🎵 [REAL MODE • $_commLanguage] Playing: ${playedClip.title} '
               '(${(playedClip.startMs / 1000).toStringAsFixed(1)}s ➔ ${(playedClip.endMs / 1000).toStringAsFixed(1)}s)';
           _historyFeed.insert(0, '[${tile['title']}] 🎵 ${playedClip.title}');
         });
-        return;
       } else {
         setState(() {
-          _lastSpokenBanner = '⚠️ No Real Audio saved for [${tile['title']}] ($_commLanguage) yet — playing AI backup!';
+          _selectedTileForStudio = key;
+          _lastSpokenBanner =
+              '🔇 [REAL MODE] No Real Audio added for [${tile['title']} • $_commLanguage] yet. Add a song/voice below (AI Voice is OFF)!';
         });
       }
+      return; // Strictly return so AI voice NEVER plays when REAL is selected!
     }
 
     // Handle Nudimuttu, Others, and Custom User Tiles in AI Mode
@@ -1619,6 +1648,57 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
     );
   }
 
+  Future<void> _loadDraftFileAndComputeSpectrum(String path, String title) async {
+    final bars = await RealTileStudioManager.computeAudioSpectrumBars(path, 64);
+    if (!mounted) return;
+    setState(() {
+      _loadedDraftFilePath = path;
+      _loadedDraftTitle = title;
+      _clipNameCtrl.text = title;
+      _spectrumBars = bars;
+      _trimStartSec = 0.0;
+      _presentPreviewSec = 0.0;
+    });
+    // Probe duration automatically
+    await RealTileStudioManager.playSpecificTrimmedClip(path, 0, 1500);
+    await RealTileStudioManager.stopRealPlayback();
+  }
+
+  void _autoSnapToLoudestBeat() {
+    if (_spectrumBars.isEmpty) return;
+    int bestStartBar = 0;
+    double bestEnergy = -1.0;
+    final int windowBars = max(4, (64 * (10.0 / _maxDraftDurationSec)).round().clamp(4, 32));
+    for (int i = 0; i <= _spectrumBars.length - windowBars; i++) {
+      double sum = 0;
+      for (int j = 0; j < windowBars; j++) {
+        sum += _spectrumBars[i + j];
+      }
+      if (sum > bestEnergy) {
+        bestEnergy = sum;
+        bestStartBar = i;
+      }
+    }
+    setState(() {
+      _trimStartSec = ((bestStartBar / 64.0) * _maxDraftDurationSec).clamp(0.0, _maxDraftDurationSec - 1.0);
+      _trimEndSec = (_trimStartSec + 10.0).clamp(_trimStartSec + 1.0, _maxDraftDurationSec);
+      _presentPreviewSec = _trimStartSec;
+    });
+    if (_loadedDraftFilePath != null) {
+      RealTileStudioManager.playSpecificTrimmedClip(
+        _loadedDraftFilePath!,
+        (_trimStartSec * 1000).toInt(),
+        (_trimEndSec * 1000).toInt(),
+      );
+    }
+  }
+
+  String _fmtPreciseSec(double s) {
+    final int mins = s ~/ 60;
+    final double rem = s % 60;
+    return '${mins.toString().padLeft(2, '0')}:${rem.toStringAsFixed(1).padLeft(4, '0')}s';
+  }
+
   Widget _buildRealAudioTrimmerStudioCard() {
     final tilesList = _allCombinedTiles;
     final bool validSelected = tilesList.any((t) => t['key'].toString() == _selectedTileForStudio);
@@ -1724,13 +1804,7 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
                 onPressed: () async {
                   final path = await RealTileStudioManager.pickAndExtractFile(isVideo: false);
                   if (path != null && mounted) {
-                    setState(() {
-                      _loadedDraftFilePath = path;
-                      _loadedDraftTitle = path.split('/').last;
-                      _clipNameCtrl.text = 'Uploaded Song Cut';
-                      _trimStartSec = 0.0;
-                      _trimEndSec = 12.0;
-                    });
+                    await _loadDraftFileAndComputeSpectrum(path, path.split('/').last);
                   }
                 },
               ),
@@ -1750,11 +1824,7 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
                     setState(() {
                       _isExtractingMedia = false;
                       if (path != null) {
-                        _loadedDraftFilePath = path;
-                        _loadedDraftTitle = 'Extracted Video Music';
-                        _clipNameCtrl.text = 'Video Extracted Music';
-                        _trimStartSec = 0.0;
-                        _trimEndSec = 12.0;
+                        _loadDraftFileAndComputeSpectrum(path, 'Extracted Video Music');
                       }
                     });
                   }
@@ -1795,11 +1865,9 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
                     setState(() {
                       _isExtractingMedia = false;
                       if (path != null) {
-                        _loadedDraftFilePath = path;
-                        _loadedDraftTitle = 'IG Reel / YT Short Music';
-                        _clipNameCtrl.text = 'Reel/Short Cut';
-                        _trimStartSec = 0.0;
-                        _trimEndSec = 10.0;
+                        _loadDraftFileAndComputeSpectrum(path, 'Exact Reel / Short Audio');
+                      } else {
+                        _lastSpokenBanner = '⚠️ Could not extract audio from that link—check link or share video.';
                       }
                     });
                   }
@@ -1815,14 +1883,227 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
               child: LinearProgressIndicator(color: Colors.amberAccent),
             ),
 
-          // IN-APP TRIMMER & PREVIEW PLAY CONFIRMATION BOX
+          // IN-APP AUDIO SPECTRUM WAVEFORM TRIMMER & LIVE PRESENT TIME : SEC COUNTER
           if (_loadedDraftFilePath != null) ...[
             const Divider(color: Colors.white24, height: 18),
-            Text(
-              '✂️ TRIM & PREVIEW BEFORE ADDING: $_loadedDraftTitle',
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Color(0xFF00E676)),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    '✂️ SPECTRUM TRIMMER: $_loadedDraftTitle',
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Color(0xFF00E676)),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.purpleAccent.shade700,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    minimumSize: Size.zero,
+                  ),
+                  icon: const Icon(Icons.bolt, size: 13),
+                  label: const Text('⚡ Auto-Peak Drop', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900)),
+                  onPressed: _autoSnapToLoudestBeat,
+                ),
+              ],
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
+
+            // LIVE DIGITAL PRESENT TIME : SEC READOUT BANNER
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF070B14),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFF00E5FF)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('⏱ PRESENT PLAY TIME',
+                          style: TextStyle(fontSize: 9, color: Colors.white70, fontWeight: FontWeight.bold)),
+                      Text(
+                        _fmtPreciseSec(_presentPreviewSec),
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.amberAccent,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ],
+                  ),
+                  Column(
+                    children: [
+                      const Text('✂️ SELECTED CUT',
+                          style: TextStyle(fontSize: 9, color: Colors.white70, fontWeight: FontWeight.bold)),
+                      Text(
+                        '${_trimStartSec.toStringAsFixed(1)}s ➔ ${_trimEndSec.toStringAsFixed(1)}s (${(_trimEndSec - _trimStartSec).toStringAsFixed(1)}s)',
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Color(0xFF00E676)),
+                      ),
+                    ],
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      const Text('TOTAL LENGTH',
+                          style: TextStyle(fontSize: 9, color: Colors.white70, fontWeight: FontWeight.bold)),
+                      Text(
+                        _fmtPreciseSec(_maxDraftDurationSec),
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.cyanAccent),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            // 64-BAR INTERACTIVE AUDIO SPECTRUM WAVEFORM (Tap or Drag to Seek Present Time!)
+            GestureDetector(
+              onTapDown: (details) {
+                final RenderBox box = context.findRenderObject() as RenderBox;
+                final double localX = details.localPosition.dx.clamp(0.0, box.size.width);
+                final double tappedSec = ((localX / box.size.width) * _maxDraftDurationSec).clamp(0.0, _maxDraftDurationSec);
+                setState(() => _presentPreviewSec = tappedSec);
+                RealTileStudioManager.playSpecificTrimmedClip(
+                  _loadedDraftFilePath!,
+                  (tappedSec * 1000).toInt(),
+                  (_trimEndSec * 1000).toInt(),
+                );
+              },
+              child: Container(
+                height: 74,
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF090E1A),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: CustomPaint(
+                  painter: AudioSpectrumPainter(
+                    bars: _spectrumBars,
+                    trimStartSec: _trimStartSec,
+                    trimEndSec: _trimEndSec,
+                    currentPlaySec: _presentPreviewSec,
+                    totalDurationSec: _maxDraftDurationSec,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+
+            // Range Slider for Start & End Trim Markers
+            RangeSlider(
+              values: RangeValues(
+                _trimStartSec.clamp(0.0, _maxDraftDurationSec),
+                _trimEndSec.clamp((_trimStartSec + 0.3).clamp(0.0, _maxDraftDurationSec), _maxDraftDurationSec),
+              ),
+              min: 0.0,
+              max: _maxDraftDurationSec <= 1.0 ? 30.0 : _maxDraftDurationSec,
+              activeColor: const Color(0xFF00E676),
+              inactiveColor: Colors.white24,
+              onChanged: (RangeValues values) {
+                setState(() {
+                  _trimStartSec = values.start;
+                  _trimEndSec = values.end;
+                  _presentPreviewSec = values.start;
+                });
+              },
+            ),
+
+            // Fine-Tune +/- 0.5s Nudge & "Set Start/End = Present Time" Buttons
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              alignment: WrapAlignment.spaceBetween,
+              children: [
+                OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    minimumSize: Size.zero,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _trimStartSec = (_trimStartSec - 0.5).clamp(0.0, _trimEndSec - 0.5);
+                      _presentPreviewSec = _trimStartSec;
+                    });
+                  },
+                  child: const Text('Start -0.5s', style: TextStyle(fontSize: 9, color: Colors.cyanAccent)),
+                ),
+                OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    minimumSize: Size.zero,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _trimStartSec = (_trimStartSec + 0.5).clamp(0.0, _trimEndSec - 0.5);
+                      _presentPreviewSec = _trimStartSec;
+                    });
+                  },
+                  child: const Text('Start +0.5s', style: TextStyle(fontSize: 9, color: Colors.cyanAccent)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blueGrey.shade800,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    minimumSize: Size.zero,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _trimStartSec = _presentPreviewSec.clamp(0.0, _trimEndSec - 0.5);
+                    });
+                  },
+                  child: const Text('📍 Set Start = Present', style: TextStyle(fontSize: 9, color: Colors.amberAccent)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blueGrey.shade800,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    minimumSize: Size.zero,
+                  ),
+                  onPressed: () {
+                    if (_presentPreviewSec > _trimStartSec + 0.4) {
+                      setState(() => _trimEndSec = _presentPreviewSec);
+                    }
+                  },
+                  child: const Text('🏁 Set End = Present', style: TextStyle(fontSize: 9, color: Colors.amberAccent)),
+                ),
+                OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    minimumSize: Size.zero,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _trimEndSec = (_trimEndSec - 0.5).clamp(_trimStartSec + 0.5, _maxDraftDurationSec);
+                    });
+                  },
+                  child: const Text('End -0.5s', style: TextStyle(fontSize: 9, color: Colors.pinkAccent)),
+                ),
+                OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    minimumSize: Size.zero,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _trimEndSec = (_trimEndSec + 0.5).clamp(_trimStartSec + 0.5, _maxDraftDurationSec);
+                    });
+                  },
+                  child: const Text('End +0.5s', style: TextStyle(fontSize: 9, color: Colors.pinkAccent)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+
             TextField(
               controller: _clipNameCtrl,
               style: const TextStyle(fontSize: 11),
@@ -1831,91 +2112,64 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
                 isDense: true,
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
+
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                Text('Start: ${_trimStartSec.toStringAsFixed(1)}s',
-                    style: const TextStyle(fontSize: 11, color: Colors.cyanAccent, fontWeight: FontWeight.bold)),
-                Text('Duration: ${(_trimEndSec - _trimStartSec).toStringAsFixed(1)}s',
-                    style: const TextStyle(fontSize: 11, color: Colors.amberAccent, fontWeight: FontWeight.bold)),
-                Text('End: ${_trimEndSec.toStringAsFixed(1)}s',
-                    style: const TextStyle(fontSize: 11, color: Colors.pinkAccent, fontWeight: FontWeight.bold)),
-              ],
-            ),
-            RangeSlider(
-              values: RangeValues(
-                _trimStartSec.clamp(0.0, _maxDraftDurationSec),
-                _trimEndSec.clamp(_trimStartSec + 0.5, _maxDraftDurationSec),
-              ),
-              min: 0.0,
-              max: _maxDraftDurationSec,
-              activeColor: Colors.amberAccent,
-              onChanged: (RangeValues values) {
-                setState(() {
-                  _trimStartSec = values.start;
-                  _trimEndSec = values.end;
-                });
-              },
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                TextButton(
-                  onPressed: () => setState(() => _maxDraftDurationSec = (_maxDraftDurationSec == 60.0) ? 240.0 : 60.0),
-                  child: Text(
-                    _maxDraftDurationSec == 60.0 ? '🔍 Range: 60s (Tap for 240s)' : '🔍 Range: 240s (Tap for 60s)',
-                    style: const TextStyle(fontSize: 10, color: Colors.white70),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _isPreviewPlaying ? Colors.orangeAccent : const Color(0xFF00E5FF),
+                    foregroundColor: Colors.black,
                   ),
+                  icon: Icon(_isPreviewPlaying ? Icons.stop : Icons.play_arrow, size: 16),
+                  label: Text(
+                    _isPreviewPlaying ? '⏹ Stop Preview' : '▶ Play Preview',
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900),
+                  ),
+                  onPressed: () {
+                    if (_isPreviewPlaying) {
+                      RealTileStudioManager.stopRealPlayback();
+                    } else {
+                      setState(() => _presentPreviewSec = _trimStartSec);
+                      RealTileStudioManager.playSpecificTrimmedClip(
+                        _loadedDraftFilePath!,
+                        (_trimStartSec * 1000).toInt(),
+                        (_trimEndSec * 1000).toInt(),
+                      );
+                    }
+                  },
                 ),
-                Row(
-                  children: [
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF00E5FF),
-                        foregroundColor: Colors.black,
-                      ),
-                      icon: const Icon(Icons.play_arrow, size: 16),
-                      label: const Text('▶ Preview Trim', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900)),
-                      onPressed: () {
-                        RealTileStudioManager.playSpecificTrimmedClip(
-                          _loadedDraftFilePath!,
-                          (_trimStartSec * 1000).toInt(),
-                          (_trimEndSec * 1000).toInt(),
-                        );
-                      },
-                    ),
-                    const SizedBox(width: 6),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF00E676),
-                        foregroundColor: Colors.black,
-                      ),
-                      icon: const Icon(Icons.check_circle, size: 16),
-                      label: const Text('✅ Add to Tile', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900)),
-                      onPressed: () async {
-                        final newClip = CustomTileClip(
-                          id: 'clip_${DateTime.now().millisecondsSinceEpoch}',
-                          tileKey: _selectedTileForStudio,
-                          language: _commLanguage,
-                          title: _clipNameCtrl.text.trim().isEmpty ? 'Custom Sound' : _clipNameCtrl.text.trim(),
-                          filePath: _loadedDraftFilePath!,
-                          startMs: (_trimStartSec * 1000).toInt(),
-                          endMs: (_trimEndSec * 1000).toInt(),
-                        );
-                        RealTileStudioManager.allClips.insert(0, newClip);
-                        await RealTileStudioManager.saveClips();
-                        await RealTileStudioManager.setRealMode(true);
-                        if (mounted) {
-                          setState(() {
-                            _loadedDraftFilePath = null;
-                            _lastSpokenBanner =
-                                '✅ Added "${newClip.title}" to [$_selectedTileForStudio • $_commLanguage] & Switched to REAL Mode!';
-                          });
-                        }
-                      },
-                    ),
-                  ],
+                const SizedBox(width: 8),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF00E676),
+                    foregroundColor: Colors.black,
+                  ),
+                  icon: const Icon(Icons.check_circle, size: 16),
+                  label: const Text('✅ Add to Tile', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900)),
+                  onPressed: () async {
+                    await RealTileStudioManager.stopRealPlayback();
+                    final newClip = CustomTileClip(
+                      id: 'clip_${DateTime.now().millisecondsSinceEpoch}',
+                      tileKey: _selectedTileForStudio,
+                      language: _commLanguage,
+                      title: _clipNameCtrl.text.trim().isEmpty ? 'Custom Sound' : _clipNameCtrl.text.trim(),
+                      filePath: _loadedDraftFilePath!,
+                      startMs: (_trimStartSec * 1000).toInt(),
+                      endMs: (_trimEndSec * 1000).toInt(),
+                    );
+                    RealTileStudioManager.allClips.insert(0, newClip);
+                    await RealTileStudioManager.saveClips();
+                    await RealTileStudioManager.setRealMode(true);
+                    if (mounted) {
+                      setState(() {
+                        _loadedDraftFilePath = null;
+                        _lastSpokenBanner =
+                            '✅ Added "${newClip.title}" (${_trimStartSec.toStringAsFixed(1)}s ➔ ${_trimEndSec.toStringAsFixed(1)}s) to [$_selectedTileForStudio • $_commLanguage]!';
+                      });
+                    }
+                  },
                 ),
               ],
             ),

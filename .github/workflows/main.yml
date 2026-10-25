@@ -568,14 +568,10 @@ jobs:
             rm -rf android/app/src/main/res/mipmap-anydpi-v26
           fi
 
-      - name: Force Android V2 Embedding & Clean Build
+      - name: Regenerate Fresh Android V2 Scaffold & Build
         run: |
-          if [ -f "android/app/src/main/AndroidManifest.xml" ]; then
-            if ! grep -q "flutterEmbedding" android/app/src/main/AndroidManifest.xml; then
-              sed -i 's|<application|<application\n        <meta-data android:name="flutterEmbedding" android:value="2" />|g' android/app/src/main/AndroidManifest.xml
-            fi
-          fi
-          flutter clean
+          rm -rf android
+          flutter create --platforms=android --org com.gajanan.djplaycommentry --project-name dj_player .
           flutter pub get
           flutter build apk --release --no-tree-shake-icons
 

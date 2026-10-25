@@ -94,13 +94,30 @@ jobs:
                   return super.onKeyDown(keyCode, event)
               }
 
-              private fun selectBestNaturalVoice(locale: Locale) {
+                            private fun selectBestNaturalVoice(locale: Locale) {
                   try {
                       val voices = tts?.voices ?: return
                       var bestVoice: Voice? = null
+                      var bestScore = -1000
                       for (v in voices) {
                           if (v.locale.language == locale.language) {
-                              if (bestVoice == null || v.quality > bestVoice.quality || v.name.contains("network", true) || v.name.contains("wavenet", true)) {
+                              val n = v.name.lowercase()
+                              var score = v.quality
+                              // Strictly prioritize MALE commentator voices (knm, knd, him, hid, enm, end, gbm, aub, male)
+                              if (n.contains("knm") || n.contains("knd") || n.contains("him") || n.contains("hid") ||
+                                  n.contains("enm") || n.contains("end") || n.contains("gbm") || n.contains("aub") ||
+                                  n.contains("male") || n.contains("-b") || n.contains("-d")) {
+                                  score += 600
+                              }
+                              // Reject female voices (knf, hif, enf, female)
+                              if (n.contains("knf") || n.contains("hif") || n.contains("enf") || n.contains("female") || n.contains("-a") || n.contains("-c")) {
+                                  score -= 500
+                              }
+                              if (n.contains("network") || n.contains("wavenet")) {
+                                  score += 300
+                              }
+                              if (score > bestScore) {
+                                  bestScore = score
                                   bestVoice = v
                               }
                           }
@@ -171,15 +188,15 @@ jobs:
                   methodChannel = ch
                   ch.setMethodCallHandler { call, result ->
                       when (call.method) {
-                          "speak" -> {
+                                                    "speak" -> {
                               if (!ttsReady || tts == null) {
                                   result.success(false)
                                   return@setMethodCallHandler
                               }
                               val text = call.argument<String>("text") ?: ""
                               val lang = call.argument<String>("lang") ?: "kn-IN"
-                              val basePitch = (call.argument<Double>("pitch") ?: 1.0).toFloat()
-                              val baseRate = (call.argument<Double>("rate") ?: 1.0).toFloat()
+                              val basePitch = (call.argument<Double>("pitch") ?: 0.92).toFloat()
+                              val baseRate = (call.argument<Double>("rate") ?: 1.20).toFloat()
                               val locale = Locale.forLanguageTag(lang)
                               val avail = tts?.isLanguageAvailable(locale) ?: TextToSpeech.LANG_NOT_SUPPORTED
                               if (avail < TextToSpeech.LANG_AVAILABLE) {
@@ -189,17 +206,22 @@ jobs:
                               tts?.stop()
                               selectBestNaturalVoice(locale)
 
-                              // Split into Lead Exclamation + Follow-up with a 90ms real human breath pause
-                              // so the voice modulates pitch & speed naturally like a real stadium commentator!
                               val parts = text.split(" | ")
-                              if (parts.size >= 2) {
-                                  tts?.setPitch((basePitch * 1.06f).coerceIn(0.8f, 1.35f))
-                                  tts?.setSpeechRate((baseRate * 1.08f).coerceIn(0.85f, 1.35f))
-                                  tts?.speak(parts[0], TextToSpeech.QUEUE_FLUSH, null, "utt_hook")
-                                  tts?.playSilentUtterance(90, TextToSpeech.QUEUE_ADD, "utt_breath")
-                                  tts?.setPitch((basePitch * 0.97f).coerceIn(0.8f, 1.25f))
-                                  tts?.setSpeechRate((baseRate * 1.01f).coerceIn(0.85f, 1.25f))
-                                  val speakRes = tts?.speak(parts.subList(1, parts.size).joinToString(" "), TextToSpeech.QUEUE_ADD, null, "utt_body")
+                              if (parts.size >= 3) {
+                                  // Wave 1: High-Adrenaline Attack Hook (Jani Murthy / Shastri Punch!)
+                                  tts?.setPitch((basePitch * 1.10f).coerceIn(0.75f, 1.35f))
+                                  tts?.setSpeechRate((baseRate * 1.06f).coerceIn(0.95f, 1.45f))
+                                  tts?.speak(parts[0], TextToSpeech.QUEUE_FLUSH, null, "utt_w1")
+
+                                  // Wave 2: Rapid Baritone Play-by-Play Flow
+                                  tts?.setPitch((basePitch * 0.94f).coerceIn(0.72f, 1.25f))
+                                  tts?.setSpeechRate((baseRate * 1.03f).coerceIn(0.95f, 1.40f))
+                                  tts?.speak(parts[1], TextToSpeech.QUEUE_ADD, null, "utt_w2")
+
+                                  // Wave 3: Emphatic Stadium Closer
+                                  tts?.setPitch((basePitch * 1.03f).coerceIn(0.75f, 1.30f))
+                                  tts?.setSpeechRate((baseRate * 0.98f).coerceIn(0.90f, 1.35f))
+                                  val speakRes = tts?.speak(parts.subList(2, parts.size).joinToString(" "), TextToSpeech.QUEUE_ADD, null, "utt_w3")
                                   result.success(speakRes == TextToSpeech.SUCCESS)
                               } else {
                                   tts?.setPitch(basePitch)

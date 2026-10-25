@@ -1,7 +1,7 @@
 name: dj_player
 description: DJ Play and Commentry App
 publish_to: 'none'
-version: 305.0.0+305
+version: 306.0.0+306
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

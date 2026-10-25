@@ -178,8 +178,8 @@ jobs:
                               }
                               val text = call.argument<String>("text") ?: ""
                               val lang = call.argument<String>("lang") ?: "kn-IN"
-                              val pitch = (call.argument<Double>("pitch") ?: 1.0).toFloat()
-                              val rate = (call.argument<Double>("rate") ?: 0.98).toFloat()
+                              val basePitch = (call.argument<Double>("pitch") ?: 1.0).toFloat()
+                              val baseRate = (call.argument<Double>("rate") ?: 1.0).toFloat()
                               val locale = Locale.forLanguageTag(lang)
                               val avail = tts?.isLanguageAvailable(locale) ?: TextToSpeech.LANG_NOT_SUPPORTED
                               if (avail < TextToSpeech.LANG_AVAILABLE) {
@@ -188,10 +188,25 @@ jobs:
                               }
                               tts?.stop()
                               selectBestNaturalVoice(locale)
-                              tts?.setPitch(pitch)
-                              tts?.setSpeechRate(rate)
-                              val speakRes = tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "dj_single_utt")
-                              result.success(speakRes == TextToSpeech.SUCCESS)
+
+                              // Split into Lead Exclamation + Follow-up with a 90ms real human breath pause
+                              // so the voice modulates pitch & speed naturally like a real stadium commentator!
+                              val parts = text.split(" | ")
+                              if (parts.size >= 2) {
+                                  tts?.setPitch((basePitch * 1.06f).coerceIn(0.8f, 1.35f))
+                                  tts?.setSpeechRate((baseRate * 1.08f).coerceIn(0.85f, 1.35f))
+                                  tts?.speak(parts[0], TextToSpeech.QUEUE_FLUSH, null, "utt_hook")
+                                  tts?.playSilentUtterance(90, TextToSpeech.QUEUE_ADD, "utt_breath")
+                                  tts?.setPitch((basePitch * 0.97f).coerceIn(0.8f, 1.25f))
+                                  tts?.setSpeechRate((baseRate * 1.01f).coerceIn(0.85f, 1.25f))
+                                  val speakRes = tts?.speak(parts.subList(1, parts.size).joinToString(" "), TextToSpeech.QUEUE_ADD, null, "utt_body")
+                                  result.success(speakRes == TextToSpeech.SUCCESS)
+                              } else {
+                                  tts?.setPitch(basePitch)
+                                  tts?.setSpeechRate(baseRate)
+                                  val speakRes = tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "dj_single_utt")
+                                  result.success(speakRes == TextToSpeech.SUCCESS)
+                              }
                           }
                           "stopSpeak" -> {
                               tts?.stop()

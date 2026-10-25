@@ -1,9 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'main.dart';
 import 'voice_and_pro_hub.dart';
-import 'entry_music_data.dart';
 
 class CricketCommentaryScreen extends StatefulWidget {
   const CricketCommentaryScreen({super.key});
@@ -15,908 +13,1115 @@ class CricketCommentaryScreen extends StatefulWidget {
 class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
   final Random _rng = Random();
 
-  final TextEditingController _teamACtrl = TextEditingController(text: 'Karnataka Lions');
-  final TextEditingController _teamBCtrl = TextEditingController(text: 'Mumbai Warriors');
-  final TextEditingController _targetCtrl = TextEditingController(text: '0');
-  final TextEditingController _maxOversCtrl = TextEditingController(text: '20');
-  final TextEditingController _squadACtrl = TextEditingController(
-      text: 'Gajanan Patagar, Virat Kohli, KL Rahul, Rajat Patidar, Darshan, Glenn Maxwell, Devdutt Padikkal, Dinesh Karthik, Manjunath, Mohammed Siraj, Prashanth');
-  final TextEditingController _squadBCtrl = TextEditingController(
-      text: 'Rohit Sharma, Jasprit Bumrah, Hardik Pandya, Suryakumar Yadav, Ishan Kishan, Ravindra Jadeja, Kuldeep Yadav, Mohammed Shami, Axar Patel, Arshdeep Singh, Yuzvendra Chahal');
-
-  List<String> _squadA = [];
-  List<String> _squadB = [];
-
-  String _striker = 'Gajanan Patagar';
-  String _nonStriker = 'Virat Kohli';
-  String _bowler = 'Jasprit Bumrah';
-  String _wk = 'Ishan Kishan';
-  String _fielder = 'Ravindra Jadeja';
   String _commLanguage = 'KANNADA'; // KANNADA, HINDI, ENGLISH
-  String _kannadaDialect = 'Standard Kannada';
-  String _shotZone = 'Long-On';
-  bool _dualCommentatorBanter = true;
-  bool _autoWalkoutBgmOnWicket = true;
+  String _lastSpokenBanner = 'Tap any tile below for instant energetic human commentary!';
+  String _activeEmotionTag = '🔥 STADIUM ENERGY READY';
+  bool _stadiumAtmosphereRoar = true;
+  final List<String> _recentHashes = [];
+  final List<String> _historyFeed = [];
 
-  int _inningsNumber = 1;
-  int _runs = 0;
-  int _wickets = 0;
-  int _legalBalls = 0;
-  int _consecutiveWickets = 0;
-  int _partnershipRuns = 0;
-  int _partnershipBalls = 0;
-  bool _freeHit = false;
-  final Map<String, int> _batterRuns = {};
-  final Map<String, int> _batterBalls = {};
-  final Map<String, int> _bowlerWickets = {};
-  final Map<String, int> _bowlerRuns = {};
-  final List<String> _thisOver = [];
-  final List<String> _fallOfWickets = [];
-  final List<String> _feed = [];
-  final List<Map<String, dynamic>> _undoHistoryStack = [];
-  final Set<String> _usedTournamentLines = {};
-
-  final List<String> _zones = [
-    'Cover Drive',
-    'Long-On',
-    'Long-Off',
-    'Deep Mid-Wicket',
-    'Square Leg',
-    'Third Man',
-    'Fine Leg',
-    'Straight Down Ground'
+  /// 16 Pure Cricket Situation Tiles (Zero Scoreboards, Zero Player Forms)
+  final List<Map<String, dynamic>> _tiles = const [
+    {'key': 'DOT', 'title': '0', 'sub': 'DOT BALL', 'color': 0xFF37474F, 'emotion': 'CRISP'},
+    {'key': 'RUN_1', 'title': '1', 'sub': 'SINGLE RUN', 'color': 0xFF00695C, 'emotion': 'CRISP'},
+    {'key': 'RUN_2', 'title': '2', 'sub': 'DOUBLE RUNS', 'color': 0xFF00838F, 'emotion': 'FAST'},
+    {'key': 'RUN_3', 'title': '3', 'sub': 'THREE RUNS', 'color': 0xFF0277BD, 'emotion': 'FAST'},
+    {'key': 'FOUR', 'title': '4', 'sub': 'BOUNDARY FOUR!', 'color': 0xFF1565C0, 'emotion': 'EXPLOSIVE'},
+    {'key': 'SIX', 'title': '6', 'sub': 'INCREDIBLE SIX!', 'color': 0xFF6A1B9A, 'emotion': 'EXPLOSIVE'},
+    {'key': 'BOWLED', 'title': '🔥 BOWLED', 'sub': 'CLEAN BOWLED', 'color': 0xFFC62828, 'emotion': 'SHOCK'},
+    {'key': 'CAUGHT', 'title': '🙌 CAUGHT', 'sub': 'CAUGHT OUT!', 'color': 0xFFB71C1C, 'emotion': 'SHOCK'},
+    {'key': 'RUN_OUT', 'title': '🎯 RUN OUT', 'sub': 'DIRECT HIT!', 'color': 0xFFD84315, 'emotion': 'URGENT'},
+    {'key': 'STUMPED', 'title': '⚡ STUMPED', 'sub': 'LIGHTNING WK!', 'color': 0xFFAD1457, 'emotion': 'SHOCK'},
+    {'key': 'LBW', 'title': '☝️ LBW OUT', 'sub': 'PLUMB IN FRONT!', 'color': 0xFF4E342E, 'emotion': 'SHOCK'},
+    {'key': 'NO_BALL', 'title': '🚨 NO BALL', 'sub': 'FREE HIT NEXT!', 'color': 0xFFE65100, 'emotion': 'URGENT'},
+    {'key': 'WIDE', 'title': '↔️ WIDE', 'sub': 'EXTRA RUN', 'color': 0xFFF57F17, 'emotion': 'CRISP'},
+    {'key': 'FREE_HIT', 'title': '💥 FREE HIT', 'sub': 'TIME TO SWING!', 'color': 0xFF8E24AA, 'emotion': 'URGENT'},
+    {'key': 'NOT_OUT', 'title': '🙅‍♂️ NOT OUT', 'sub': 'SAFE IN CREASE!', 'color': 0xFF2E7D32, 'emotion': 'FAST'},
+    {'key': 'OVER_END', 'title': '🏁 OVER END', 'sub': 'CHANGE OF ENDS', 'color': 0xFF283593, 'emotion': 'CRISP'},
   ];
 
-  final List<String> _dialects = [
-    'Standard Kannada',
-    'Karavali / Uttara Kannada Josh',
-    'North Karnataka (Hubballi) Style'
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    _loadSquads();
-  }
-
-  void _saveUndoSnapshot() {
-    _undoHistoryStack.add({
-      'runs': _runs,
-      'wickets': _wickets,
-      'legalBalls': _legalBalls,
-      'consecutiveWickets': _consecutiveWickets,
-      'partnershipRuns': _partnershipRuns,
-      'partnershipBalls': _partnershipBalls,
-      'freeHit': _freeHit,
-      'striker': _striker,
-      'nonStriker': _nonStriker,
-      'bowler': _bowler,
-      'batterRuns': Map<String, int>.from(_batterRuns),
-      'batterBalls': Map<String, int>.from(_batterBalls),
-      'bowlerWickets': Map<String, int>.from(_bowlerWickets),
-      'bowlerRuns': Map<String, int>.from(_bowlerRuns),
-      'thisOver': List<String>.from(_thisOver),
-      'fallOfWickets': List<String>.from(_fallOfWickets),
-      'feed': List<String>.from(_feed),
-    });
-    if (_undoHistoryStack.length > 30) {
-      _undoHistoryStack.removeAt(0);
+  /// Applies situation-specific human emotion prosody (Pitch + Speed inflection)
+  void _applySituationEmotionProsody(String emotionType) {
+    final profile = VoiceCloneProfileStore.activeProfile;
+    switch (emotionType) {
+      case 'EXPLOSIVE': // 6, 4 -> High excitement & energetic pace
+        profile.pitch = 1.07;
+        profile.speed = 1.08;
+        _activeEmotionTag = '🔥 EXPLOSIVE STADIUM EXCITEMENT';
+        break;
+      case 'SHOCK': // Bowled, Caught, Stumped, LBW -> Dramatic punch
+        profile.pitch = 1.05;
+        profile.speed = 1.06;
+        _activeEmotionTag = '⚡ HIGH-VOLTAGE WICKET DRAMA';
+        break;
+      case 'URGENT': // Run Out, No Ball, Free Hit -> Fast urgent tension
+        profile.pitch = 1.04;
+        profile.speed = 1.09;
+        _activeEmotionTag = '🚨 URGENT MATCH TENSION';
+        break;
+      case 'FAST': // 2, 3, Not Out -> Energetic running call
+        profile.pitch = 1.02;
+        profile.speed = 1.05;
+        _activeEmotionTag = '🏃‍♂️ FAST ACTION CALL';
+        break;
+      default: // Dot, 1, Wide, Over End -> Warm natural broadcast voice
+        profile.pitch = 0.99;
+        profile.speed = 1.01;
+        _activeEmotionTag = '🎙 WARM NATURAL BROADCAST';
+        break;
     }
   }
 
-  void _undoLastBall() {
-    if (_undoHistoryStack.isEmpty) return;
-    final snap = _undoHistoryStack.removeLast();
-    setState(() {
-      _runs = snap['runs'] as int;
-      _wickets = snap['wickets'] as int;
-      _legalBalls = snap['legalBalls'] as int;
-      _consecutiveWickets = snap['consecutiveWickets'] as int;
-      _partnershipRuns = snap['partnershipRuns'] as int;
-      _partnershipBalls = snap['partnershipBalls'] as int;
-      _freeHit = snap['freeHit'] as bool;
-      _striker = snap['striker'] as String;
-      _nonStriker = snap['nonStriker'] as String;
-      _bowler = snap['bowler'] as String;
-      _batterRuns
-        ..clear()
-        ..addAll(snap['batterRuns'] as Map<String, int>);
-      _batterBalls
-        ..clear()
-        ..addAll(snap['batterBalls'] as Map<String, int>);
-      _bowlerWickets
-        ..clear()
-        ..addAll(snap['bowlerWickets'] as Map<String, int>);
-      _bowlerRuns
-        ..clear()
-        ..addAll(snap['bowlerRuns'] as Map<String, int>);
-      _thisOver
-        ..clear()
-        ..addAll(snap['thisOver'] as List<String>);
-      _fallOfWickets
-        ..clear()
-        ..addAll(snap['fallOfWickets'] as List<String>);
-      _feed
-        ..clear()
-        ..addAll(snap['feed'] as List<String>);
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(duration: Duration(seconds: 1), content: Text('⏪ Last ball undone! Score restored.')),
-    );
-  }
-
-  void _endFirstInningsAndStartChase() {
-    _saveUndoSnapshot();
-    final int newTarget = _runs + 1;
-    final String oldTeamA = _teamACtrl.text;
-    final String oldSquadA = _squadACtrl.text;
-
-    setState(() {
-      _inningsNumber = 2;
-      _targetCtrl.text = newTarget.toString();
-      _teamACtrl.text = _teamBCtrl.text;
-      _squadACtrl.text = _squadBCtrl.text;
-      _teamBCtrl.text = oldTeamA;
-      _squadBCtrl.text = oldSquadA;
-      _runs = 0;
-      _wickets = 0;
-      _legalBalls = 0;
-      _consecutiveWickets = 0;
-      _partnershipRuns = 0;
-      _partnershipBalls = 0;
-      _freeHit = false;
-      _thisOver.clear();
-      _fallOfWickets.clear();
-      _loadSquads();
-    });
-
-    final String msg = _commLanguage == 'KANNADA'
-        ? ('ಮೊದಲ ಇನ್ನಿಂಗ್ಸ್ ಮುಕ್ತಾಯವಾಗಿದೆ! ಗೆಲ್ಲಲು ' + _teamACtrl.text + ' ತಂಡಕ್ಕೆ ' + newTarget.toString() + ' ರನ್‌ಗಳ ಗುರಿ ನೀಡಲಾಗಿದೆ!')
-        : ('Innings Break! ' + _teamACtrl.text + ' needs ' + newTarget.toString() + ' runs to win!');
-    setState(() => _feed.insert(0, '🏁 ' + msg));
-    AppSoundEngine.playSynthesizedSfx('TRUMPET');
-    AppSoundEngine.speakRealVoice(msg, _commLanguage);
-  }
-
-  void _triggerDrsReviewDrama() {
-    AppSoundEngine.playSynthesizedSfx('HEARTBEAT');
-    final bool isOutDecision = _rng.nextBool();
-    String drsLine = '';
-    if (_commLanguage == 'KANNADA') {
-      drsLine = isOutDecision
-          ? ('ಡಿಆರ್‌ಎಸ್ ರಿವ್ಯೂ! ಮೂರನೇ ಅಂಪೈರ್ ಪರೀಕ್ಷಿಸುತ್ತಿದ್ದಾರೆ... ಅಲ್ಟ್ರಾ ಎಡ್ಜ್‌ನಲ್ಲಿ ಸ್ಪಷ್ಟವಾದ ಸ್ಪೈಕ್ ಕಾಣಿಸುತ್ತಿದೆ! ಬ್ಯಾಟರಿ ಬೋಲ್ಡ್ ಅಥವಾ ಎಲ್‌ಬಿಡಬ್ಲ್ಯೂ... ಅಂಪೈರ್ ತೀರ್ಪು: ಔಟ್!')
-          : ('ಡಿಆರ್‌ಎಸ್ ರಿವ್ಯೂ! ಮೂರನೇ ಅಂಪೈರ್ ಬಾಲ್ ಟ್ರ್ಯಾಕಿಂಗ್ ನೋಡುತ್ತಿದ್ದಾರೆ... ಚೆಂಡು ವಿಕೆಟ್ ಮಿಸ್ ಆಗುತ್ತಿದೆ! ತೀರ್ಪು: ನಾಟ್ ಔಟ್! ' + _striker + ' ಸೇಫ್ ಆಗಿದ್ದಾರೆ!');
-    } else if (_commLanguage == 'HINDI') {
-      drsLine = isOutDecision
-          ? ('डीआरएस रिव्यू! तीसरे अंपायर अल्ट्रा-एज और बॉल ट्रैकिंग देख रहे हैं... तीन रेड्स! अंपायर का फैसला: आउट!')
-          : ('डीआरएस रिव्यू! गेंद स्टंप्स के ऊपर से जा रही है... फैसला: नॉट आउट! ' + _striker + ' सुरक्षित!');
-    } else {
-      drsLine = isOutDecision
-          ? ('DRS Review! Third umpire checking UltraEdge and Ball Tracking... Three Reds! Decision is OUT!')
-          : ('DRS Review! Ball is missing the stumps... Decision is NOT OUT!');
-    }
-    setState(() => _feed.insert(0, '📺 [DRS] ' + drsLine));
-    AppSoundEngine.speakRealVoice(drsLine, _commLanguage);
-  }
-
-  void _loadSquads() {
-    final parsedA = _squadACtrl.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toSet().toList();
-    final parsedB = _squadBCtrl.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toSet().toList();
-    _squadA = parsedA.isEmpty ? ['Player 1', 'Player 2'] : parsedA;
-    _squadB = parsedB.isEmpty ? ['Bowler 1', 'Keeper 1', 'Fielder 1'] : parsedB;
-
-    if (!_squadA.contains(_striker)) _striker = _squadA[0];
-    if (!_squadA.contains(_nonStriker)) _nonStriker = _squadA.length > 1 ? _squadA[1] : _squadA[0];
-    if (!_squadB.contains(_wk)) _wk = _squadB[0];
-    if (!_squadB.contains(_bowler)) _bowler = _squadB.length > 1 ? _squadB[1] : _squadB[0];
-    if (!_squadB.contains(_fielder)) _fielder = _squadB.length > 2 ? _squadB[2] : _squadB[0];
-    if (mounted) setState(() {});
-  }
-
-  void _swapStrike() {
-    setState(() {
-      final tmp = _striker;
-      _striker = _nonStriker;
-      _nonStriker = tmp;
-    });
-  }
-
-  String _oversText() => (_legalBalls ~/ 6).toString() + '.' + (_legalBalls % 6).toString();
-
-  String _getBestBatterCap() {
-    if (_batterRuns.isEmpty) return _striker + ' (0)';
-    String best = _striker;
-    int maxR = -1;
-    _batterRuns.forEach((k, v) {
-      if (v > maxR) {
-        maxR = v;
-        best = k;
-      }
-    });
-    return best + ' (' + maxR.toString() + ')';
-  }
-
-  String _getBestBowlerCap() {
-    if (_bowlerWickets.isEmpty) return _bowler + ' (0W)';
-    String best = _bowler;
-    int maxW = -1;
-    _bowlerWickets.forEach((k, v) {
-      if (v > maxW) {
-        maxW = v;
-        best = k;
-      }
-    });
-    return best + ' (' + maxW.toString() + 'W)';
-  }
-
-  String _buildCoCommentatorBanter(String eventType, String? incomingBatter) {
-    if (!_dualCommentatorBanter) return '';
-    final int target = int.tryParse(_targetCtrl.text) ?? 0;
-    final int maxOvers = int.tryParse(_maxOversCtrl.text) ?? 20;
-    final int ballsLeft = (maxOvers * 6) - _legalBalls;
-    final int runsNeeded = target > _runs ? (target - _runs) : 0;
+  /// Generates 125+ Unique Emotional Combinations Per Tile (5 Openers x 5 Core Calls x 5 Closers)
+  /// Uses " | " separator so MainActivity.kt inserts a real 90ms human breath & pitch shift!
+  String _generate125PlusHumanLine(String key) {
+    List<String> openers = [];
+    List<String> cores = [];
+    List<String> closers = [];
 
     if (_commLanguage == 'KANNADA') {
-      if (incomingBatter != null) {
-        return 'ಹೌದು! ಈಗ ಹೊಸ ಬ್ಯಾಟ್ಸ್‌ಮನ್ ' + incomingBatter + ' ಕ್ರೀಸ್‌ಗೆ ಎಂಟ್ರಿ ಕೊಡುತ್ತಿದ್ದಾರೆ! ಸ್ಟೇಡಿಯಂನಲ್ಲಿ ಎಂಟ್ರಿ ಮ್ಯೂಸಿಕ್ ಮೊಳಗುತ್ತಿದೆ!';
-      }
-      if (_consecutiveWickets == 2) {
-        return 'ಗಮನಿಸಿ! ' + _bowler + ' ಈಗ ಹ್ಯಾಟ್ರಿಕ್ ವಿಕೆಟ್ ಅವಕಾಶದಲ್ಲಿದ್ದಾರೆ!';
-      }
-      if (target > 0 && ballsLeft > 0 && runsNeeded > 0 && (eventType == 'SIX' || eventType == 'FOUR')) {
-        return 'ಪಂದ್ಯ ರೋಚಕವಾಗಿದೆ! ಗೆಲ್ಲಲು ಇನ್ನು ' + ballsLeft.toString() + ' ಎಸೆತಗಳಲ್ಲಿ ' + runsNeeded.toString() + ' ರನ್ ಬೇಕಾಗಿದೆ!';
-      }
-      if (eventType == 'SIX') {
-        return 'ಎಂತಹ ಪವರ್ ಹಿಟ್ಟಿಂಗ್! ' + _shotZone + ' ಮೇಲೆ ಚೆಂಡು ರಾಕೆಟ್ ವೇಗದಲ್ಲಿ ಹಾರಿಹೋಗಿದೆ!';
-      }
-    } else if (_commLanguage == 'HINDI') {
-      if (incomingBatter != null) {
-        return 'जी हाँ! अब नए बल्लेबाज़ ' + incomingBatter + ' मैदान में उतर रहे हैं और धमाकेदार एंट्री म्यूज़िक बज रहा है!';
-      }
-      if (target > 0 && ballsLeft > 0 && runsNeeded > 0 && (eventType == 'SIX' || eventType == 'FOUR')) {
-        return 'मुकाबला रोमांचक मोड़ पर! अब ' + ballsLeft.toString() + ' गेंदों में ' + runsNeeded.toString() + ' रनों की ज़रूरत है!';
-      }
-    } else {
-      if (incomingBatter != null) {
-        return 'And here walks out ' + incomingBatter + ' to the crease as the stadium entry music blasts!';
-      }
-    }
-    return '';
-  }
-
-  String _generateNonRepeatingLine(String eventType) {
-    final teamA = _teamACtrl.text.trim();
-    final sRuns = _batterRuns[_striker] ?? 0;
-    List<String> pool = [];
-
-    String dialectPrefix = '';
-    if (_commLanguage == 'KANNADA') {
-      if (_kannadaDialect.contains('Karavali')) {
-        dialectPrefix = 'ಬೆಂಕಿ ಮಾರಾಯ! ';
-      } else if (_kannadaDialect.contains('North')) {
-        dialectPrefix = 'ಜಬರ್ದಸ್ತ್ ಹುಡುಗ! ';
-      }
-    }
-
-    if (_commLanguage == 'KANNADA') {
-      switch (eventType) {
-        case 'SIX':
-          pool = [
-            dialectPrefix + 'ಅದ್ಭುತವಾದ ಸಿಕ್ಸರ್! ' + _bowler + ' ಎಸೆದ ಚೆಂಡನ್ನು ' + _striker + ' ' + _shotZone + ' ಮೇಲಿಂದ ಸ್ಟೇಡಿಯಂ ಆಚೆಗಟ್ಟಿದ್ದಾರೆ! ಆರು ರನ್‌ಗಳು!',
-            dialectPrefix + 'ಬೃಹತ್ ಸಿಕ್ಸರ್! ' + _striker + ' ಅವರ ಬ್ಯಾಟ್‌ನಿಂದ ಸಿಡಿದ ಚೆಂಡು ನೇರವಾಗಿ ಪ್ರೇಕ್ಷಕರ ಗ್ಯಾಲರಿಗೆ ಹೋಗಿ ಬಿದ್ದಿದೆ! ಈಗ ' + _striker + ' ಮೊತ್ತ ' + sRuns.toString() + ' ರನ್!',
-            dialectPrefix + 'ಬೆಂಕಿ ಹೊಡೆತ! ' + _bowler + ' ಬೌಲಿಂಗ್‌ನಲ್ಲಿ ' + _striker + ' ಭರ್ಜರಿ ಸಿಕ್ಸರ್ ಬಾರಿಸಿದ್ದಾರೆ! ' + teamA + ' ಮೊತ್ತ ' + _runs.toString() + ' ಕ್ಕೆ ಏರಿದೆ!'
+      switch (key) {
+        case 'DOT':
+          openers = ['ಡಾಟ್ ಬಾಲ್!', 'ಓಹೋ, ಯಾವುದೇ ರನ್ ಇಲ್ಲ!', 'ಸೂಪರ್ ಬೌಲಿಂಗ್!', 'ಕಡಕ್ ಡಿಫೆನ್ಸ್!', 'ಅದ್ಭುತ ಎಸೆತ!'];
+          cores = [
+            'ನಿಖರವಾದ ಲೈನ್ ಮತ್ತು ಲೆಂತ್, ಬ್ಯಾಟ್ಸ್‌ಮನ್‌ಗೆ ರನ್ ತೆಗೆಯಲು ಯಾವುದೇ ಅವಕಾಶವಿಲ್ಲ.',
+            'ಚೆಂಡು ನೇರವಾಗಿ ಫೀಲ್ಡರ್ ಕೈ ಸೇರಿದೆ, ಒಂದೇ ಒಂದು ರನ್ ಕೂಡ ಇಲ್ಲ.',
+            'ಬ್ಯಾಟ್ಸ್‌ಮನ್ ರಕ್ಷಣಾತ್ಮಕವಾಗಿ ಆಡಿದ್ದಾರೆ, ಬೌಲರ್ ಕೈಮೇಲಾಗಿದೆ.',
+            'ಚುರುಕಾದ ಫೀಲ್ಡಿಂಗ್! ರನ್ ಕದಿಯಲು ಇಲ್ಲಿ ಸಾಧ್ಯವೇ ಇಲ್ಲ.',
+            'ಬೆಂಕಿಯಂತಹ ಎಸೆತಕ್ಕೆ ಬ್ಯಾಟ್ಸ್‌ಮನ್ ಸಂಪೂರ್ಣವಾಗಿ ಕಟ್ಟಿಹಾಕಲ್ಪಟ್ಟಿದ್ದಾರೆ.'
           ];
-          break;
-        case 'FOUR':
-          pool = [
-            dialectPrefix + 'ಮನೋಹರವಾದ ಬೌಂಡರಿ! ' + _striker + ' ಹೊಡೆದ ಚೆಂಡನ್ನು ತಡೆಯಲು ಫೀಲ್ಡರ್ ' + _fielder + ' ಡೈವ್ ಮಾಡಿದರೂ ಸಾಧ್ಯವಾಗಲಿಲ್ಲ! ನಾಲ್ಕು ರನ್!',
-            dialectPrefix + 'ಸೂಪರ್ ಶಾಟ್! ' + _bowler + ' ಎಸೆತಕ್ಕೆ ' + _striker + ' ಬ್ಯಾಟ್‌ನಿಂದ ' + _shotZone + ' ದಿಕ್ಕಿನಲ್ಲಿ ಮಿಂಚಿನ ವೇಗದ ಬೌಂಡರಿ!'
-          ];
-          break;
-        case 'BOWLED':
-          pool = [
-            dialectPrefix + 'ಬ್ಯಾಟರಿ ಬೋಲ್ಡ್! ಕ್ಲೀನ್ ಬೌಲ್ಡ್! ' + _bowler + ' ಎಸೆದ ವೇಗದ ಯಾರ್ಕರ್‌ಗೆ ' + _striker + ' ಅವರ ಸ್ಟಂಪ್ಸ್ ಹಾರಿಹೋಗಿದೆ! ವಿಕೆಟ್ ಕೀಪರ್ ' + _wk + ' ಸಂಭ್ರಮಿಸುತ್ತಿದ್ದಾರೆ!',
-            dialectPrefix + 'ಕ್ಲೀನ್ ಬೌಲ್ಡ್! ಎಂತಹ ಅದ್ಭುತ ಎಸೆತ! ' + _bowler + ' ಅವರ ಬೆಂಕಿಯಂತಹ ಚೆಂಡು ನೇರವಾಗಿ ವಿಕೆಟ್‌ಗೆ ಬಡಿದಿದೆ!'
-          ];
-          break;
-        case 'CAUGHT':
-          pool = [
-            'ಗಾಳಿಯಲ್ಲಿ ಚೆಂಡು ಮತ್ತು ಅದ್ಭುತ ಕ್ಯಾಚ್! ' + _striker + ' ಹೊಡೆದ ಚೆಂಡನ್ನು ಫೀಲ್ಡರ್ ' + _fielder + ' ಯಾವುದೇ ತಪ್ಪಿಲ್ಲದೆ ಹಿಡಿದಿದ್ದಾರೆ! ' + _bowler + ' ಗೆ ವಿಕೆಟ್!'
-          ];
-          break;
-        case 'CAUGHT_WK':
-          pool = [
-            'ಬ್ಯಾಟ್‌ನ ಅಂಚಿಗೆ ತಗುಲಿ ವಿಕೆಟ್ ಕೀಪರ್ ಕೈ ಸೇರಿದೆ! ' + _bowler + ' ಎಸೆತದಲ್ಲಿ ವಿಕೆಟ್ ಕೀಪರ್ ' + _wk + ' ಅದ್ಭುತ ಕ್ಯಾಚ್ ಹಿಡಿದಿದ್ದಾರೆ!'
-          ];
-          break;
-        case 'RUN_OUT':
-          pool = [
-            'ಡೈರೆಕ್ಟ್ ಹಿಟ್ ರನ್ ಔಟ್! ' + _striker + ' ಮತ್ತು ' + _nonStriker + ' ನಡುವೆ ಗೊಂದಲ! ಫೀಲ್ಡರ್ ' + _fielder + ' ಎಸೆದ ಚೆಂಡು ನೇರವಾಗಿ ವಿಕೆಟ್‌ಗೆ ಬಡಿದಿದೆ!'
-          ];
-          break;
-        case 'STUMPED':
-          pool = [
-            'ಮಿಂಚಿನ ಸ್ಟಂಪಿಂಗ್! ' + _striker + ' ಮುಂದೆ ಬಂದು ಹೊಡೆಯಲು ಪ್ರಯತ್ನಿಸಿದರು, ಆದರೆ ವಿಕೆಟ್ ಕೀಪರ್ ' + _wk + ' ಕ್ಷಣಮಾತ್ರದಲ್ಲಿ ಬೇಲ್ಸ್ ಹಾರಿಸಿದ್ದಾರೆ!'
-          ];
-          break;
-        case 'LBW':
-          pool = [
-            'ಜೋರಾದ ಅಪೀಲ್ ಮತ್ತು ಅಂಪೈರ್ ಬೆರಳು ಎತ್ತಿದ್ದಾರೆ! ಎಲ್‌ಬಿಡಬ್ಲ್ಯೂ ಔಟ್! ' + _bowler + ' ಎಸೆತ ನೇರವಾಗಿ ' + _striker + ' ಪ್ಯಾಡ್‌ಗೆ ಬಡಿದಿದೆ!'
-          ];
-          break;
-        case 'NO_BALL':
-          pool = [
-            'ನೋ ಬಾಲ್! ' + _bowler + ' ಕ್ರೀಸ್ ಗೆರೆ ದಾಟಿದ್ದಾರೆ! ಒಂದು ಹೆಚ್ಚುವರಿ ರನ್ ಮತ್ತು ಮುಂದಿನ ಎಸೆತ ಫ್ರೀ ಹಿಟ್ ಆಗಿರುತ್ತದೆ!'
-          ];
-          break;
-        case 'WIDE':
-          pool = [
-            'ವೈಡ್ ಬಾಲ್! ' + _bowler + ' ಲೆಗ್ ಸೈಡ್ ಆಚೆ ಎಸೆದಿದ್ದಾರೆ, ವಿಕೆಟ್ ಕೀಪರ್ ' + _wk + ' ಡೈವ್ ಮಾಡಿ ಚೆಂಡನ್ನು ತಡೆದಿದ್ದಾರೆ!'
+          closers = [
+            'ಮೈದಾನದಲ್ಲಿ ಒತ್ತಡ ಹೆಚ್ಚಾಗುತ್ತಿದೆ!',
+            'ಬೌಲಿಂಗ್ ತಂಡದ ಭರ್ಜರಿ ಹಿಡಿತ!',
+            'ಇದು ನಿಜಕ್ಕೂ ಚಾಂಪಿಯನ್ ಬೌಲಿಂಗ್!',
+            'ಪ್ರೇಕ್ಷಕರಿಂದ ಜೋರಾದ ಚಪ್ಪಾಳೆ!',
+            'ಪಂದ್ಯ ಈಗ ಭಾರೀ ಕುತೂಹಲ ಕೆರಳಿಸಿದೆ!'
           ];
           break;
         case 'RUN_1':
-          pool = [
-            'ಚುರುಕಾದ ಒಂದು ರನ್! ' + _striker + ' ಚೆಂಡನ್ನು ' + _shotZone + ' ಕಡೆಗೆ ತಳ್ಳಿ ' + _nonStriker + ' ಜೊತೆ ಸ್ಟ್ರೈಕ್ ಬದಲಾಯಿಸಿದ್ದಾರೆ!'
+          openers = ['ಒಂದು ರನ್!', 'ಚುರುಕಾದ ಸಿಂಗಲ್!', 'ಸ್ಮಾರ್ಟ್ ಕ್ರಿಕೆಟ್!', 'ಮಿಂಚಿನ ಓಟ!', 'ಕ್ವಿಕ್ ಸಿಂಗಲ್!'];
+          cores = [
+            'ಹಗುರವಾದ ಕೈಗಳಿಂದ ಚೆಂಡನ್ನು ಗ್ಯಾಪ್‌ನಲ್ಲಿ ತಳ್ಳಿ ಒಂದು ರನ್ ಕದ್ದಿದ್ದಾರೆ.',
+            'ಫೀಲ್ಡರ್ ಚೆಂಡನ್ನು ಎತ್ತಿಕೊಳ್ಳುವಷ್ಟರಲ್ಲಿ ಬ್ಯಾಟ್ಸ್‌ಮನ್‌ಗಳು ತುದಿ ಬದಲಾಯಿಸಿದ್ದಾರೆ.',
+            'ಒಳ್ಳೆಯ ಹೊಂದಾಣಿಕೆಯ ಓಟ, ಸುಲಭವಾಗಿ ಒಂದು ರನ್ ಪೂರೈಸಿದ್ದಾರೆ.',
+            'ಸ್ಟ್ರೈಕ್ ರೊಟೇಟ್ ಮಾಡಲು ಅದ್ಭುತವಾದ ಶಾಟ್ ಮತ್ತು ವೇಗದ ಒಂದು ರನ್.',
+            'ಕಣ್ಣು ಮಿಟುಕಿಸುವಷ್ಟರಲ್ಲಿ ಕ್ರೀಸ್ ತಲುಪಿ ಒಂದು ರನ್ ಪಡೆದಿದ್ದಾರೆ.'
+          ];
+          closers = [
+            'ಬುದ್ಧಿವಂತಿಕೆಯ ಬ್ಯಾಟಿಂಗ್ ಪ್ರದರ್ಶನ!',
+            'ಸ್ಕೋರ್ ಬೋರ್ಡ್ ನಿರಂತರವಾಗಿ ಚಲಿಸುತ್ತಿದೆ!',
+            'ಇದೇ ನಿಜವಾದ ಚುರುಕಾದ ಕ್ರಿಕೆಟ್!',
+            'ವಿಕೆಟ್ ನಡುವೆ ಅತ್ಯುತ್ತಮ ಓಟ!',
+            'ಬೌಲರ್ ಮೇಲೆ ಒತ್ತಡ ಹಾಕುವ ತಂತ್ರ!'
           ];
           break;
         case 'RUN_2':
-          pool = [
-            'ಅದ್ಭುತ ಓಟ! ' + _striker + ' ಮತ್ತು ' + _nonStriker + ' ಫೀಲ್ಡರ್ ' + _fielder + ' ಚೆಂಡನ್ನು ಎಸೆಯುವಷ್ಟರಲ್ಲಿ ಎರಡು ರನ್ ಪೂರೈಸಿದ್ದಾರೆ!'
+          openers = ['ಎರಡು ರನ್‌ಗಳು!', 'ಸೂಪರ್ ಡಬಲ್!', 'ಮೈದಾನದಲ್ಲಿ ಮಿಂಚಿನ ಓಟ!', 'ಭರ್ಜರಿ ಎರಡು ರನ್!', 'ಅದ್ಭುತ ರನ್ನಿಂಗ್!'];
+          cores = [
+            'ಡೀಪ್ ಗ್ಯಾಪ್‌ನಲ್ಲಿ ಚೆಂಡನ್ನು ಬಾರಿಸಿ ವೇಗವಾಗಿ ಎರಡು ರನ್ ಕಬಳಿಸಿದ್ದಾರೆ.',
+            'ಮೊದಲ ರನ್ ವೇಗವಾಗಿ ಓಡಿ, ಎರಡನೇ ರನ್‌ಗೂ ಚಿರತೆಯಂತೆ ನುಗ್ಗಿದ್ದಾರೆ!',
+            'ಫೀಲ್ಡರ್ ಥ್ರೋ ಬರುವ ಮುನ್ನವೇ ಸುರಕ್ಷಿತವಾಗಿ ಕ್ರೀಸ್ ತಲುಪಿ ಎರಡು ರನ್ ಪಡೆದಿದ್ದಾರೆ.',
+            'ವಿಕೆಟ್ ನಡುವೆ ಎಂತಹ ವೇಗದ ಓಟ! ಒಂದನ್ನು ಎರಡಾಗಿ ಪರಿವರ್ತಿಸಿದ್ದಾರೆ.',
+            'ಖಾಲಿ ಇರುವ ಜಾಗಕ್ಕೆ ಚೆಂಡನ್ನು ಕಳುಹಿಸಿ ಜೋಡಿಯಾಗಿ ಎರಡು ರನ್ ಪೂರೈಸಿದ್ದಾರೆ.'
+          ];
+          closers = [
+            'ಅದ್ಭುತ ಫಿಟ್ನೆಸ್ ಮತ್ತು ಹೊಂದಾಣಿಕೆ!',
+            'ಪ್ರೇಕ್ಷಕರಲ್ಲಿ ಉತ್ಸಾಹ ಇಮ್ಮಡಿಯಾಗಿದೆ!',
+            'ಫೀಲ್ಡರ್‌ಗಳ ಮೇಲೆ ನೇರ ಒತ್ತಡ!',
+            'ಪ್ರತಿಯೊಂದು ರನ್ ಕೂಡ ಇಲ್ಲಿ ಬಹಳ ಮುಖ್ಯ!',
+            'ಸೂಪರ್ ಆಟ, ಸೂಪರ್ ಓಟ!'
           ];
           break;
-        default:
-          pool = [
-            'ಡಾಟ್ ಬಾಲ್! ' + _bowler + ' ಅವರ ನಿಖರವಾದ ಎಸೆತವನ್ನು ' + _striker + ' ರಕ್ಷಣಾತ್ಮಕವಾಗಿ ಆಡಿದ್ದಾರೆ.'
+        case 'RUN_3':
+          openers = ['ಮೂರು ರನ್‌ಗಳು!', 'ಅದ್ಭುತವಾದ ಮೂರು ರನ್!', 'ಮೈದಾನದಲ್ಲಿ ರಾಕೆಟ್ ಓಟ!', 'ಸೂಪರ್ ತ್ರಿಬಲ್!', 'ಭರ್ಜರಿ ಮೂರು ರನ್!'];
+          cores = [
+            'ಬೌಂಡರಿ ಗೆರೆಯ ಸಮೀಪ ಫೀಲ್ಡರ್ ಡೈವ್ ಮಾಡಿ ತಡೆಯುವಷ್ಟರಲ್ಲಿ ಬ್ಯಾಟ್ಸ್‌ಮನ್‌ಗಳು ಮೂರು ರನ್ ಓಡಿದ್ದಾರೆ!',
+            'ದೊಡ್ಡ ಮೈದಾನದ ಲಾಭ ಪಡೆದು ಮಿಂಚಿನ ವೇಗದಲ್ಲಿ ಮೂರು ರನ್ ಕಲೆಹಾಕಿದ್ದಾರೆ.',
+            'ಅತ್ಯುತ್ತಮ ಟೈಮಿಂಗ್! ಚೆಂಡು ನಿಧಾನವಾಗುತ್ತಿದ್ದಂತೆ ಮೂರು ರನ್ ಯಶಸ್ವಿಯಾಗಿ ಪೂರೈಸಿದ್ದಾರೆ.',
+            'ಬ್ಯಾಟಿಂಗ್ ಜೋಡಿಯ ಅವಿಸ್ಮರಣೀಯ ಓಟ, ಒಂದೇ ಎಸೆತದಲ್ಲಿ ಮೂರು ರನ್!',
+            'ಫೀಲ್ಡರ್ ಚೆಂಡನ್ನು ಹಿಡಿದು ಎಸೆಯುವಷ್ಟರಲ್ಲಿ ಮೂರನೇ ರನ್ ಕೂಡ ಪೂರ್ಣಗೊಂಡಿದೆ!'
           ];
-      }
-    } else if (_commLanguage == 'HINDI') {
-      switch (eventType) {
-        case 'SIX':
-          pool = [
-            'शानदार छक्का! ' + _bowler + ' की गेंद पर ' + _striker + ' का ' + _shotZone + ' के ऊपर से गगनचुंबी प्रहार! छह रन!'
+          closers = [
+            'ಇದು ಬೌಂಡರಿಗೆ ಸಮಾನವಾದ ಓಟ!',
+            'ಸ್ಟೇಡಿಯಂನಲ್ಲಿ ಭಾರೀ ಹರ್ಷೋದ್ಗಾರ!',
+            'ಅದ್ಭುತವಾದ ಶಕ್ತಿ ಮತ್ತು ವೇಗ!',
+            'ತಂಡಕ್ಕೆ ಅಮೂಲ್ಯವಾದ ಮೂರು ರನ್ ಸೇರ್ಪಡೆ!',
+            'ವೀಕ್ಷಕರಿಂದ ಭರ್ಜರಿ ಮೆಚ್ಚುಗೆ!'
           ];
           break;
         case 'FOUR':
-          pool = [
-            'कड़क चौका! ' + _striker + ' का लाजवाब शॉट, फील्डर ' + _fielder + ' ने डाइव लगाई लेकिन गेंद गोली की रफ़्तार से बाउंड्री के पार!'
+          openers = ['ಕಡಕ್ ಬೌಂಡರಿ! ನಾಲ್ಕು ರನ್!', 'ಸೂಪರ್ ಶಾಟ್! ಫೋರ್!', 'ಬೆಂಕಿ ಕವರ್ ಡ್ರೈವ್! ಬೌಂಡರಿ!', 'ಅದ್ಭುತವಾದ ನಾಲ್ಕು ರನ್!', 'ಮನೋಹರವಾದ ಬೌಂಡರಿ!'];
+          cores = [
+            'ಬ್ಯಾಟ್‌ನಿಂದ ಸಿಡಿದ ಚೆಂಡು ಹುಲ್ಲುಹಾಸಿನ ಮೇಲೆ ಗುಂಡಿನಂತೆ ಬೌಂಡರಿ ಗೆರೆ ದಾಟಿದೆ!',
+            'ಫೀಲ್ಡರ್ ಡೈವ್ ಮಾಡಿದರೂ ಚೆಂಡನ್ನು ತಡೆಯಲು ಸಾಧ್ಯವೇ ಆಗಲಿಲ್ಲ, ಭರ್ಜರಿ ಫೋರ್!',
+            'ಇಬ್ಬರು ಫೀಲ್ಡರ್‌ಗಳ ನಡುವಿನ ಗ್ಯಾಪ್ ಸೀಳಿಕೊಂಡು ಚೆಂಡು ಬೌಂಡರಿ ಗೆರೆಗೆ ಮುತ್ತಿಟ್ಟಿದೆ!',
+            'ಅದ್ಭುತವಾದ ಟೈಮಿಂಗ್ ಮತ್ತು ಪ್ಲೇಸ್‌ಮೆಂಟ್, ನೋಡ ನೋಡುತ್ತಿದ್ದಂತೆ ನಾಲ್ಕು ರನ್!',
+            'ಯಾವುದೇ ಫೀಲ್ಡರ್ ಅಲ್ಲಾಡಲೂ ಸಮಯವಿಲ್ಲ, ಮಿಂಚಿನ ವೇಗದ ಬೌಂಡರಿ!'
+          ];
+          closers = [
+            'ಕ್ಲಾಸ್ ಬ್ಯಾಟಿಂಗ್ ಅಂದ್ರೆ ಇದೇ ನೋಡಿ!',
+            'ಇಡೀ ಸ್ಟೇಡಿಯಂ ಎದ್ದು ನಿಂತು ಚಪ್ಪಾಳೆ ತಟ್ಟುತ್ತಿದೆ!',
+            'ಬೌಲರ್‌ಗೆ ಏನು ಮಾಡಬೇಕೆಂದೇ ತೋಚುತ್ತಿಲ್ಲ!',
+            'ಕಣ್ಣಿಗೆ ಹಬ್ಬವನ್ನುಂಟು ಮಾಡುವ ಹೊಡೆತ!',
+            'ಚಾಂಪಿಯನ್ ಆಟಗಾರನ ಸ್ಟೈಲಿಶ್ ಶಾಟ್!'
+          ];
+          break;
+        case 'SIX':
+          openers = ['ಇನ್‌ಕ್ರೆಡಿಬಲ್ ಸಿಕ್ಸರ್!', 'ಬೆಂಕಿ ಸಿಕ್ಸರ್! ಆರು ರನ್!', 'ಬೃಹತ್ ಮ್ಯಾಕ್ಸಿಮಮ್! ಸಿಕ್ಸ್!', 'ಸ್ಟೇಡಿಯಂ ಆಚೆ ಚೆಂಡು! ಸಿಕ್ಸರ್!', 'ಅದ್ಭುತವಾದ ಗಗನಚುಂಬಿ ಸಿಕ್ಸರ್!'];
+          cores = [
+            'ಬ್ಯಾಟ್‌ನ ಮಧ್ಯಭಾಗಕ್ಕೆ ತಗುಲಿದ ಚೆಂಡು ನೇರವಾಗಿ ಪ್ರೇಕ್ಷಕರ ಗ್ಯಾಲರಿಗೆ ಹಾರಿಹೋಗಿದೆ!',
+            'ಫ್ರಂಟ್ ಫುಟ್ ಕ್ಲಿಯರ್ ಮಾಡಿ ಬಾರಿಸಿದ ರಾಕೆಟ್ ಹೊಡೆತ, ಚೆಂಡು ಮೋಡದಲ್ಲಿ ಮಾಯವಾಗಿದೆ!',
+            'ಎಂತಹ ಪವರ್ ಹಿಟ್ಟಿಂಗ್! ಬೌಂಡರಿ ಗೆರೆಯಿಂದ ಬಹಳ ದೂರಕ್ಕೆ ಹೋಗಿ ಬಿದ್ದಿದೆ ಆರು ರನ್!',
+            'ಫೀಲ್ಡರ್‌ಗಳು ಕೇವಲ ಪ್ರೇಕ್ಷಕರಂತೆ ತಲೆ ಎತ್ತಿ ನೋಡುವಂತಾಯಿತು, ಮಾನ್ಸ್ಟರ್ ಸಿಕ್ಸರ್!',
+            'ಕಣ್ಣು ಕೋರೈಸುವ ಭರ್ಜರಿ ಹೊಡೆತ, ಒಂದೇ ಏಟಿಗೆ ಆರು ರನ್‌ಗಳ ಸುರಿಮಳೆ!'
+          ];
+          closers = [
+            'ಮೈದಾನದಲ್ಲಿ ಹಬ್ಬದ ವಾತಾವರಣ ನಿರ್ಮಾಣವಾಗಿದೆ!',
+            'ಇದು ನಿಜಕ್ಕೂ ಪೈಸಾ ವಸೂಲ್ ಸಿಕ್ಸರ್!',
+            'ಪ್ರೇಕ್ಷಕರ ಸಂಭ್ರಮ ಮುಗಿಲು ಮುಟ್ಟಿದೆ!',
+            'ಬೌಲಿಂಗ್ ತಂಡವನ್ನು ನಡುಗಿಸಿದ ಭೀಕರ ಹೊಡೆತ!',
+            'ಶುದ್ಧ ಬಂಗಾರದಂತಹ ಸಿಕ್ಸರ್ ಇದು!'
           ];
           break;
         case 'BOWLED':
-          pool = [
-            'बैटरी बोल्ड! क्लीन बोल्ड! ' + _bowler + ' की सटीक यॉर्कर ने ' + _striker + ' के स्टंप्स हवा में उड़ा दिए!'
+          openers = ['ಬ್ಯಾಟರಿ ಬೋಲ್ಡ್! ಕ್ಲೀನ್ ಬೌಲ್ಡ್!', 'ಸ್ಟಂಪ್ಸ್ ಉಡೀಸ್! ಬೌಲ್ಡ್!', 'ಮಧ್ಯದ ವಿಕೆಟ್ ಹಾರಿಹೋಗಿದೆ! ಬೌಲ್ಡ್!', 'ಬೆಂಕಿ ಯಾರ್ಕರ್! ಕ್ಲೀನ್ ಬೌಲ್ಡ್!', 'ನೇರವಾಗಿ ಗುರಿಗೆ ಬಡಿದಿದೆ! ಬೌಲ್ಡ್!'];
+          cores = [
+            'ಮಿಂಚಿನ ವೇಗದ ಚೆಂಡು ಬ್ಯಾಟ್ ಮತ್ತು ಪ್ಯಾಡ್ ನಡುವೆ ನುಗ್ಗಿ ವಿಕೆಟ್ ಅನ್ನು ನೆಲಕ್ಕುರುಳಿಸಿದೆ!',
+            'ಬೇಲ್ಸ್ ಗಾಳಿಯಲ್ಲಿ ಹಾರಿಹೋಗಿದೆ, ಬ್ಯಾಟ್ಸ್‌ಮನ್ ಬಳಿ ಯಾವುದೇ ಉತ್ತರವಿಲ್ಲ!',
+            'ಸ್ಟಂಪ್ಸ್ ಕಿತ್ತುಕೊಂಡು ಪಲ್ಟಿ ಹೊಡೆದಿದೆ, ಎಂತಹ ಭಯಾನಕ ಎಸೆತ!',
+            'ಬ್ಯಾಟ್ಸ್‌ಮನ್ ಬ್ಯಾಟ್ ಬೀಸುವಷ್ಟರಲ್ಲಿ ಚೆಂಡು ವಿಕೆಟ್‌ಗೆ ಅಪ್ಪಳಿಸಿ ಆಗಿತ್ತು!',
+            'ಬುಲೆಟ್ ವೇಗದ ಎಸೆತಕ್ಕೆ ವಿಕೆಟ್ ಚೂರು ಚೂರಾಗಿದೆ!'
+          ];
+          closers = [
+            'ಬೌಲರ್ ಸಂಭ್ರಮ ನೋಡುವಂತಿದೆ!',
+            'ಬ್ಯಾಟ್ಸ್‌ಮನ್ ತಲೆ ತಗ್ಗಿಸಿ ಪೆವಿಲಿಯನ್ ಕಡೆಗೆ ನಡೆಯುತ್ತಿದ್ದಾರೆ!',
+            'ಇಡೀ ತಂಡ ಕುಣಿದು ಕುಪ್ಪಳಿಸುತ್ತಿದೆ!',
+            'ಪಂದ್ಯದ ದಿಕ್ಕನ್ನೇ ಬದಲಿಸುವ ಬ್ರೇಕ್‌ಥ್ರೂ ವಿಕೆಟ್!',
+            'ಬೌಲಿಂಗ್‌ನ ಅಸಲಿ ಪವರ್ ಅಂದ್ರೆ ಇದೇ!'
           ];
           break;
-        default:
-          pool = [
-            _bowler + ' की शानदार गेंद ' + _striker + ' को, फील्डर ' + _fielder + ' ने तेज़ी से गेंद को रोका!'
+        case 'CAUGHT':
+          openers = ['ಕ್ಯಾಚ್ ಔಟ್! ಗಾಳಿಯಲ್ಲಿ ಚೆಂಡು ಮತ್ತು ಔಟ್!', 'ಅದ್ಭುತ ಕ್ಯಾಚ್! ವಿಕೆಟ್ ಪತನ!', 'ಸೂಪರ್ ಡೈವಿಂಗ್ ಕ್ಯಾಚ್! ಔಟ್!', 'ಫೀಲ್ಡರ್ ಕೈಯಲ್ಲಿ ಭದ್ರ! ಕ್ಯಾಚ್ ಔಟ್!', 'ದೊಡ್ಡ ವಿಕೆಟ್ ಬಿದ್ದಿದೆ! ಕ್ಯಾಚ್!'];
+          cores = [
+            'ದೊಡ್ಡ ಹೊಡೆತಕ್ಕೆ ಕೈಹಾಕಿದ ಬ್ಯಾಟ್ಸ್‌ಮನ್, ಆದರೆ ಚೆಂಡು ನೇರವಾಗಿ ಫೀಲ್ಡರ್ ಕೈ ಸೇರಿದೆ!',
+            'ಗಾಳಿಯಲ್ಲಿ ಚಿಟ್ಟೆಯಂತೆ ಹಾರಿ ಫೀಲ್ಡರ್ ಹಿಡಿದಿರುವ ನಂಬಲಸಾಧ್ಯವಾದ ಕ್ಯಾಚ್ ಇದು!',
+            'ಎತ್ತರಕ್ಕೆ ಚಿಮ್ಮಿದ ಚೆಂಡಿನ ಕೆಳಗೆ ನಿಂತು ಯಾವುದೇ ತಪ್ಪಿಲ್ಲದೆ ಕ್ಯಾಚ್ ಪೂರ್ಣಗೊಳಿಸಿದ್ದಾರೆ!',
+            'ಟೈಮಿಂಗ್ ತಪ್ಪಿದ ಹೊಡೆತ ಮತ್ತು ಬೌಂಡರಿ ಗೆರೆಯ ಬಳಿ ಚುರುಕಾದ ಕ್ಯಾಚ್!',
+            'ಕಣ್ಣು ಮಿಟುಕಿಸುವಷ್ಟರಲ್ಲಿ ಫೀಲ್ಡರ್ ಚೆಂಡನ್ನು ಹಿಡಿದು ವಿಕೆಟ್ ಕಬಳಿಸಿದ್ದಾರೆ!'
           ];
+          closers = [
+            'ಫೀಲ್ಡಿಂಗ್ ತಂಡದ ಭರ್ಜರಿ ಸಂಭ್ರಮಾಚರಣೆ!',
+            'ಕ್ಯಾಚಸ್ ವಿನ್ ಮ್ಯಾಚಸ್ ಎಂಬ ಮಾತು ಮತ್ತೆ ಸಾಬೀತಾಗಿದೆ!',
+            'ಬ್ಯಾಟ್ಸ್‌ಮನ್ ನಿರಾಸೆಯಿಂದ ಹೊರ ನಡೆಯುತ್ತಿದ್ದಾರೆ!',
+            'ಮೈದಾನದಲ್ಲಿ ರೋಮಾಂಚನಕಾರಿ ಕ್ಷಣ!',
+            'ತಂಡಕ್ಕೆ ಸಿಕ್ಕಿರುವ ಬಂಗಾರದಂತಹ ವಿಕೆಟ್!'
+          ];
+          break;
+        case 'RUN_OUT':
+          openers = ['ಡೈರೆಕ್ಟ್ ಹಿಟ್! ರನ್ ಔಟ್!', 'ರನ್ ಔಟ್! ವಿಕೆಟ್ ಪತನ!', 'ಮಿಂಚಿನ ಥ್ರೋ ಮತ್ತು ರನ್ ಔಟ್!', 'ಕ್ರೀಸ್‌ನಿಂದ ಹೊರಗೆ! ರನ್ ಔಟ್!', 'ಭೀಕರ ರನ್ ಔಟ್!'];
+          cores = [
+            'ಬ್ಯಾಟ್ಸ್‌ಮನ್‌ಗಳ ನಡುವೆ ಗೊಂದಲ, ಚಿರತೆಯಂತೆ ನುಗ್ಗಿದ ಫೀಲ್ಡರ್ ನೇರವಾಗಿ ವಿಕೆಟ್‌ಗೆ ಹೊಡೆದಿದ್ದಾರೆ!',
+            'ಬ್ಯಾಟ್ ಗೆರೆ ಮುಟ್ಟುವ ಮೊದಲೇ ಬೇಲ್ಸ್ ಹಾರಿಹೋಗಿದೆ, ಸ್ಪಷ್ಟವಾದ ರನ್ ಔಟ್!',
+            'ಅಪಾಯಕಾರಿ ರನ್ ಕದಿಯುವ ಪ್ರಯತ್ನದಲ್ಲಿ ತಮ್ಮ ವಿಕೆಟ್ ಒಪ್ಪಿಸಿದ್ದಾರೆ!',
+            'ರಾಕೆಟ್ ವೇಗದ ಥ್ರೋ ನೇರವಾಗಿ ಸ್ಟಂಪ್ಸ್‌ಗೆ ಬಡಿದಿದೆ, ಬ್ಯಾಟ್ಸ್‌ಮನ್ ಶಾರ್ಟ್ ಆಫ್ ಕ್ರೀಸ್!',
+            'ಫೀಲ್ಡರ್ ಮತ್ತು ವಿಕೆಟ್ ಕೀಪರ್ ಜೋಡಿಯ ಮಿಂಚಿನ ಕಾರ್ಯಾಚರಣೆಗೆ ವಿಕೆಟ್ ಬಿದ್ದಿದೆ!'
+          ];
+          closers = [
+            'ಇದು ನಿಜಕ್ಕೂ ವಿಶ್ವದರ್ಜೆಯ ಫೀಲ್ಡಿಂಗ್!',
+            'ಒಂದೇ ಒಂದು ಕ್ಷಣದ ತಪ್ಪಿನಿಂದ ದೊಡ್ಡ ವಿಕೆಟ್ ನಷ್ಟ!',
+            'ಮೈದಾನದಲ್ಲಿ ಫೀಲ್ಡಿಂಗ್ ತಂಡದ ಘರ್ಜನೆ!',
+            'ಪಂದ್ಯಕ್ಕೆ ಸಿಕ್ಕಿರುವ ಅನಿರೀಕ್ಷಿತ ತಿರುವು!',
+            'ಅದ್ಭುತ ಗುರಿ ಮತ್ತು ಚುರುಕಾದ ಆಟ!'
+          ];
+          break;
+        case 'STUMPED':
+          openers = ['ಸ್ಟಂಪ್ಡ್ ಔಟ್! ಮಿಂಚಿನ ಸ್ಟಂಪಿಂಗ್!', 'ವಿಕೆಟ್ ಕೀಪರ್ ಜಾದೂ! ಸ್ಟಂಪ್ಡ್!', 'ಕಣ್ಣು ಮಿಟುಕಿಸುವಷ್ಟರಲ್ಲಿ ಸ್ಟಂಪಿಂಗ್!', 'ಕ್ರೀಸ್ ಬಿಟ್ಟು ಮುಂದೆ ಬಂದರು ಮತ್ತು ಸ್ಟಂಪ್ಡ್!', 'ಸೂಪರ್ ಸ್ಟಂಪಿಂಗ್ ಔಟ್!'];
+          cores = [
+            'ಚೆಂಡಿನ ತಿರುವನ್ನು ಗುರುತಿಸುವಲ್ಲಿ ವಿಫಲರಾದ ಬ್ಯಾಟ್ಸ್‌ಮನ್, ವಿಕೆಟ್ ಕೀಪರ್ ಕ್ಷಣಾರ್ಧದಲ್ಲಿ ಬೇಲ್ಸ್ ಹಾರಿಸಿದ್ದಾರೆ!',
+            'ಮುಂದೆ ಬಂದು ಬಾರಿಸಲು ಹೋದರು ಆದರೆ ಕಾಲು ಕ್ರೀಸ್ ಒಳಗೆ ಬರುವ ಮುನ್ನವೇ ವಿಕೆಟ್ ಬಿದ್ದಿದೆ!',
+            'ವಿಕೆಟ್ ಹಿಂದೆ ಎಂತಹ ಚುರುಕಾದ ಕೈಚಳಕ! ಬ್ಯಾಟ್ಸ್‌ಮನ್ ತಿರುಗಿ ನೋಡುವಷ್ಟರಲ್ಲಿ ಸ್ಟಂಪ್ಡ್!',
+            'ಬೌಲರ್‌ನ ಚಾಣಾಕ್ಷ ಎಸೆತ ಮತ್ತು ಕೀಪರ್‌ನ ಮಿಂಚಿನ ಸ್ಟಂಪಿಂಗ್ ಜೋಡಿ ಕಮಾಲ್ ಮಾಡಿದೆ!',
+            'ಒಂದೇ ಒಂದು ಇಂಚು ಅವಕಾಶವನ್ನೂ ನೀಡದೆ ವಿಕೆಟ್ ಕೀಪರ್ ಬೇಲ್ಸ್ ಎಗರಿಸಿದ್ದಾರೆ!'
+          ];
+          closers = [
+            'ವಿಕೆಟ್ ಕೀಪರ್‌ನ ಚುರುಕುತನಕ್ಕೆ ಹ್ಯಾಟ್ಸ್ ಆಫ್!',
+            'ಸ್ಪಿನ್ ಮತ್ತು ಕೀಪಿಂಗ್ ಜೋಡಿಯ ಭರ್ಜರಿ ಬೇಟೆ!',
+            'ಬ್ಯಾಟ್ಸ್‌ಮನ್ ಸಂಪೂರ್ಣವಾಗಿ ತಬ್ಬಿಬ್ಬಾಗಿದ್ದಾರೆ!',
+            'ಪ್ರೇಕ್ಷಕರಿಂದ ಜೋರಾದ ಶಿಳ್ಳೆ ಮತ್ತು ಚಪ್ಪಾಳೆ!',
+            'ಅತ್ಯಂತ ವೇಗದ ವಿಕೆಟ್ ಪತನ!'
+          ];
+          break;
+        case 'LBW':
+          openers = ['ಎಲ್‌ಬಿಡಬ್ಲ್ಯೂ ಔಟ್! ಅಂಪೈರ್ ಬೆರಳು ಮೇಲಕ್ಕೆ!', 'ಪ್ಲಂಬ್ ಇನ್ ಫ್ರಂಟ್! ಎಲ್‌ಬಿಡಬ್ಲ್ಯೂ!', 'ಜೋರಾದ ಅಪೀಲ್ ಮತ್ತು ಔಟ್!', 'ವಿಕೆಟ್ ಮುಂದೆ ಸಿಕ್ಕಿಬಿದ್ದರು! ಎಲ್‌ಬಿಡಬ್ಲ್ಯೂ!', 'ಕ್ಲಿಯರ್ ಎಲ್‌ಬಿಡಬ್ಲ್ಯೂ ವಿಕೆಟ್!'];
+          cores = [
+            'ಚೆಂಡು ನೇರವಾಗಿ ವಿಕೆಟ್ ಕಡೆಗೆ ನುಗ್ಗುತ್ತಿತ್ತು, ಬ್ಯಾಟ್ ಮಿಸ್ ಆಗಿ ಪ್ಯಾಡ್‌ಗೆ ಬಡಿದಿದೆ!',
+            'ಯಾವುದೇ ಸಂಶಯವಿಲ್ಲದೆ ಅಂಪೈರ್ ತಮ್ಮ ಬೆರಳನ್ನು ಎತ್ತಿದ್ದಾರೆ, ಸ್ಪಷ್ಟವಾದ ಎಲ್‌ಬಿಡಬ್ಲ್ಯೂ!',
+            'ಒಳಗೆ ಸ್ವಿಂಗ್ ಆದ ಚೆಂಡನ್ನು ಅಂದಾಜಿಸಲು ಬ್ಯಾಟ್ಸ್‌ಮನ್ ವಿಫಲ, ನೇರವಾಗಿ ಮಿಡಲ್ ಸ್ಟಂಪ್ ಲೈನ್!',
+            'ಪ್ಯಾಡ್‌ಗೆ ಚೆಂಡು ಬಡಿದ ತಕ್ಷಣ ಬೌಲರ್ ಗರ್ಜಿಸಿದರು ಮತ್ತು ಅಂಪೈರ್ ಔಟ್ ತೀರ್ಪು ನೀಡಿದರು!',
+            'ಮೂರು ಸ್ಟಂಪ್ಸ್ ಮುಂದೆ ನೇರವಾಗಿ ಸಿಕ್ಕಿಬಿದ್ದಿದ್ದಾರೆ, ಬಚಾವಾಗಲು ಸಾಧ್ಯವೇ ಇಲ್ಲ!'
+          ];
+          closers = [
+            'ನಿಖರವಾದ ಬೌಲಿಂಗ್‌ಗೆ ಸಿಕ್ಕ ಅತ್ಯುತ್ತಮ ಪ್ರತಿಫಲ!',
+            'ಬೌಲಿಂಗ್ ತಂಡದ ಉತ್ಸಾಹ ಮುಗಿಲು ಮುಟ್ಟಿದೆ!',
+            'ಮತ್ತೊಂದು ಪ್ರಮುಖ ವಿಕೆಟ್ ಉರುಳಿದೆ!',
+            'ಅತ್ಯುತ್ತಮ ಲೈನ್ ಮತ್ತು ಲೆಂತ್ ಕಮಾಲ್!',
+            'ಪಂದ್ಯ ಈಗ ಬೌಲರ್‌ಗಳ ಹಿಡಿತದಲ್ಲಿದೆ!'
+          ];
+          break;
+        case 'NO_BALL':
+          openers = ['ನೋ ಬಾಲ್! ಸೈರನ್ ಮೊಳಗಿದೆ!', 'ಓವರ್‌ಸ್ಟೆಪ್ ನೋ ಬಾಲ್!', 'ಅಂಪೈರ್ ನೋ ಬಾಲ್ ಸಂಜ್ಞೆ!', 'ನೋ ಬಾಲ್ ಮತ್ತು ಫ್ರೀ ಹಿಟ್ ಅವಕಾಶ!', 'ಬೌಲರ್ ಗೆರೆ ದಾಟಿದ್ದಾರೆ! ನೋ ಬಾಲ್!'];
+          cores = [
+            'ಬೌಲರ್ ತಮ್ಮ ಮುಂಗಾಲನ್ನು ಕ್ರೀಸ್ ಗೆರೆಯ ಆಚೆ ಇಟ್ಟಿದ್ದಾರೆ, ಬ್ಯಾಟಿಂಗ್ ತಂಡಕ್ಕೆ ಬೋನಸ್ ರನ್!',
+            'ಇದು ದುಬಾರಿ ತಪ್ಪು! ಒಂದು ಹೆಚ್ಚುವರಿ ರನ್ ಜೊತೆಗೆ ಮುಂದಿನ ಎಸೆತ ಫ್ರೀ ಹಿಟ್ ಆಗಿರುತ್ತದೆ!',
+            'ಅಂಪೈರ್ ಕೈ ಚಾಚಿ ನೋ ಬಾಲ್ ಘೋಷಿಸಿದ್ದಾರೆ, ಬ್ಯಾಟ್ಸ್‌ಮನ್‌ಗೆ ಈಗ ಮುಕ್ತವಾಗಿ ಹೊಡೆಯುವ ಲೈಸೆನ್ಸ್!',
+            'ವೇಗವಾಗಿ ಎಸೆಯುವ ಭರದಲ್ಲಿ ಲೈನ್ ದಾಟಿದ್ದಾರೆ, ಈಗ ಫ್ರೀ ಹಿಟ್ ಎದುರಿಸಬೇಕಿದೆ!',
+            'ನೋ ಬಾಲ್ ಹೂಟರ್ ಮೊಳಗಿದೆ, ಬ್ಯಾಟಿಂಗ್ ತಂಡದ ಪಾಳೆಯದಲ್ಲಿ ಖುಷಿಯೋ ಖುಷಿ!'
+          ];
+          closers = [
+            'ಮುಂದಿನ ಎಸೆತದಲ್ಲಿ ದೊಡ್ಡ ಸಿಕ್ಸರ್ ನಿರೀಕ್ಷೆಯಲ್ಲಿದ್ದಾರೆ ಪ್ರೇಕ್ಷಕರು!',
+            'ಫ್ರೀ ಹಿಟ್ ಎಸೆತದಲ್ಲಿ ಏನಾಗಲಿದೆ ಎಂಬುದೇ ಕುತೂಹಲ!',
+            'ಬ್ಯಾಟ್ಸ್‌ಮನ್ ಈಗ ಭಯವಿಲ್ಲದೆ ಬ್ಯಾಟ್ ಬೀಸಬಹುದು!',
+            'ಬೌಲರ್ ಮೇಲೆ ಈಗ ದುಪ್ಪಟ್ಟು ಒತ್ತಡ!',
+            'ಸ್ಟೇಡಿಯಂನಲ್ಲಿ ಫ್ರೀ ಹಿಟ್ ಸದ್ದು ಜೋರಾಗಿದೆ!'
+          ];
+          break;
+        case 'WIDE':
+          openers = ['ವೈಡ್ ಬಾಲ್!', 'ಅಂಪೈರ್ ಎರಡೂ ಕೈ ಚಾಚಿದ್ದಾರೆ! ವೈಡ್!', 'ದಾರಿ ತಪ್ಪಿದ ಎಸೆತ! ವೈಡ್ ಬಾಲ್!', 'ವೈಡ್! ಒಂದು ಹೆಚ್ಚುವರಿ ರನ್!', 'ಲೆಗ್ ಸೈಡ್ ಆಚೆ ಚೆಂಡು! ವೈಡ್!'];
+          cores = [
+            'ಬ್ಯಾಟ್ಸ್‌ಮನ್‌ನಿಂದ ಬಹಳ ದೂರದಲ್ಲಿ ಚೆಂಡು ಸಾಗಿದೆ, ಅಂಪೈರ್ ವೈಡ್ ಘೋಷಿಸಿದ್ದಾರೆ.',
+            'ಲೈನ್ ನಿಯಂತ್ರಣ ತಪ್ಪಿದ ಎಸೆತ, ಬ್ಯಾಟಿಂಗ್ ತಂಡದ ಖಾತೆಗೆ ಉಚಿತವಾಗಿ ಒಂದು ರನ್ ಸೇರ್ಪಡೆ.',
+            'ವಿಕೆಟ್ ಕೀಪರ್ ಡೈವ್ ಮಾಡಿ ಚೆಂಡನ್ನು ತಡೆದಿದ್ದಾರೆ, ಆದರೆ ವೈಡ್ ರನ್ ತಪ್ಪಿಸಲು ಸಾಧ್ಯವಿಲ್ಲ.',
+            'ಬೌಲರ್ ಇಲ್ಲಿ ತಮ್ಮ ಲೈನ್ ಸರಿಪಡಿಸಿಕೊಳ್ಳಬೇಕಿದೆ, ಅನಗತ್ಯವಾದ ಹೆಚ್ಚುವರಿ ರನ್.',
+            'ಟ್ರ್ಯಾಮ್‌ಲೈನ್ ಆಚೆ ಹೋದ ಚೆಂಡು, ಅಂಪೈರ್ ತಕ್ಷಣವೇ ವೈಡ್ ಸಂಜ್ಞೆ ನೀಡಿದ್ದಾರೆ.'
+          ];
+          closers = [
+            'ಈ ಎಸೆತವನ್ನು ಮತ್ತೆ ಬೌಲ್ ಮಾಡಬೇಕಿದೆ!',
+            'ಪ್ರತಿಯೊಂದು ಹೆಚ್ಚುವರಿ ರನ್ ಕೂಡ ಪಂದ್ಯದಲ್ಲಿ ನಿರ್ಣಾಯಕ!',
+            'ಬ್ಯಾಟಿಂಗ್ ತಂಡಕ್ಕೆ ಶ್ರಮವಿಲ್ಲದೆ ಸಿಕ್ಕ ಒಂದು ರನ್!',
+            'ಬೌಲರ್ ಮತ್ತೆ ಏಕಾಗ್ರತೆ ಕಾಯ್ದುಕೊಳ್ಳಬೇಕಿದೆ!',
+            'ಸ್ಕೋರ್ ಬೋರ್ಡ್‌ಗೆ ಮತ್ತೊಂದು ರನ್ ಸೇರ್ಪಡೆ!'
+          ];
+          break;
+        case 'FREE_HIT':
+          openers = ['ಫ್ರೀ ಹಿಟ್ ಎಸೆತ!', 'ಇದು ಫ್ರೀ ಹಿಟ್ ಬಾಲ್!', 'ಬ್ಯಾಟ್ಸ್‌ಮನ್‌ಗೆ ಸುವರ್ಣಾವಕಾಶ! ಫ್ರೀ ಹಿಟ್!', 'ಅಲರ್ಟ್! ಫ್ರೀ ಹಿಟ್ ಎಸೆತ!', 'ಸಿಕ್ಸರ್ ಬಾರಿಸಲು ಮುಕ್ತ ಅವಕಾಶ! ಫ್ರೀ ಹಿಟ್!'];
+          cores = [
+            'ಈ ಎಸೆತದಲ್ಲಿ ಬ್ಯಾಟ್ಸ್‌ಮನ್ ಬೌಲ್ಡ್ ಅಥವಾ ಕ್ಯಾಚ್ ಆಗುವ ಭಯವೇ ಇಲ್ಲ, ಜೋರಾಗಿ ಬ್ಯಾಟ್ ಬೀಸಲು ಸಿದ್ಧರಾಗಿದ್ದಾರೆ!',
+            'ಫೀಲ್ಡರ್‌ಗಳೆಲ್ಲಾ ಬೌಂಡರಿ ಗೆರೆಯ ಬಳಿ ನಿಂತಿದ್ದಾರೆ, ಇಡೀ ಸ್ಟೇಡಿಯಂ ದೊಡ್ಡ ಹೊಡೆತಕ್ಕಾಗಿ ಕಾಯುತ್ತಿದೆ!',
+            'ಬೌಲರ್ ಯಾರ್ಕರ್ ಹಾಕುತ್ತಾರಾ ಅಥವಾ ಬ್ಯಾಟ್ಸ್‌ಮನ್ ಸಿಕ್ಸರ್ ಸಿಡಿಸುತ್ತಾರಾ ನೋಡೋಣ!',
+            'ಯಾವುದೇ ಅಪಾಯವಿಲ್ಲದ ಎಸೆತ, ಚೆಂಡನ್ನು ಸ್ಟೇಡಿಯಂ ಆಚೆ ಕಳುಹಿಸಲು ಬ್ಯಾಟ್ಸ್‌ಮನ್ ಸಜ್ಜಾಗಿದ್ದಾರೆ!',
+            'ಫ್ರೀ ಹಿಟ್ ಎಸೆತಕ್ಕಾಗಿ ಪ್ರೇಕ್ಷಕರೆಲ್ಲಾ ಉಸಿರು ಬಿಗಿಹಿಡಿದು ಕಾಯುತ್ತಿದ್ದಾರೆ!'
+          ];
+          closers = [
+            'ನೋಡೋಣ ಈ ಎಸೆತದಲ್ಲಿ ಎಷ್ಟು ರನ್ ಬರುತ್ತದೆ ಎಂದು!',
+            'ಮೈದಾನದಲ್ಲಿ ವಿದ್ಯುತ್ ಸಂಚಾರವಾದಂತೆ ಉತ್ಸಾಹವಿದೆ!',
+            'ಇದು ಪಂದ್ಯದ ಅತ್ಯಂತ ರೋಚಕ ಕ್ಷಣ!',
+            'ಬ್ಯಾಟ್ ಮತ್ತು ಚೆಂಡಿನ ನಡುವೆ ನೇರ ಯುದ್ಧ!',
+            'ಪ್ರೇಕ್ಷಕರ ಗ್ಯಾಲರಿಯಲ್ಲಿ ಭಾರೀ ಸದ್ದು!'
+          ];
+          break;
+        case 'NOT_OUT':
+          openers = ['ನಾಟ್ ಔಟ್! ಬ್ಯಾಟ್ಸ್‌ಮನ್ ಸೇಫ್!', 'ಅಂಪೈರ್ ತೀರ್ಪು: ನಾಟ್ ಔಟ್!', 'ಬಚಾವ್ ಆಗಿದ್ದಾರೆ! ನಾಟ್ ಔಟ್!', 'ಸುರಕ್ಷಿತವಾಗಿ ಕ್ರೀಸ್ ಒಳಗಿದ್ದಾರೆ! ನಾಟ್ ಔಟ್!', 'ಜೋರಾದ ಅಪೀಲ್ ಆದರೆ ನಾಟ್ ಔಟ್!'];
+          cores = [
+            'ಬೌಲಿಂಗ್ ತಂಡ ಜೋರಾಗಿ ಮನವಿ ಮಾಡಿತು, ಆದರೆ ಅಂಪೈರ್ ತಲೆ ಅಲ್ಲಾಡಿಸಿ ನಾಟ್ ಔಟ್ ಎಂದಿದ್ದಾರೆ!',
+            'ಕೊನೆಯ ಕ್ಷಣದಲ್ಲಿ ಬ್ಯಾಟ್ ಕ್ರೀಸ್ ಒಳಗೆ ತಲುಪಿದೆ, ಬ್ಯಾಟ್ಸ್‌ಮನ್ ಸಂಪೂರ್ಣವಾಗಿ ಸುರಕ್ಷಿತ!',
+            'ಚೆಂಡು ವಿಕೆಟ್ ಮಿಸ್ ಆಗುತ್ತಿದೆ ಎಂದು ಅಂಪೈರ್ ಸ್ಪಷ್ಟವಾಗಿ ತೀರ್ಮಾನಿಸಿದ್ದಾರೆ!',
+            'ಅದೃಷ್ಟ ಬ್ಯಾಟ್ಸ್‌ಮನ್ ಪರವಾಗಿದೆ, ಕೂದಲೆಳೆಯಂತರದಲ್ಲಿ ಔಟ್ ಆಗುವುದರಿಂದ ಪಾರಾಗಿದ್ದಾರೆ!',
+            'ಒಳ್ಳೆಯ ತೀರ್ಪು! ಬ್ಯಾಟ್ಸ್‌ಮನ್ ತಮ್ಮ ಆಟವನ್ನು ಮುಂದುವರಿಸಲಿದ್ದಾರೆ!'
+          ];
+          closers = [
+            'ಬ್ಯಾಟಿಂಗ್ ಪಾಳೆಯದಲ್ಲಿ ನಿಟ್ಟುಸಿರು!',
+            'ಬೌಲರ್ ಸ್ವಲ್ಪದರಲ್ಲೇ ವಿಕೆಟ್ ಕಳೆದುಕೊಂಡರು!',
+            'ಪಂದ್ಯದ ರೋಚಕತೆ ಮತ್ತಷ್ಟು ಹೆಚ್ಚಾಗಿದೆ!',
+            'ಜೀವದಾನ ಸಿಕ್ಕಿದೆ, ಇನ್ನು ಮುಂದೆ ಹೇಗೆ ಆಡುತ್ತಾರೆ ನೋಡೋಣ!',
+            'ಪ್ರೇಕ್ಷಕರಿಂದ ಜೋರಾದ ಹರ್ಷೋದ್ಗಾರ!'
+          ];
+          break;
+        default: // OVER_END
+          openers = ['ಓವರ್ ಮುಕ್ತಾಯ!', 'ಆರು ಎಸೆತಗಳ ಓವರ್ ಪೂರ್ಣಗೊಂಡಿದೆ!', 'ಎಂಡ್ ಆಫ್ ದಿ ಓವರ್!', 'ಮತ್ತೊಂದು ರೋಚಕ ಓವರ್ ಮುಕ್ತಾಯ!', 'ಅಂಪೈರ್ ಓವರ್ ಕಂಪ್ಲೀಟ್ ಸಂಜ್ಞೆ!'];
+          cores = [
+            'ಆಟಗಾರರು ಈಗ ತುದಿಗಳನ್ನು ಬದಲಾಯಿಸುತ್ತಿದ್ದಾರೆ, ಹೊಸ ಬೌಲರ್ ದಾಳಿಗೆ ಸಜ್ಜಾಗುತ್ತಿದ್ದಾರೆ.',
+            'ಈ ಓವರ್‌ನಲ್ಲಿ ಸಾಕಷ್ಟು ಏರಿಳಿತಗಳನ್ನು ಕಂಡಿದ್ದೇವೆ, ಪಂದ್ಯ ಕುತೂಹಲಕಾರಿಯಾಗಿ ಸಾಗುತ್ತಿದೆ.',
+            'ನಾಯಕ ಫೀಲ್ಡಿಂಗ್ ಬದಲಾವಣೆಗಳ ಬಗ್ಗೆ ಚರ್ಚಿಸುತ್ತಿದ್ದಾರೆ, ಮುಂದಿನ ಓವರ್ ಬಹಳ ಮುಖ್ಯ.',
+            'ಒಳ್ಳೆಯ ಓವರ್ ಮುಕ್ತಾಯವಾಗಿದೆ, ಎರಡೂ ತಂಡಗಳು ಸಮಬಲದ ಹೋರಾಟ ನಡೆಸುತ್ತಿವೆ.',
+            'ಮುಂದಿನ ಓವರ್‌ನಲ್ಲಿ ರನ್ ವೇಗ ಹೆಚ್ಚಿಸಲು ಬ್ಯಾಟ್ಸ್‌ಮನ್‌ಗಳು ಯೋಜನೆ ರೂಪಿಸುತ್ತಿದ್ದಾರೆ.'
+          ];
+          closers = [
+            'ನೋಡೋಣ ಮುಂದಿನ ಓವರ್ ಯಾರ ಪಾಲಾಗಲಿದೆ ಎಂದು!',
+            'ಸ್ಟೇಡಿಯಂನಲ್ಲಿ ಕ್ರಿಕೆಟ್ ಜ್ವರ ಏರುತ್ತಲೇ ಇದೆ!',
+            'ಪ್ರತಿಯೊಂದು ಓವರ್ ಕೂಡ ಫೈನಲ್‌ನಂತೆ ಭಾಸವಾಗುತ್ತಿದೆ!',
+            'ನೇರ ವೀಕ್ಷಕ ವಿವರಣೆ ಮುಂದುವರಿಯುತ್ತದೆ!',
+            'ಅದ್ಭುತವಾದ ಕ್ರಿಕೆಟ್ ಕಾದಾಟಕ್ಕೆ ಸಾಕ್ಷಿಯಾಗಿದ್ದೇವೆ!'
+          ];
+          break;
+      }
+    } else if (_commLanguage == 'HINDI') {
+      switch (key) {
+        case 'DOT':
+          openers = ['डॉट बॉल!', 'ओहो, कोई रन नहीं!', 'कड़क गेंदबाज़ी!', 'शानदार डिफेंस!', 'सटीक लाइन और लेंथ!'];
+          cores = [
+            'गेंद सीधा फील्डर के हाथों में, बल्लेबाज़ को रन लेने का कोई मौका नहीं मिला।',
+            'बल्लेबाज़ ने फ्रंट फुट पर आकर गेंद को सम्मान दिया, डॉट बॉल के साथ दबाव बढ़ता हुआ।',
+            'तेज़ तर्रार फील्डिंग घेरे के अंदर, एक भी रन चुराना यहाँ नामुमकिन।',
+            'गेंदबाज़ ने पूरी तरह से बांध कर रखा है बल्लेबाज़ को इस गेंद पर।',
+            'शानदार टप्पा, बल्लेबाज़ सिर्फ डिफेंड करने पर मजबूर!'
+          ];
+          closers = [
+            'मैदान में दबाव साफ नज़र आ रहा है!',
+            'गेंदबाज़ी टीम का शानदार नियंत्रण!',
+            'दर्शकों की तालियों से गूंजता स्टेडियम!',
+            'मुकाबला बेहद रोमांचक मोड़ पर!',
+            'चैंपियन स्तर की गेंदबाज़ी!'
+          ];
+          break;
+        case 'RUN_1':
+          openers = ['एक रन!', 'तेज़ सिंगल!', 'स्मार्ट क्रिकेट!', 'फुर्तीला एक रन!', 'क्विक सिंगल!'];
+          cores = [
+            'हल्के हाथों से गैप में धकेला और पलक झपकते ही एक रन चुरा लिया!',
+            'फील्डर जब तक गेंद पर झपटते, दोनों बल्लेबाज़ों ने छोर बदल लिया।',
+            'स्ट्राइक रोटेट करने का बेहतरीन तरीका, आसानी से एक रन पूरा किया।',
+            'विकेटों के बीच चीते जैसी दौड़ और खाता चलता हुआ!',
+            'सूझबूझ भरी बल्लेबाज़ी, बिना किसी जोखिम के एक रन बटोरा।'
+          ];
+          closers = [
+            'स्कोरबोर्ड लगातार आगे बढ़ता हुआ!',
+            'यही है स्मार्ट क्रिकेट की पहचान!',
+            'गेंदबाज़ की लय बिगाड़ने की अच्छी रणनीति!',
+            'बेहतरीन तालमेल दोनों बल्लेबाज़ों के बीच!',
+            'हर एक रन इस मुकाबले में सोने के बराबर!'
+          ];
+          break;
+        case 'RUN_2':
+          openers = ['दो रन!', 'शानदार डबल!', 'विकेटों के बीच तूफानी दौड़!', 'बेहतरीन दो रन!', 'सुपर रनिंग!'];
+          cores = [
+            'गैप में गेंद को पिरोया और पहला रन तेज़ दौड़कर दूसरे के लिए तुरंत मुड़े!',
+            'फील्डर के थ्रो से पहले ही डाइव लगाकर क्रीज़ के अंदर, शानदार दो रन!',
+            'जहाँ एक रन था वहाँ अपनी फिटनेस के दम पर दो रन चुरा लिए!',
+            'डीप फील्डर को दौड़ाया और आराम से दो रन पूरे कर लिए।',
+            'बल्लेबाज़ों की ज़बरदस्त रफ़्तार, गेंदबाज़ी टीम पर सीधा दबाव!'
+          ];
+          closers = [
+            'दर्शकों में जोश दोगुना हो गया है!',
+            'कमाल की फिटनेस और ज़बरदस्त जज़्बा!',
+            'फील्डरों के हाथों से रन छीन लिए!',
+            'मैदान में ज़बरदस्त ऊर्जा!',
+            'वाह, क्या दौड़ लगाई है!'
+          ];
+          break;
+        case 'RUN_3':
+          openers = ['तीन रन!', 'शानदार ट्रिपल!', 'रॉकेट जैसी दौड़ और तीन रन!', 'बेहतरीन तीन रन!', 'गज़ब की रनिंग!'];
+          cores = [
+            'बाउंड्री रोप के ठीक पहले फील्डर ने डाइव लगाकर चौका बचाया, लेकिन बल्लेबाज़ों ने तीन रन दौड़ लिए!',
+            'बड़े मैदान का पूरा फायदा उठाया और देखते ही देखते तीन रन पूरे किए!',
+            'शानदार टाइमिंग, गेंद आउटफील्ड में धीमी पड़ी और बल्लेबाज़ों ने तीन रन बटोर लिए।',
+            'दोनों छोर पर तेज़ रफ़्तार दौड़, एक ही गेंद पर तीन बहुमूल्य रन!',
+            'रिले थ्रो आने तक तीसरा रन भी आसानी से पूरा कर लिया!'
+          ];
+          closers = [
+            'चौके से कम नहीं हैं ये तीन रन!',
+            'पूरा स्टेडियम तालियों से गूंज उठा है!',
+            'बल्लेबाज़ी टीम के लिए शानदार बोनस!',
+            'गज़ब का स्टैमिना दिखाया यहाँ पर!',
+            'पैसा वसूल क्रिकेट एक्शन!'
+          ];
+          break;
+        case 'FOUR':
+          openers = ['कड़क चौका! चार रन!', 'शानदार शॉट और बाउंड्री!', 'गोली की रफ़्तार से चौका!', 'लाजवाब कवर ड्राइव! फोर!', 'दनादन चौका!'];
+          cores = [
+            'बल्ले के बीचो-बीच लगी गेंद और घास को चीरती हुई बाउंड्री लाइन के पार चार रनों के लिए!',
+            'फील्डर ने पूरी डाइव लगाई लेकिन गेंद किसी के हाथ नहीं आई, सनसनाता हुआ चौका!',
+            'दो फील्डरों के बीच से सुई की तरह गेंद को निकाला और चार रन बटोरे!',
+            'नज़ाकत और ताक़त का अनोखा संगम, गेंद सीधा सीमा रेखा के बाहर!',
+            'गेंदबाज़ सिर्फ मुड़कर देखते रह गए और गेंद बाउंड्री से जा टकराई!'
+          ];
+          closers = [
+            'क्लास बल्लेबाज़ी का शानदार नमूना!',
+            'दर्शक अपनी सीटों से उछल पड़े हैं!',
+            'आँखों को सुकून देने वाला बेहतरीन शॉट!',
+            'चैंपियन अंदाज़ में जड़ा गया चौका!',
+            'गेंदबाज़ पर पूरी तरह से दबदबा!'
+          ];
+          break;
+        case 'SIX':
+          openers = ['इनक्रेडिबल सिक्स!', 'गगनचुंबी छक्का! छह रन!', 'धमाकेदार मैक्सिमम! सिक्सर!', 'स्टेडियम के बाहर गेंद! छक्का!', 'बूम! मॉन्स्टर सिक्स!'];
+          cores = [
+            'बल्ले से निकलते ही पता चल गया था कि ये गेंद सीधा दर्शकों के बीच जाकर गिरेगी!',
+            'फ्रंट लेग हटाया और गेंद को आसमान की सैर करा दी, विशाल छक्का!',
+            'क्या आवाज़ आई है बल्ले से! गेंद बाउंड्री के बहुत दूर जाकर गिरी है!',
+            'फील्डर सिर्फ दर्शक बनकर आसमान को देखते रह गए, छह रनों का तूफ़ान!',
+            'ताक़त और टाइमिंग का ज़बरदस्त धमाका, गेंद दूसरे टियर में जाकर गिरी है!'
+          ];
+          closers = [
+            'पूरे स्टेडियम में जश्न का माहौल है!',
+            'ये छक्का तो लंबे समय तक याद रखा जाएगा!',
+            'दर्शकों का शोर सातवें आसमान पर!',
+            'गेंदबाज़ी आक्रमण के परखच्चे उड़ा दिए!',
+            'अविश्वसनीय पावर हिटिंग!'
+          ];
+          break;
+        case 'BOWLED':
+          openers = ['बैटरी बोल्ड! क्लीन बोल्ड!', 'डंडे बिखर गए! बोल्ड!', 'मिडिल स्टंप हवा में! क्लीन बोल्ड!', 'सटीक यॉर्कर और बोल्ड!', 'चारों खाने चित! बोल्ड!'];
+          cores = [
+            'गोली की रफ़्तार से आई गेंद और स्टंप्स को जड़ से उखाड़ कर फेंक दिया!',
+            'बल्ले और पैड के बीच से निकलती हुई गेंद सीधा लकड़ियों से जा टकराई, गिल्लियां हवा में!',
+            'बल्लेबाज़ के पास इस तूफानी गेंद का कोई जवाब नहीं था, क्लीन बोल्ड!',
+            'ऑफ स्टंप गुलाटी खाती हुई विकेटकीपर के पास जा गिरी है, क्या गेंद है!',
+            'बल्लेबाज़ बल्ला नीचे लाते उससे पहले ही काम तमाम हो चुका था!'
+          ];
+          closers = [
+            'गेंदबाज़ की दहाड़ से गूंज उठा है मैदान!',
+            'पूरी टीम खुशी से झूम उठी है!',
+            'मैच का रुख पलटने वाली सबसे बड़ी विकेट!',
+            'इसे कहते हैं आग उगलती हुई गेंदबाज़ी!',
+            'बल्लेबाज़ मायूस होकर पवेलियन लौटते हुए!'
+          ];
+          break;
+        case 'CAUGHT':
+          openers = ['कैच आउट! हवा में गेंद और आउट!', 'शानदार कैच! विकेट गिरा!', 'सुपर डाइविंग कैच! आउट!', 'सीधा फील्डर के हाथों में! कैच आउट!', 'बड़ा झटका! कैच आउट!'];
+          cores = [
+            'बड़ा शॉट खेलने की कोशिश लेकिन टाइमिंग सही नहीं और फील्डर ने कोई गलती नहीं की!',
+            'हवा में उड़ते हुए फील्डर ने लपका इस टूर्नामेंट का सबसे बेहतरीन कैच!',
+            'ऊंची गई गेंद के नीचे पूरी तरह से शांत रहे फील्डर और सुरक्षित कैच पूरा किया!',
+            'बाउंड्री लाइन के बिल्कुल करीब संतुलन बनाए रखा और कमाल का कैच पकड़ा!',
+            'बल्ले का बाहरी किनारा और पलक झपकते ही कैच लपक लिया गया!'
+          ];
+          closers = [
+            'फील्डिंग टीम का जोश देखते ही बनता है!',
+            'कैच पकड़ो और मैच जीतो, बिल्कुल सही साबित हुआ!',
+            'गेंदबाज़ को मिली उनकी मेहनत की विकेट!',
+            'स्टेडियम में ज़बरदस्त रोमांच!',
+            'बहुत ही बड़ी सफलता हाथ लगी है!'
+          ];
+          break;
+        case 'RUN_OUT':
+          openers = ['डायरेक्ट हिट! रन आउट!', 'रन आउट! सीधा निशाने पर थ्रो!', 'बिजली जैसा थ्रो और रन आउट!', 'क्रीज़ से बाहर! रन आउट!', 'ज़बरदस्त रन आउट!'];
+          cores = [
+            'रन लेने में भारी गड़बड़ी और फील्डर ने चीते की तरह झपटकर सीधा स्टंप्स पर निशाना साधा!',
+            'बल्ला लाइन के पार पहुंचने से पहले ही गिल्लियां हवा में उड़ चुकी थीं, साफ रन आउट!',
+            'जोखिम भरा सिंगल चुराने गए और अपना कीमती विकेट गंवा बैठे!',
+            'रॉकेट की रफ़्तार से आया थ्रो और विकेटकीपर ने तुरंत बेल्स उड़ा दीं!',
+            'फील्डर की चुस्ती के आगे बल्लेबाज़ की रफ़्तार कम पड़ गई!'
+          ];
+          closers = [
+            'विश्वस्तरीय फील्डिंग का शानदार प्रदर्शन!',
+            'एक पल की चूक और पूरी पारी समाप्त!',
+            'मैदान में फील्डिंग टीम की ज़बरदस्त दहाड़!',
+            'मुकाबले में आया अचानक नया मोड़!',
+            'क्या सटीक निशाना लगाया है!'
+          ];
+          break;
+        case 'STUMPED':
+          openers = ['स्टंप्ड आउट! बिजली की रफ़्तार से स्टंपिंग!', 'विकेटकीपर का जादू! स्टंप्ड!', 'पलक झपकते ही स्टंपिंग आउट!', 'क्रीज़ से बाहर निकले और स्टंप्ड!', 'सुपर फास्ट स्टंपिंग!'];
+          cores = [
+            'गेंद की फ्लाइट में पूरी तरह चकमा खा गए और विकेटकीपर ने सेकंड के दसवें हिस्से में गिल्लियां बिखेर दीं!',
+            'आगे बढ़कर बड़ा शॉट खेलना चाहते थे लेकिन पैर वापस आने से पहले ही काम हो गया!',
+            'विकेट के पीछे क्या तेज़ हाथ चले हैं, बल्लेबाज़ को संभलने का मौका तक नहीं मिला!',
+            'गेंदबाज़ की चतुराई और कीपर की फुर्ती ने मिलकर दिलाई शानदार विकेट!',
+            'हवा में ही गेंद को कलेक्ट किया और तुरंत स्टंप्स उड़ा दिए!'
+          ];
+          closers = [
+            'विकेटकीपर की फुर्ती को सलाम!',
+            'स्पिन और कीपिंग की जोड़ी का कमाल!',
+            'दर्शकों की सीटियों से गूंज उठा मैदान!',
+            'बल्लेबाज़ खुद पर यकीन नहीं कर पा रहे हैं!',
+            'बेहद चालाक और कामयाब गेंदबाज़ी!'
+          ];
+          break;
+        case 'LBW':
+          openers = ['एलबीडब्ल्यू आउट! अंपायर की उंगली हवा में!', 'प्लंब इन फ्रंट! एलबीडब्ल्यू!', 'ज़ोरदार अपील और आउट!', 'सीधा स्टंप्स के सामने पकड़े गए! एलबीडब्ल्यू!', 'क्लियर एलबीडब्ल्यू विकेट!'];
+          cores = [
+            'गेंद सीधा मिडिल और लेग स्टंप की लाइन में पैड से टकराई, अंपायर को कोई शक नहीं!',
+            'अंदर आती हुई गेंद को पढ़ने में चूक गए और सीधा विकेट के सामने पाए गए!',
+            'गेंदबाज़ की ज़ोरदार अपील और अंपायर ने तुरंत उंगली खड़ी कर दी!',
+            'तीनों डंडों के बिल्कुल सामने पैड आया, बचने का कोई रास्ता नहीं था!',
+            'सटीक यॉर्कर लेंथ जो सीधा जूते और पैड पर लगी, शानदार एलबीडब्ल्यू!'
+          ];
+          closers = [
+            'सटीक गेंदबाज़ी का मिला पूरा इनाम!',
+            'गेंदबाज़ी खेमे में खुशी की लहर!',
+            'एक और बड़ा विकेट मैदान से बाहर!',
+            'दबाव अब पूरी तरह से बल्लेबाज़ी टीम पर!',
+            'लाजवाब लाइन और लेंथ का जादू!'
+          ];
+          break;
+        case 'NO_BALL':
+          openers = ['नो बॉल! सायरन बज उठा है!', 'ओवरस्टेपिंग नो बॉल!', 'अंपायर का इशारा नो बॉल!', 'नो बॉल और अगली गेंद फ्री हिट!', 'क्रीज़ से बाहर पैर! नो बॉल!'];
+          cores = [
+            'गेंदबाज़ का अगला पैर पॉपिंग क्रीज़ से बाहर चला गया, एक अतिरिक्त रन और फ्री हिट का तोहफा!',
+            'रफ़्तार के चक्कर में लाइन भूल गए गेंदबाज़, अब अगली गेंद पर बल्लेबाज़ को मिलेगी पूरी आज़ादी!',
+            'नो बॉल का हूटर बजते ही दर्शकों में भारी उत्साह, क्योंकि अब आ रही है फ्री हिट!',
+            'गेंदबाज़ी टीम के लिए यह एक महंगी भूल साबित हो सकती है!',
+            'अंपायर ने हाथ फैलाकर नो बॉल दिया और अब फ्री हिट का सायरन गूंज रहा है!'
+          ];
+          closers = [
+            'अगली गेंद पर बड़े छक्के की पूरी उम्मीद!',
+            'बल्लेबाज़ के चेहरे पर मुस्कान आ गई है!',
+            'फ्री हिट पर क्या होगा, सबकी निगाहें टिकी हुई हैं!',
+            'स्टेडियम में शोर दोगुना हो चुका है!',
+            'अब गेंदबाज़ को बचाना होगा अपना ओवर!'
+          ];
+          break;
+        case 'WIDE':
+          openers = ['वाइड बॉल!', 'अंपायर के दोनों हाथ हवा में! वाइड!', 'दिशा भटकी हुई गेंद! वाइड बॉल!', 'वाइड! एक अतिरिक्त रन!', 'लेग साइड के बाहर! वाइड बॉल!'];
+          cores = [
+            'बल्लेबाज़ की पहुंच से काफी दूर निकली गेंद, अंपायर ने बिना देरी किए वाइड का इशारा किया।',
+            'लाइन और लेंथ से भटके गेंदबाज़, मुफ्त का एक रन बल्लेबाज़ी टीम के खाते में।',
+            'विकेटकीपर ने शानदार छलांग लगाकर गेंद रोकी, लेकिन वाइड का रन नहीं बचा सके।',
+            'यहाँ गेंदबाज़ को अपनी दिशा सुधारनी होगी, यह गेंद दोबारा डालनी पड़ेगी।',
+            'ट्रैमलाइन के बाहर जाती हुई गेंद और अंपायर की कसरत!'
+          ];
+          closers = [
+            'हर अतिरिक्त रन अंत में भारी पड़ सकता है!',
+            'स्कोरबोर्ड में एक और रन का इज़ाफा!',
+            'एक गेंद और बढ़ गई इस ओवर में!',
+            'बल्लेबाज़ी टीम के लिए मुफ्त का बोनस!',
+            'गेंदबाज़ को वापस अपनी लय पकड़नी होगी!'
+          ];
+          break;
+        case 'FREE_HIT':
+          openers = ['फ्री हिट गेंद!', 'अब बारी है फ्री हिट की!', 'बल्लेबाज़ के पास सुनहरा मौका! फ्री हिट!', 'अलर्ट! फ्री हिट डिलीवरी!', 'खुलकर बल्ला घुमाने का समय! फ्री हिट!'];
+          cores = [
+            'इस गेंद पर न बोल्ड होने का डर है और न कैच आउट होने का, बल्लेबाज़ पूरी ताक़त झोंकने को तैयार!',
+            'सारे फील्डर बाउंड्री लाइन पर तैनात हैं और पूरा स्टेडियम छक्के का इंतज़ार कर रहा है!',
+            'देखना होगा गेंदबाज़ यॉर्कर से बचते हैं या बल्लेबाज़ गेंद को स्टेडियम के पार भेजते हैं!',
+            'लाइसेंस टू थ्रिल! बल्लेबाज़ ने क्रीज़ में अपनी पोज़ीशन बना ली है बड़े प्रहार के लिए!',
+            'फ्री हिट की इस गेंद पर पूरे मैदान की सांसें थमी हुई हैं!'
+          ];
+          closers = [
+            'देखते हैं इस गेंद पर कितने रन बटोरते हैं!',
+            'रोमांच अपने चरम स्तर पर है!',
+            'बल्ले और गेंद की सबसे बड़ी टक्कर!',
+            'दर्शकों का शोर आसमान छू रहा है!',
+            'यह गेंद तय करेगी इस ओवर का मोमेंटम!'
+          ];
+          break;
+        case 'NOT_OUT':
+          openers = ['नॉट आउट! बल्लेबाज़ बिल्कुल सुरक्षित!', 'अंपायर का फैसला: नॉट आउट!', 'बाल-बाल बचे! नॉट आउट!', 'क्रीज़ के अंदर सुरक्षित! नॉट आउट!', 'ज़ोरदार अपील लेकिन नॉट आउट!'];
+          cores = [
+            'गेंदबाज़ी टीम ने पूरे जोश में अपील की, लेकिन अंपायर अडिग रहे और नॉट आउट करार दिया!',
+            'सही समय पर बल्ला क्रीज़ के अंदर पहुंच गया था, बल्लेबाज़ पूरी तरह सुरक्षित!',
+            'गेंद स्टंप्स की लाइन से बाहर जा रही थी, अंपायर का बिल्कुल सटीक फैसला!',
+            'किस्मत का मिला साथ, बहुत ही करीबी मामला था लेकिन बल्लेबाज़ नॉट आउट!',
+            'बल्लेबाज़ी खेमे ने राहत की सांस ली, पारी जारी रहेगी!'
+          ];
+          closers = [
+            'गेंदबाज़ अपने सिर पर हाथ रखे हुए हैं!',
+            'मुकाबले में रोमांच लगातार बना हुआ है!',
+            'देखना होगा इस जीवनदान का कैसा फायदा उठाते हैं!',
+            'दर्शकों की ज़ोरदार आवाज़ स्टेडियम में!',
+            'बेहतरीन अंपायरिंग दबाव के पलों में!'
+          ];
+          break;
+        default: // OVER_END
+          openers = ['ओवर की समाप्ति!', 'छह गेंदों का ओवर पूरा हुआ!', 'एंड ऑफ द ओवर!', 'एक और रोमांचक ओवर समाप्त!', 'अंपायर का इशारा: ओवर कंप्लीट!'];
+          cores = [
+            'खिलाड़ी अब छोर बदल रहे हैं और कप्तान नए गेंदबाज़ के साथ रणनीति बना रहे हैं।',
+            'इस ओवर में काफ़ी उतार-चढ़ाव देखने को मिले, मुकाबला बराबरी पर चलता हुआ।',
+            'अगले ओवर के लिए फील्डिंग में बदलाव किया जा रहा है, हर ओवर अब निर्णायक है।',
+            'शानदार ओवर बीता, दोनों ही टीमें एक इंच भी पीछे हटने को तैयार नहीं हैं।',
+            'अब दूसरे छोर से नया आक्रमण शुरू होने जा रहा है।'
+          ];
+          closers = [
+            'देखते हैं अगला ओवर किसके नाम रहता है!',
+            'स्टेडियम में क्रिकेट का बुखार सिर चढ़कर बोल रहा है!',
+            'बने रहिए हमारे साथ इस शानदार मुकाबले में!',
+            'हर एक ओवर फाइनल जैसा रोमांच दे रहा है!',
+            'ज़बरदस्त टक्कर दोनों टीमों के बीच!'
+          ];
+          break;
       }
     } else {
-      pool = [
-        eventType + '! ' + _bowler + ' bowls to ' + _striker + ' towards ' + _shotZone + ', fielded by ' + _fielder + ' with ' + _wk + ' behind the stumps!'
-      ];
+      // ENGLISH (125+ Combinations per Tile)
+      switch (key) {
+        case 'DOT':
+          openers = ['Dot ball!', 'No run there!', 'Spot-on bowling!', 'Rock-solid defense!', 'Right on the money!'];
+          cores = [
+            'Punched crisply back down the pitch, no chance of a single on that delivery.',
+            'Tight line and length right at the top of off stump, keeping the batter completely quiet.',
+            'Sharp fielding inside the ring cuts it off in a flash, dot ball pressure building!',
+            'Watchful front-foot block right under the eyes, respecting a dangerous delivery.',
+            'Beaten by the late movement! Straight into the gloves with zero runs added.'
+          ];
+          closers = [
+            'The pressure gauge is rising in the middle!',
+            'Clinical control from the bowling attack!',
+            'Every dot ball is pure gold in this contest!',
+            'Listen to the roar of appreciation from the crowd!',
+            'High-intensity cricket right here!'
+          ];
+          break;
+        case 'RUN_1':
+          openers = ['Quick single!', 'One run taken!', 'Smart rotation of strike!', 'Sharp running for one!', 'Easy single!'];
+          cores = [
+            'Dropped into the gap with soft hands and they scamper through in the blink of an eye!',
+            'Guided neatly into the outfield pocket to rotate the strike effortlessly.',
+            'Called early and sprinted hard, beating the fielder’s pick-up comfortably for one.',
+            'Worked off the hips with textbook wristwork for a brisk single.',
+            'Great communication between the wickets to keep the scoreboard ticking!'
+          ];
+          closers = [
+            'Intelligent, busy batting on display!',
+            'Never letting the bowler settle into a rhythm!',
+            'Top-class awareness out in the middle!',
+            'The momentum keeps flowing smoothly!',
+            'Textbook strike rotation!'
+          ];
+          break;
+        case 'RUN_2':
+          openers = ['Two runs!', 'Superb double!', 'Lightning running for two!', 'Brace of runs taken!', 'Hard-run two!'];
+          cores = [
+            'Pierced into the deep pocket and they push hard on the turn to convert one into two!',
+            'Sprinted the first one at top speed and slid the bat in safely before the relay throw arrived!',
+            'Driven firmly into the vacant outfield space, allowing them to come back comfortably for a double.',
+            'Electric pace between the wickets puts immense pressure on the deep fielder’s arm!',
+            'Clipped sweetly into the gap and they hustle back for two valuable runs!'
+          ];
+          closers = [
+            'Outstanding fitness and commitment!',
+            'Turning singles into twos wins championships!',
+            'The stadium crowd loves that hustle!',
+            'Putting the fielding unit under real stress!',
+            'Brilliant athletic running!'
+          ];
+          break;
+        case 'RUN_3':
+          openers = ['Three runs!', 'Brilliant triple!', 'All-out sprint for three!', 'Three runs added!', 'Sensational running for three!'];
+          cores = [
+            'Timed exquisitely into the deep corner! A desperate diving stop saves the boundary, but they cross for three!',
+            'They take full advantage of the big boundary dimensions and sprint three rapid runs!',
+            'Sweetly struck through the gap and as the ball slows near the rope, they complete the third run!',
+            'Relentless running between the wickets nets them three huge runs off a single delivery!',
+            'Chased all the way to the fence, pulled back at the last millisecond, and they run three!'
+          ];
+          closers = [
+            'Just as valuable as a boundary!',
+            'Look at the energy out on that turf!',
+            'Standing ovation from the dugout for that effort!',
+            'Top-tier athleticism under pressure!',
+            'Every run counts in a battle like this!'
+          ];
+          break;
+        case 'FOUR':
+          openers = ['Cracking Four!', 'Shot of an emperor! Four runs!', 'Raced away to the fence for Four!', 'Glorious boundary!', 'Bullet to the rope! Four!'];
+          cores = [
+            'Leans into a majestic drive that splits the infield in half and rockets across the turf for four!',
+            'Even a full-stretch dive couldn’t stop that tracer bullet from crashing into the boundary boards!',
+            'Picked the gap with surgical precision, leaving the fielders chasing shadows all the way!',
+            'Crunched off the back foot with ferocious timing, four runs the moment it left the bat!',
+            'Pure timing and placement! No fielder on the planet was stopping that boundary!'
+          ];
+          closers = [
+            'That is vintage, box-office batting!',
+            'The crowd is on its feet applauding!',
+            'Absolute perfection with the willow!',
+            'That shot had boundary written all over it!',
+            'Pure class from start to finish!'
+          ];
+          break;
+        case 'SIX':
+          openers = ['Incredible Six!', 'Monster Maximum! Out of the stadium!', 'Boom! Massive Sixer!', 'High and handsome into the stands for Six!', 'Colossal Six!'];
+          cores = [
+            'Cleared the front leg and launched that delivery ten rows back into the roaring night sky!',
+            'Sweetest sound off the middle of the bat as the ball sails effortlessly over the ropes!',
+            'Picked the length in a heartbeat and deposited it straight onto the stadium roof for six!',
+            'Unbelievable power and elevation! The fielders could only stand and watch it disappear!',
+            'Smashed with pure authority high over the boundary cushion for a breathtaking maximum!'
+          ];
+          closers = [
+            'The entire stadium has erupted into chaos!',
+            'That ball might need a passport, it went so far!',
+            'Pure goosebumps inside this arena right now!',
+            'Power-hitting of the highest global standard!',
+            'What an unforgettable strike!'
+          ];
+          break;
+        case 'BOWLED':
+          openers = ['Battery Bold! Clean Bowled!', 'Timber! Shattered stumps!', 'Castled him! Clean Bowled!', 'Unplayable yorker! Bowled him!', 'Knocked him over! Bowled!'];
+          cores = [
+            'Aguided missile crashes straight through the gate and sends the middle stump cartwheeling!',
+            'The bails fly high into the air as that thunderbolt uproots the woodwork completely!',
+            'Swung back late at blistering pace to beat the bat and smash dead center into the stumps!',
+            'An absolute peach of a delivery leaves the batter frozen as the off-stump goes flying!',
+            'Toe-crushing yorker right on the base of the stumps! Total destruction of the timber!'
+          ];
+          closers = [
+            'Look at the roaring celebration from the bowler!',
+            'The stadium roof just blew off with that wicket!',
+            'Fast bowling at its most lethal and breathtaking!',
+            'A massive match-turning breakthrough!',
+            'Pure fast-bowling magic!'
+          ];
+          break;
+        case 'CAUGHT':
+          openers = ['Caught out! Taken cleanly!', 'What a screamer of a catch! Out!', 'Up in the air and pouched! Caught!', 'Huge wicket! Caught in the field!', 'Edged and taken! Out!'];
+          cores = [
+            'Went for the big booming drive, mistimed the elevation, and the fielder swallows it safely!',
+            'Flew horizontally through the air to pluck a one-handed stunner out of thin air!',
+            'Settled underneath the towering high ball with ice in the veins and made zero mistake!',
+            'Sliced hard toward the point region where a lightning-fast reflex catch seals the dismissal!',
+            'Held on right inside the boundary cushion with extraordinary balance and composure!'
+          ];
+          closers = [
+            'Catches win matches and that was a beauty!',
+            'The fielding side is Mobbing the catcher in celebration!',
+            'A gigantic breakthrough at a crucial moment!',
+            'World-class athleticism in the field!',
+            'The crowd cannot believe what they just witnessed!'
+          ];
+          break;
+        case 'RUN_OUT':
+          openers = ['Direct hit! Run out!', 'Bullseye throw! Run out!', 'Chaos in the middle and Run out!', 'Short of the crease! Run out!', 'Lightning relay! Run out!'];
+          cores = [
+            'Pounced on the ball like a panther, spun around, and shattered the stumps with one stump to aim at!',
+            'Caught inches short of the popping crease as the bails are whipped off in a flash!',
+            'A terrible mix-up while looking for a risky run costs them a massive wicket!',
+            'Fired a flat rocket throw from the deep right over the bails for a textbook run out!',
+            'Electric work in the infield leaves the diving batter stranded out of their ground!'
+          ];
+          closers = [
+            'Fielding brilliance changes the game in a split second!',
+            'You simply cannot take on an arm that strong!',
+            'Explosive scenes of celebration in the middle!',
+            'A moment of magic from the fielding unit!',
+            'High drama at its absolute peak!'
+          ];
+          break;
+        case 'STUMPED':
+          openers = ['Stumped in a flash!', 'Lightning glovework! Stumped!', 'Beaten in the flight and Stumped!', 'Out of the crease and Stumped!', 'Clinical stumping!'];
+          cores = [
+            'Danced down the track, completely deceived by the spin, and the bails are off in a millisecond!',
+            'The wicketkeeper’s hands moved faster than the eye can see to complete a brilliant stumping!',
+            'Dragged the back foot an inch outside the line and paid the ultimate price behind the stumps!',
+            'Masterclass of flight and guile followed by razor-sharp work with the gloves!',
+            'Whipped the bails off before the batter could even think about grounding the bat!'
+          ];
+          closers = [
+            'Blink and you missed that glovework!',
+            'Wicketkeeping of the highest pedigree!',
+            'The bowler and keeper combine for a classic dismissal!',
+            'What a sharp piece of skill behind the stumps!',
+            'Another big wicket tumbles!'
+          ];
+          break;
+        case 'LBW':
+          openers = ['LBW Out! The finger goes up!', 'Plumb in front! LBW!', 'Huge appeal and given Out LBW!', 'Trapped dead in front! LBW!', 'Three reds all day! LBW Out!'];
+          cores = [
+            'Swung back sharply to rap the back pad right in front of middle and leg stump!',
+            'Beat the flick shot completely and the umpire had zero hesitation raising the finger!',
+            'Pinned on the crease by a skiddy delivery that was crashing straight into the woodwork!',
+            'Deceived by the pace off the deck and struck dead inline with the stumps!',
+            'A roaring appeal from the entire cordon is rewarded immediately with the raised finger!'
+          ];
+          closers = [
+            'Dead plumb—no review could save that one!',
+            'Relentless accuracy pays off handsomely!',
+            'The bowling side is Fired up after that strike!',
+            'Clinical execution of the game plan!',
+            'The stadium erupts as the finger goes up!'
+          ];
+          break;
+        case 'NO_BALL':
+          openers = ['No Ball! The siren blares!', 'Overstepped! No Ball called!', 'No Ball and a Free Hit coming up!', 'Front-foot No Ball!', 'Extra run and Free Hit! No Ball!'];
+          cores = [
+            'The bowler has overstepped the popping crease, gifting an extra run and triggering the Free Hit siren!',
+            'Pushed too hard for extra pace and crossed the line—now the batter gets a Free Hit next ball!',
+            'The umpire extends the arm horizontally as the stadium hooter announces a No Ball!',
+            'Costly error on the front foot, and that means the next delivery is a license to swing!',
+            'A bonus run added to the total and the fielders have to stay fixed for the Free Hit!'
+          ];
+          closers = [
+            'Get ready for fireworks on the next delivery!',
+            'The batter’s eyes just lit up for the Free Hit!',
+            'Massive crowd anticipation building right now!',
+            'Double trouble for the bowler here!',
+            'Time to swing for the bleachers next ball!'
+          ];
+          break;
+        case 'WIDE':
+          openers = ['Wide ball!', 'Both arms outstretched! Wide!', 'Sprayed down the side! Wide ball!', 'Extra run signaled! Wide!', 'Too far outside! Wide ball!'];
+          cores = [
+            'Lost the radar slightly and pushed that delivery well beyond the tramline for a wide.',
+            'An acrobatic dive behind the stumps prevents extra byes, but the wide run is added.',
+            'Strayed down the leg side past the swing of the bat, and the umpire signals wide immediately.',
+            'Bonus run gifted to the batting side, and the bowler will have to reload that delivery.',
+            'Just missed the edge of the guideline as the umpire stretches both arms wide.'
+          ];
+          closers = [
+            'Every extra run matters in a tight contest!',
+            'One more delivery added to this over!',
+            'The bowler will want to tighten up that line right away!',
+            'Free run ticking onto the board!',
+            'Pressure stays right on the bowler!'
+          ];
+          break;
+        case 'FREE_HIT':
+          openers = ['Free Hit delivery!', 'It is Free Hit time!', 'License to launch! Free Hit ball!', 'Alert! Free Hit coming in!', 'Swing for the roof! Free Hit!'];
+          cores = [
+            'The batter cannot be bowled or caught on this ball—expect a full-power swing for the stands!',
+            'Every fielder on the boundary rope is bracing as the batter clears the front leg!',
+            'Will it be a pinpoint yorker or a monster six into the night sky on this Free Hit?',
+            'Zero fear of dismissal here, and the crowd is on its feet demanding a maximum!',
+            'High-voltage tension as the bowler charges in for the Free Hit delivery!'
+          ];
+          closers = [
+            'Hold your breath for the impact!',
+            'The noise inside this stadium is deafening!',
+            'Pure box-office entertainment on this ball!',
+            'Let’s see if they can clear the ropes!',
+            'Maximum adrenaline in the middle!'
+          ];
+          break;
+        case 'NOT_OUT':
+          openers = ['Not Out! Safe in the crease!', 'Umpire says Not Out!', 'Survived a close call! Not Out!', 'Bat is grounded safely! Not Out!', 'Huge appeal, but Not Out!'];
+          cores = [
+            'A massive shout from the fielding side, but the umpire stands firm and shakes the head—Not Out!',
+            'Desperate full-length dive gets the bat across the line by a fraction of a millimeter!',
+            'Sliding down the leg side on the replay, and the batter lives to fight another over!',
+            'Inside edge onto the pad saves the batter at the very last instant—Not Out!',
+            'Great decision under pressure as the batter survives a heart-stopping moment!'
+          ];
+          closers = [
+            'Huge sigh of relief from the batting dugout!',
+            'So close you couldn’t slide a sheet of paper between them!',
+            'A massive lifeline—can they make it count now?',
+            'Drama on every single delivery out there!',
+            'What a thriller we have on our hands!'
+          ];
+          break;
+        default: // OVER_END
+          openers = ['End of the over!', 'Over complete!', 'Six balls done—change of ends!', 'That wraps up an action-packed over!', 'Umpire calls Over!'];
+          cores = [
+            'The players cross over as the captain discusses tactics for the next spell from the opposite end.',
+            'Plenty of ebbs and flows in those six balls, keeping everyone on the edge of their seats.',
+            'A crucial phase of the match unfolding as the fielding side resets its angles.',
+            'Both teams trading punches evenly as we move into the next over of this contest.',
+            'Quick chat in the middle before the new bowler marks out the run-up.'
+          ];
+          closers = [
+            'Stay tuned—the next over promises even more fireworks!',
+            'Electric atmosphere all around the ground today!',
+            'Every over feels like a championship decider!',
+            'Live stadium coverage rolling right along!',
+            'High-octane cricket at its finest!'
+          ];
+          break;
+      }
     }
 
-    String chosen = pool[_rng.nextInt(pool.length)];
-    final catchphrase = VoiceCloneProfileStore.activeProfile.catchphrase.trim();
-    if (catchphrase.isNotEmpty) {
-      chosen = catchphrase + '! ' + chosen;
+    String chosen = '';
+    for (int attempt = 0; attempt < 25; attempt++) {
+      final String o = openers[_rng.nextInt(openers.length)];
+      final String c = cores[_rng.nextInt(cores.length)];
+      final String cl = closers[_rng.nextInt(closers.length)];
+      // " | " triggers the 90ms human breath pause and pitch inflection in MainActivity.kt!
+      chosen = '$o | $c $cl';
+      if (!_recentHashes.contains(chosen)) break;
     }
-    if (_usedTournamentLines.contains(chosen)) {
-      chosen = chosen + ' (' + _runs.toString() + '/' + _wickets.toString() + ')';
-    }
-    _usedTournamentLines.add(chosen);
+
+    _recentHashes.add(chosen);
+    if (_recentHashes.length > 80) _recentHashes.removeAt(0);
     return chosen;
   }
 
-  void _triggerBall(String eventType) {
-    _saveUndoSnapshot();
+  void _onTilePressed(Map<String, dynamic> tile) {
+    final String key = tile['key'].toString();
+    final String emotion = tile['emotion'].toString();
 
-    bool legal = true;
-    bool rotate = false;
-    bool isWicket = false;
-    int addedRuns = 0;
-    String badge = '0';
-    String? incomingBatterName;
-
-    if (_freeHit &&
-        (eventType == 'BOWLED' || eventType == 'CAUGHT' || eventType == 'CAUGHT_WK' || eventType == 'STUMPED' || eventType == 'LBW')) {
-      eventType = 'DOT';
-    }
-
-    switch (eventType) {
-      case 'DOT':
-        badge = '0';
-        _consecutiveWickets = 0;
-        break;
-      case 'RUN_1':
-        addedRuns = 1;
-        rotate = true;
-        badge = '1';
-        _consecutiveWickets = 0;
-        break;
-      case 'RUN_2':
-        addedRuns = 2;
-        badge = '2';
-        _consecutiveWickets = 0;
-        break;
-      case 'RUN_3':
-        addedRuns = 3;
-        rotate = true;
-        badge = '3';
-        _consecutiveWickets = 0;
-        break;
-      case 'FOUR':
-        addedRuns = 4;
-        badge = '4';
-        _consecutiveWickets = 0;
-        break;
-      case 'SIX':
-        addedRuns = 6;
-        badge = '6';
-        _consecutiveWickets = 0;
-        break;
-      case 'BOWLED':
-      case 'CAUGHT':
-      case 'CAUGHT_WK':
-      case 'RUN_OUT':
-      case 'STUMPED':
-      case 'LBW':
-        _wickets += 1;
-        _consecutiveWickets += 1;
-        isWicket = true;
-        badge = 'W';
-        break;
-      case 'NO_BALL':
-        _runs += 1;
-        _bowlerRuns[_bowler] = (_bowlerRuns[_bowler] ?? 0) + 1;
-        legal = false;
-        _freeHit = true;
-        badge = 'NB';
-        break;
-      case 'WIDE':
-        _runs += 1;
-        _bowlerRuns[_bowler] = (_bowlerRuns[_bowler] ?? 0) + 1;
-        legal = false;
-        badge = 'WD';
-        break;
-    }
-
-    if (addedRuns > 0) {
-      _runs += addedRuns;
-      _partnershipRuns += addedRuns;
-      _batterRuns[_striker] = (_batterRuns[_striker] ?? 0) + addedRuns;
-      _bowlerRuns[_bowler] = (_bowlerRuns[_bowler] ?? 0) + addedRuns;
-    }
-
-    if (legal) {
-      _legalBalls += 1;
-      _partnershipBalls += 1;
-      _batterBalls[_striker] = (_batterBalls[_striker] ?? 0) + 1;
-      if (eventType != 'NO_BALL') _freeHit = false;
-    }
-
-    final line = _generateNonRepeatingLine(eventType);
+    _applySituationEmotionProsody(emotion);
+    final String spokenLine = _generate125PlusHumanLine(key);
+    final String displayClean = spokenLine.replaceAll(' | ', ' ');
 
     setState(() {
-      _thisOver.add(badge);
-      if (rotate) {
-        final t = _striker;
-        _striker = _nonStriker;
-        _nonStriker = t;
-      }
-      if (isWicket && _squadA.isNotEmpty) {
-        _bowlerWickets[_bowler] = (_bowlerWickets[_bowler] ?? 0) + 1;
-        _fallOfWickets.add(_runs.toString() + '/' + _wickets.toString() + ' (' + _striker + ')');
-        _partnershipRuns = 0;
-        _partnershipBalls = 0;
-        final nextIdx = (_wickets + 1) % _squadA.length;
-        incomingBatterName = _squadA[nextIdx];
-        _striker = incomingBatterName!;
-      }
-      if (legal && _legalBalls % 6 == 0) {
-        _thisOver.clear();
-        final t = _striker;
-        _striker = _nonStriker;
-        _nonStriker = t;
-      }
+      _lastSpokenBanner = displayClean;
+      _historyFeed.insert(0, '[${tile['title']}] $displayClean');
+      if (_historyFeed.length > 30) _historyFeed.removeLast();
     });
 
-    final String banter = _buildCoCommentatorBanter(eventType, incomingBatterName);
-    setState(() {
-      _feed.insert(
-        0,
-        '[' + _oversText() + '] ' + line + (banter.isNotEmpty ? ('\n🎙 Co-Comm: ' + banter) : ''),
-      );
-    });
-
-    AppSoundEngine.playSynthesizedSfx(eventType);
-    if ((isWicket && _autoWalkoutBgmOnWicket) || eventType == 'SIX' || eventType == 'FOUR') {
-      MasterVolumeController.autoCricketStingerTrigger.value =
-          eventType + '_' + DateTime.now().millisecondsSinceEpoch.toString();
+    if (_stadiumAtmosphereRoar) {
+      if (key == 'SIX' || key == 'FOUR') {
+        AppSoundEngine.playSynthesizedSfx('SIX');
+      } else if (key == 'BOWLED' || key == 'CAUGHT' || key == 'RUN_OUT' || key == 'STUMPED' || key == 'LBW') {
+        AppSoundEngine.playSynthesizedSfx('BOWLED');
+      } else if (key == 'NO_BALL' || key == 'FREE_HIT') {
+        AppSoundEngine.playSynthesizedSfx('NO_BALL');
+      }
     }
-    AppSoundEngine.speakRealVoice(line, _commLanguage, eventKey: eventType, coCommentatorText: banter);
-  }
 
-  void _copyWhatsAppScorecard() {
-    final String summary = '🏏 *' +
-        _teamACtrl.text +
-        ' vs ' +
-        _teamBCtrl.text +
-        ' (Innings ' +
-        _inningsNumber.toString() +
-        ')*\n' +
-        '📊 Score: *' +
-        _runs.toString() +
-        '/' +
-        _wickets.toString() +
-        ' (' +
-        _oversText() +
-        ' Overs)*\n' +
-        '🏏 *' +
-        _striker +
-        ': ' +
-        (_batterRuns[_striker] ?? 0).toString() +
-        '(' +
-        (_batterBalls[_striker] ?? 0).toString() +
-        ')\n' +
-        '🏏 ' +
-        _nonStriker +
-        ': ' +
-        (_batterRuns[_nonStriker] ?? 0).toString() +
-        '(' +
-        (_batterBalls[_nonStriker] ?? 0).toString() +
-        ')\n' +
-        '⚾ ' +
-        _bowler +
-        ': ' +
-        (_bowlerWickets[_bowler] ?? 0).toString() +
-        '-' +
-        (_bowlerRuns[_bowler] ?? 0).toString() +
-        '\n' +
-        '🟧 Orange Cap: ' +
-        _getBestBatterCap() +
-        ' | 🟪 Purple Cap: ' +
-        _getBestBowlerCap() +
-        '\n' +
-        '🔥 Powered by DJ Play and Commentry App v200';
-    Clipboard.setData(ClipboardData(text: summary));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('📋 WhatsApp Scorecard copied to clipboard!')),
-    );
-  }
-
-  Widget _buildRoleDropdown(String label, String currentValue, List<String> items, ValueChanged<String?> onChanged) {
-    final uniqueItems = <String>{currentValue, ...items}.toList();
-    return Expanded(
-      child: Container(
-        margin: const EdgeInsets.all(3),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-        decoration: BoxDecoration(
-          color: const Color(0xFF0B1120),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.white24),
-        ),
-        child: DropdownButtonHideUnderline(
-          child: DropdownButton<String>(
-            value: currentValue,
-            isExpanded: true,
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
-            items: uniqueItems
-                .map((p) => DropdownMenuItem(value: p, child: Text(label + ': ' + p, overflow: TextOverflow.ellipsis)))
-                .toList(),
-            onChanged: onChanged,
-          ),
-        ),
-      ),
-    );
+    // Speak ONLY the Commentary (Zero automatic entry song play!)
+    AppSoundEngine.speakRealVoice(spokenLine, _commLanguage, eventKey: key);
   }
 
   @override
   Widget build(BuildContext context) {
-    final int target = int.tryParse(_targetCtrl.text) ?? 0;
-    final int runsNeeded = target > _runs ? (target - _runs) : 0;
-
-    return ListView(
-      padding: const EdgeInsets.all(10),
+    return Column(
       children: [
-        // Live Scoreboard Card + Undo + Innings Switch + WhatsApp Share
+        // Top Emotion & Language Bar
         Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(colors: [Color(0xFF0D274C), Color(0xFF091326)]),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.amber, width: 1.5),
-          ),
-          child: Column(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          color: const Color(0xFF0E172A),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
+              Expanded(
+                child: Text(
+                  '$_activeEmotionTag • 125+ Combinations/Tile',
+                  style: const TextStyle(fontSize: 11, color: Color(0xFF00E676), fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _teamACtrl.text + ' vs ' + _teamBCtrl.text + ' • Inn ' + _inningsNumber.toString(),
-                          style: const TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 11),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          _runs.toString() + '/' + _wickets.toString() + ' (' + _oversText() + ' Ov)',
-                          style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w900, color: Colors.white),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Row(
-                    children: [
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.orange.shade800,
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                        ),
-                        icon: const Icon(Icons.undo, size: 14),
-                        label: const Text('UNDO', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900)),
-                        onPressed: _undoLastBall,
-                      ),
-                      const SizedBox(width: 4),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.purple.shade700,
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                        ),
-                        onPressed: _triggerDrsReviewDrama,
-                        child: const Text('📺 DRS', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900)),
-                      ),
-                      IconButton(
-                        tooltip: 'Copy WhatsApp Scorecard',
-                        icon: const Icon(Icons.share, color: Colors.greenAccent, size: 20),
-                        onPressed: _copyWhatsAppScorecard,
-                      ),
-                    ],
+                  const Text('🏟 Roar', style: TextStyle(fontSize: 10, color: Colors.white70)),
+                  Switch(
+                    value: _stadiumAtmosphereRoar,
+                    activeColor: Colors.amber,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    onChanged: (v) => setState(() => _stadiumAtmosphereRoar = v),
                   ),
                 ],
               ),
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
+            ],
+          ),
+        ),
+
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.all(10),
+            children: [
+              // 1. 3-LANGUAGE SELECTOR (KANNADA, HINDI, ENGLISH)
+              Row(
+                children: [
+                  {'code': 'KANNADA', 'label': '🇮🇳 ಕನ್ನಡ (KANNADA)'},
+                  {'code': 'HINDI', 'label': '🇮🇳 हिन्दी (HINDI)'},
+                  {'code': 'ENGLISH', 'label': '🎙 ENGLISH'},
+                ].map((lang) {
+                  final bool active = (_commLanguage == lang['code']);
+                  return Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: active ? Colors.amber : const Color(0xFF162035),
+                          foregroundColor: active ? Colors.black : Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        onPressed: () => setState(() => _commLanguage = lang['code']!),
+                        child: Text(
+                          lang['label']!,
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 10),
+
+              // 2. LIVE SPOKEN COMMENTARY DISPLAY BANNER
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(colors: [Color(0xFF13223E), Color(0xFF091122)]),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFF00E5FF), width: 1.4),
+                ),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('🟧 ' + _getBestBatterCap(),
-                        style: const TextStyle(fontSize: 10, color: Colors.orangeAccent, fontWeight: FontWeight.bold)),
-                    Text('🟪 ' + _getBestBowlerCap(),
-                        style: const TextStyle(fontSize: 10, color: Colors.purpleAccent, fontWeight: FontWeight.bold)),
-                    if (target > 0)
-                      Text('Need ' + runsNeeded.toString() + ' runs',
-                          style: const TextStyle(fontSize: 10, color: Colors.amberAccent, fontWeight: FontWeight.bold)),
+                    const Icon(Icons.record_voice_over, color: Colors.amberAccent, size: 28),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        _lastSpokenBanner,
+                        style: const TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
-              const Divider(color: Colors.white24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    '🏏 *' + _striker + ' ' + (_batterRuns[_striker] ?? 0).toString() + '(' + (_batterBalls[_striker] ?? 0).toString() + ')',
-                    style: const TextStyle(fontSize: 11, color: Color(0xFF00E676), fontWeight: FontWeight.bold),
-                  ),
-                  Text(
-                    '🏃 ' + _nonStriker + ' ' + (_batterRuns[_nonStriker] ?? 0).toString() + '(' + (_batterBalls[_nonStriker] ?? 0).toString() + ')',
-                    style: const TextStyle(fontSize: 11, color: Colors.white70),
-                  ),
-                  Text(
-                    '⚾ ' + _bowler + ' ' + (_bowlerWickets[_bowler] ?? 0).toString() + '-' + (_bowlerRuns[_bowler] ?? 0).toString(),
-                    style: const TextStyle(fontSize: 11, color: Colors.cyanAccent, fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
+              const SizedBox(height: 10),
 
-        // Language Selector
-        Row(
-          children: ['KANNADA', 'HINDI', 'ENGLISH'].map((lang) {
-            final active = (_commLanguage == lang);
-            return Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 3),
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: active ? Colors.amber : const Color(0xFF162035),
-                    foregroundColor: active ? Colors.black : Colors.white,
-                  ),
-                  onPressed: () => setState(() => _commLanguage = lang),
-                  child: Text('🎙 ' + lang, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900)),
+              // 3. 16 INSTANT COMMENTARY TILES (DOT, 1, 2, 3, 4, 6, BOWLED, CAUGHT, RUN OUT, STUMPED, LBW, NO BALL, WIDE...)
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _tiles.length,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 4,
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  childAspectRatio: 1.15,
                 ),
+                itemBuilder: (ctx, i) {
+                  final tile = _tiles[i];
+                  return ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Color(tile['color'] as int),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.all(4),
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: const BorderSide(color: Colors.white24, width: 1),
+                      ),
+                    ),
+                    onPressed: () => _onTilePressed(tile),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          tile['title'].toString(),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          tile['sub'].toString(),
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: Colors.amberAccent),
+                        ),
+                      ],
+                    ),
+                  );
+                },
               ),
-            );
-          }).toList(),
-        ),
-        const SizedBox(height: 6),
+              const SizedBox(height: 12),
 
-        // Step 1: Team & Squad Editor
-        ExpansionTile(
-          collapsedBackgroundColor: const Color(0xFF11192B),
-          backgroundColor: const Color(0xFF11192B),
-          title: const Text('📋 Step 1: Teams, Dialect, Target & 2nd Innings Chase',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF00E5FF))),
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Column(
-                children: [
-                  Row(
+              // 4. RECENT SPOKEN COMMENTARY LOG
+              if (_historyFeed.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0E172A),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.white12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(child: TextField(controller: _teamACtrl, decoration: const InputDecoration(labelText: 'Batting Team'))),
-                      const SizedBox(width: 6),
-                      Expanded(child: TextField(controller: _teamBCtrl, decoration: const InputDecoration(labelText: 'Bowling Team'))),
-                      const SizedBox(width: 6),
-                      Expanded(child: TextField(controller: _targetCtrl, decoration: const InputDecoration(labelText: 'Target'))),
+                      const Text(
+                        '🎙 RECENT SPOKEN CALLS (ZERO REPEATS)',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.amberAccent),
+                      ),
+                      const SizedBox(height: 6),
+                      ..._historyFeed.take(6).map((line) => Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 3),
+                            child: Text(line, style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                          )),
                     ],
                   ),
-                  TextField(controller: _squadACtrl, maxLines: 2, decoration: const InputDecoration(labelText: 'Batting Squad (comma separated)')),
-                  TextField(controller: _squadBCtrl, maxLines: 2, decoration: const InputDecoration(labelText: 'Bowling Squad (comma separated)')),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('🎙 Dual-Commentator Banter (Lead + Co-Commentator)', style: TextStyle(fontSize: 11)),
-                    value: _dualCommentatorBanter,
-                    onChanged: (v) => setState(() => _dualCommentatorBanter = v),
-                  ),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('👑 Auto-Blast Incoming Batter Walkout BGM on Wicket', style: TextStyle(fontSize: 11)),
-                    value: _autoWalkoutBgmOnWicket,
-                    onChanged: (v) => setState(() => _autoWalkoutBgmOnWicket = v),
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      ElevatedButton.icon(
-                        icon: const Icon(Icons.check_circle, size: 16),
-                        label: const Text('Save Squads', style: TextStyle(fontSize: 11)),
-                        onPressed: _loadSquads,
-                      ),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black),
-                        icon: const Icon(Icons.flag, size: 16),
-                        label: const Text('🏁 End 1st Innings & Set Target',
-                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900)),
-                        onPressed: _endFirstInningsAndStartChase,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-
-        // Step 2: Pre-Ball Role & 360 Wagon Wheel Zone Selector
-        Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(color: const Color(0xFF11192B), borderRadius: BorderRadius.circular(10)),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('🎯 Step 2: Active Players, Zone & Kannada Dialect',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.amber)),
-                  TextButton.icon(
-                    icon: const Icon(Icons.swap_horiz, size: 16),
-                    label: const Text('Swap Strike', style: TextStyle(fontSize: 11)),
-                    onPressed: _swapStrike,
-                  ),
-                ],
-              ),
-              Row(
-                children: [
-                  _buildRoleDropdown('🏏 Striker', _striker, _squadA, (v) => setState(() => _striker = v!)),
-                  _buildRoleDropdown('🏃 Non-Str', _nonStriker, _squadA, (v) => setState(() => _nonStriker = v!)),
-                ],
-              ),
-              Row(
-                children: [
-                  _buildRoleDropdown('⚾ Bowler', _bowler, _squadB, (v) => setState(() => _bowler = v!)),
-                  _buildRoleDropdown('🧤 WK', _wk, _squadB, (v) => setState(() => _wk = v!)),
-                ],
-              ),
-              Row(
-                children: [
-                  _buildRoleDropdown('🤾 Fielder', _fielder, _squadB, (v) => setState(() => _fielder = v!)),
-                  _buildRoleDropdown('🧭 360° Zone', _shotZone, _zones, (v) => setState(() => _shotZone = v!)),
-                ],
-              ),
-              Row(
-                children: [
-                  _buildRoleDropdown('🗣 Dialect', _kannadaDialect, _dialects, (v) => setState(() => _kannadaDialect = v!)),
-                ],
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-
-        // Step 3: Post-Bowling Parameter Trigger Pad
-        GridView.count(
-          crossAxisCount: 3,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          mainAxisSpacing: 6,
-          crossAxisSpacing: 6,
-          childAspectRatio: 2.15,
-          children: [
-            _actionButton('0 • DOT', Colors.blueGrey, () => _triggerBall('DOT')),
-            _actionButton('1 • SINGLE', Colors.teal, () => _triggerBall('RUN_1')),
-            _actionButton('2 • DOUBLE', Colors.teal, () => _triggerBall('RUN_2')),
-            _actionButton('3 • THREE', Colors.teal.shade700, () => _triggerBall('RUN_3')),
-            _actionButton('4 • FOUR!', Colors.blueAccent, () => _triggerBall('FOUR')),
-            _actionButton('6 • SIXER!', Colors.deepPurpleAccent, () => _triggerBall('SIX')),
-            _actionButton('🔥 BATTERY BOLD', Colors.redAccent, () => _triggerBall('BOWLED')),
-            _actionButton('🙌 CAUGHT', Colors.red, () => _triggerBall('CAUGHT')),
-            _actionButton('🧤 WK CATCH', Colors.red, () => _triggerBall('CAUGHT_WK')),
-            _actionButton('🎯 RUN OUT', Colors.deepOrange, () => _triggerBall('RUN_OUT')),
-            _actionButton('⚡ STUMPED', Colors.pink, () => _triggerBall('STUMPED')),
-            _actionButton('☝️ LBW OUT', Colors.brown, () => _triggerBall('LBW')),
-            _actionButton('🚨 NO BALL', Colors.amber.shade800, () => _triggerBall('NO_BALL')),
-            _actionButton('↔️ WIDE BALL', Colors.orange.shade800, () => _triggerBall('WIDE')),
-            _actionButton('🏁 2ND INNINGS', Colors.green.shade700, _endFirstInningsAndStartChase),
-          ],
-        ),
-        const SizedBox(height: 10),
-
-        // Live Commentary Feed
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: const Color(0xFF0E172A),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0xFF00E5FF)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '🔊 Kannada/Hindi Phonetic AI + Dual Banter (' + _commLanguage + ')',
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF00E676)),
-              ),
-              if (_fallOfWickets.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text('Fall of Wickets: ' + _fallOfWickets.join(' | '),
-                      style: const TextStyle(fontSize: 10, color: Colors.orangeAccent)),
                 ),
-              const SizedBox(height: 6),
-              if (_feed.isEmpty)
-                const Text('Tap any run or wicket button above to hear live commentary!',
-                    style: TextStyle(fontSize: 12, color: Colors.white70))
-              else
-                ..._feed.take(10).map((line) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Text(line, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                    )),
             ],
           ),
         ),
       ],
-    );
-  }
-
-  Widget _actionButton(String label, Color bg, VoidCallback onTap) {
-    return ElevatedButton(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: bg,
-        foregroundColor: Colors.white,
-        padding: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      ),
-      onPressed: onTap,
-      child: Text(label, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11)),
     );
   }
 }

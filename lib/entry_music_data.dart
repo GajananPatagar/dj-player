@@ -13,7 +13,7 @@ class MasterVolumeController {
   static final ValueNotifier<double> page3SfxVolume = ValueNotifier<double>(0.70);
   static final ValueNotifier<double> page4EntryVolume = ValueNotifier<double>(0.0);
   static final ValueNotifier<String?> autoCricketStingerTrigger = ValueNotifier<String?>(null);
-  static bool autoPlayEntryOnCricketBoundaryOrWicket = true;
+  static bool autoPlayEntryOnCricketBoundaryOrWicket = false;
 }
 
 class VaultManager {

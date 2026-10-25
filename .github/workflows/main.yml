@@ -570,10 +570,9 @@ jobs:
 
       - name: Force Android V2 Embedding & Clean Build
         run: |
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-          if [ -f "$MANIFEST" ]; then
-            if ! grep -q "flutterEmbedding" "$MANIFEST"; then
-              sed -i 's|<application|<application\n        <meta-data android:name="flutterEmbedding" android:value="2" />|g' "$MANIFEST"
+          if [ -f "android/app/src/main/AndroidManifest.xml" ]; then
+            if ! grep -q "flutterEmbedding" android/app/src/main/AndroidManifest.xml; then
+              sed -i 's|<application|<application\n        <meta-data android:name="flutterEmbedding" android:value="2" />|g' android/app/src/main/AndroidManifest.xml
             fi
           fi
           flutter clean

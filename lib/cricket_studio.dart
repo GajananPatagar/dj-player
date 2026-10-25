@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'real_tile_studio.dart';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'main.dart';
@@ -24,6 +26,54 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
 
   final List<String> _recentHashes = [];
   final List<String> _historyFeed = [];
+
+  Timer? _fiveSecHoldTimer;
+  String _selectedTileForStudio = 'SIX';
+  String? _loadedDraftFilePath;
+  String _loadedDraftTitle = '';
+  double _trimStartSec = 0.0;
+  double _trimEndSec = 10.0;
+  double _maxDraftDurationSec = 60.0;
+  bool _isRecordingTileMic = false;
+  bool _isExtractingMedia = false;
+  final TextEditingController _reelShortUrlCtrl = TextEditingController();
+  final TextEditingController _clipNameCtrl = TextEditingController(text: 'My Custom Real Sound');
+
+  @override
+  void initState() {
+    super.initState();
+    RealTileStudioManager.init(
+      onSharedMediaReceived: (shared) async {
+        if (!mounted) return;
+        setState(() {
+          _isExtractingMedia = true;
+          _lastSpokenBanner = '📲 Extracting Audio from Shared Instagram Reel / YT Short...';
+        });
+        final path = await RealTileStudioManager.extractAudioFromReelOrShortUrl(shared);
+        if (mounted) {
+          setState(() {
+            _isExtractingMedia = false;
+            if (path != null) {
+              _loadedDraftFilePath = path;
+              _loadedDraftTitle = 'Shared Reel / Short Audio';
+              _clipNameCtrl.text = 'Reel/Short Audio';
+              _trimStartSec = 0.0;
+              _trimEndSec = 10.0;
+              _lastSpokenBanner = '✅ Reel/Short Audio Extracted! Trim & Preview below before adding!';
+            }
+          });
+        }
+      },
+    ).then((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  List<Map<String, dynamic>> get _allCombinedTiles => [
+        ..._tiles,
+        ...RealTileStudioManager.extraBuiltInTiles,
+        ...RealTileStudioManager.userCustomTiles,
+      ];
 
   final List<Map<String, dynamic>> _tiles = const [
     {'key': 'DOT', 'title': '0', 'sub': 'DOT BALL', 'color': 0xFF37474F, 'emotion': 'CRISP'},
@@ -1178,9 +1228,39 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
     return chosen;
   }
 
-  void _onTilePressed(Map<String, dynamic> tile) {
+  Future<void> _onTilePressed(Map<String, dynamic> tile) async {
     final String key = tile['key'].toString();
     final String emotion = tile['emotion'].toString();
+
+    // If REAL Mode is active, play user's added/trimmed Real Audio clip for this Tile + Language!
+    if (RealTileStudioManager.isRealAudioMode) {
+      final playedClip = await RealTileStudioManager.playRealClipForTile(key, _commLanguage);
+      if (playedClip != null) {
+        setState(() {
+          _lastSpokenBanner = '🎵 [REAL AUDIO • $_commLanguage] Playing: ${playedClip.title} '
+              '(${(playedClip.startMs / 1000).toStringAsFixed(1)}s ➔ ${(playedClip.endMs / 1000).toStringAsFixed(1)}s)';
+          _historyFeed.insert(0, '[${tile['title']}] 🎵 ${playedClip.title}');
+        });
+        return;
+      } else {
+        setState(() {
+          _lastSpokenBanner = '⚠️ No Real Audio saved for [${tile['title']}] ($_commLanguage) yet — playing AI backup!';
+        });
+      }
+    }
+
+    // Handle Nudimuttu, Others, and Custom User Tiles in AI Mode
+    if (key == 'NUDIMUTTU' || key == 'OTHERS' || key.startsWith('CUSTOM_')) {
+      _applySituationEmotionProsody(emotion);
+      final String extraLine = RealTileStudioManager.generateExtraTileAiLine(key, tile['title'].toString(), _commLanguage);
+      final String cleanDisp = extraLine.replaceAll(' | ', ' ');
+      setState(() {
+        _lastSpokenBanner = cleanDisp;
+        _historyFeed.insert(0, '[${tile['title']}] $cleanDisp');
+      });
+      AppSoundEngine.speakRealVoice(extraLine, _commLanguage, eventKey: key);
+      return;
+    }
 
     _applySituationEmotionProsody(emotion);
     final String spokenLine = _generateCommentatorLine(key);
@@ -1227,7 +1307,34 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
               ),
               Row(
                 children: [
-                  const Text('🏟 Roar', style: TextStyle(fontSize: 10, color: Colors.white70)),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: RealTileStudioManager.isRealAudioMode ? Colors.green.shade800 : Colors.blueGrey.shade800,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.amberAccent),
+                    ),
+                    child: Row(
+                      children: [
+                        Text(
+                          RealTileStudioManager.isRealAudioMode ? '🎵 REAL' : '🤖 AI',
+                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.white),
+                        ),
+                        Switch(
+                          value: RealTileStudioManager.isRealAudioMode,
+                          activeColor: Colors.amber,
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          onChanged: (v) async {
+                            await RealTileStudioManager.setRealMode(v);
+                            if (!v) await RealTileStudioManager.stopRealPlayback();
+                            setState(() {});
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  const Text('🏟', style: TextStyle(fontSize: 11)),
                   Switch(
                     value: _stadiumAtmosphereRoar,
                     activeColor: Colors.amber,
@@ -1303,52 +1410,128 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
               ),
               const SizedBox(height: 10),
 
-              // 3. 16 INSTANT COMMENTARY TILES (ONLY TILES — NO SCORING FORMS)
+              // 3. ALL TILES (16 CRICKET + NUDIMUTTU + OTHERS + USER CUSTOM TILES) WITH 5-SEC HOLD LIST/DELETE
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    '⚡ Tap = Play • Hold 5 Sec = View/Delete Saved Songs',
+                    style: TextStyle(fontSize: 10, color: Colors.amberAccent, fontWeight: FontWeight.bold),
+                  ),
+                  TextButton.icon(
+                    style: TextButton.styleFrom(
+                      backgroundColor: const Color(0xFF1E3A8A),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    ),
+                    icon: const Icon(Icons.add_box, size: 15, color: Color(0xFF00E5FF)),
+                    label: const Text('➕ Create Own Tile',
+                        style: TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.w900)),
+                    onPressed: _showCreateCustomTileDialog,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
               GridView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                itemCount: _tiles.length,
+                itemCount: _allCombinedTiles.length,
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 4,
                   mainAxisSpacing: 8,
                   crossAxisSpacing: 8,
-                  childAspectRatio: 1.15,
+                  childAspectRatio: 1.12,
                 ),
                 itemBuilder: (ctx, i) {
-                  final tile = _tiles[i];
-                  return ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Color(tile['color'] as int),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.all(4),
-                      elevation: 4,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: const BorderSide(color: Colors.white24, width: 1),
+                  final tile = _allCombinedTiles[i];
+                  final String tKey = tile['key'].toString();
+                  final int clipCount = RealTileStudioManager.getClipsFor(tKey, _commLanguage).length;
+
+                  return Listener(
+                    onPointerDown: (_) {
+                      _fiveSecHoldTimer?.cancel();
+                      _fiveSecHoldTimer = Timer(const Duration(seconds: 5), () {
+                        if (mounted) {
+                          RealTileStudioManager.show5SecHoldTileClipsDialog(
+                            context,
+                            tile,
+                            _commLanguage,
+                            () => setState(() {}),
+                          );
+                        }
+                      });
+                    },
+                    onPointerUp: (_) => _fiveSecHoldTimer?.cancel(),
+                    onPointerCancel: (_) => _fiveSecHoldTimer?.cancel(),
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Color(tile['color'] as int),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.all(3),
+                        elevation: 4,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(
+                            color: clipCount > 0 ? const Color(0xFF00E676) : Colors.white24,
+                            width: clipCount > 0 ? 1.8 : 1.0,
+                          ),
+                        ),
                       ),
-                    ),
-                    onPressed: () => _onTilePressed(tile),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          tile['title'].toString(),
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          tile['sub'].toString(),
-                          textAlign: TextAlign.center,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: Colors.amberAccent),
-                        ),
-                      ],
+                      onPressed: () => _onTilePressed(tile),
+                      onLongPress: () {
+                        // Also allow opening if held
+                      },
+                      child: Stack(
+                        children: [
+                          Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  tile['title'].toString(),
+                                  textAlign: TextAlign.center,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  tile['sub'].toString(),
+                                  textAlign: TextAlign.center,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      fontSize: 8.0, fontWeight: FontWeight.bold, color: Colors.amberAccent),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (clipCount > 0)
+                            Positioned(
+                              right: 0,
+                              top: 0,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: Colors.black87,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  '🎵$clipCount',
+                                  style: const TextStyle(
+                                      fontSize: 8, color: Color(0xFF00E676), fontWeight: FontWeight.w900),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
                   );
                 },
               ),
+              const SizedBox(height: 12),
+
+              // 3B. ULTRA-PRO REAL AUDIO ADDER & TRIMMER STUDIO (RECORD, AUDIO FILE, VIDEO EXTRACT, IG REELS / YT SHORTS)
+              _buildRealAudioTrimmerStudioCard(),
               const SizedBox(height: 10),
 
               // 4. FINE-TUNE JANI MURTHY BARITONE CHEST VOICE & SPEED
@@ -1390,6 +1573,355 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  void _showCreateCustomTileDialog() {
+    final TextEditingController titleCtrl = TextEditingController();
+    final TextEditingController subCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF11192B),
+        title: const Text('➕ Create Your Own Custom Tile',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF00E5FF))),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: titleCtrl,
+              decoration: const InputDecoration(labelText: 'Tile Title (e.g. 🏆 TOSS, 🔥 ENTRY, 👑 KING)'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: subCtrl,
+              decoration: const InputDecoration(labelText: 'Subtitle (e.g. SPECIAL CALL)'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00E676), foregroundColor: Colors.black),
+            onPressed: () async {
+              if (titleCtrl.text.trim().isNotEmpty) {
+                await RealTileStudioManager.addCustomTile(titleCtrl.text, subCtrl.text, 0xFF00695C);
+                setState(() {
+                  _selectedTileForStudio = RealTileStudioManager.userCustomTiles.last['key'].toString();
+                });
+                if (ctx.mounted) Navigator.pop(ctx);
+              }
+            },
+            child: const Text('Create Tile', style: TextStyle(fontWeight: FontWeight.w900)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRealAudioTrimmerStudioCard() {
+    final tilesList = _allCombinedTiles;
+    final bool validSelected = tilesList.any((t) => t['key'].toString() == _selectedTileForStudio);
+    if (!validSelected && tilesList.isNotEmpty) {
+      _selectedTileForStudio = tilesList.first['key'].toString();
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(colors: [Color(0xFF1A103C), Color(0xFF0D1526)]),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.amberAccent, width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '🎛 REAL SONG / VIDEO / IG REELS & YT SHORTS TRIMMER STUDIO',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Colors.amberAccent),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Select Tile & Language ➔ Record Mic, Upload Song, Upload Video (Auto-Extracts Music), or Share from Instagram Reels / YT Shorts ➔ Trim & Preview before adding!',
+            style: TextStyle(fontSize: 10, color: Colors.white70),
+          ),
+          const SizedBox(height: 10),
+
+          // Tile Selector + Language Indicator
+          Row(
+            children: [
+              const Text('Target Tile: ', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.cyanAccent)),
+              const SizedBox(width: 6),
+              Expanded(
+                child: DropdownButton<String>(
+                  value: _selectedTileForStudio,
+                  isExpanded: true,
+                  items: tilesList.map((t) {
+                    return DropdownMenuItem<String>(
+                      value: t['key'].toString(),
+                      child: Text('${t['title']} (${t['sub']}) — $_commLanguage',
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                    );
+                  }).toList(),
+                  onChanged: (v) {
+                    if (v != null) setState(() => _selectedTileForStudio = v);
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+
+          // 4 Input Source Buttons: Record Mic, Upload Audio, Upload Video (Extract), IG Reels/Shorts
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _isRecordingTileMic ? Colors.redAccent : const Color(0xFF00E676),
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                ),
+                icon: Icon(_isRecordingTileMic ? Icons.stop_circle : Icons.mic, size: 16),
+                label: Text(
+                  _isRecordingTileMic ? '⏹ Stop Mic' : '🎙 1. Record Mic',
+                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900),
+                ),
+                onPressed: () async {
+                  if (!_isRecordingTileMic) {
+                    final path = await AppSoundEngine.startMicRecording(
+                      'tile_${_selectedTileForStudio}_${DateTime.now().millisecondsSinceEpoch}',
+                    );
+                    setState(() {
+                      _isRecordingTileMic = true;
+                      _loadedDraftFilePath = path;
+                      _loadedDraftTitle = 'Mic Recording ($_selectedTileForStudio)';
+                      _clipNameCtrl.text = 'Mic Voice ($_selectedTileForStudio)';
+                    });
+                  } else {
+                    final path = await AppSoundEngine.stopMicRecording();
+                    setState(() {
+                      _isRecordingTileMic = false;
+                      if (path != null) {
+                        _loadedDraftFilePath = path;
+                        _trimStartSec = 0.0;
+                        _trimEndSec = 10.0;
+                      }
+                    });
+                  }
+                },
+              ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0288D1),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                ),
+                icon: const Icon(Icons.audio_file, size: 16),
+                label: const Text('🎵 2. Upload Audio File',
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900)),
+                onPressed: () async {
+                  final path = await RealTileStudioManager.pickAndExtractFile(isVideo: false);
+                  if (path != null && mounted) {
+                    setState(() {
+                      _loadedDraftFilePath = path;
+                      _loadedDraftTitle = path.split('/').last;
+                      _clipNameCtrl.text = 'Uploaded Song Cut';
+                      _trimStartSec = 0.0;
+                      _trimEndSec = 12.0;
+                    });
+                  }
+                },
+              ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF7B1FA2),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                ),
+                icon: const Icon(Icons.video_file, size: 16),
+                label: const Text('🎬 3. Upload Video (Extract Music)',
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900)),
+                onPressed: () async {
+                  setState(() => _isExtractingMedia = true);
+                  final path = await RealTileStudioManager.pickAndExtractFile(isVideo: true);
+                  if (mounted) {
+                    setState(() {
+                      _isExtractingMedia = false;
+                      if (path != null) {
+                        _loadedDraftFilePath = path;
+                        _loadedDraftTitle = 'Extracted Video Music';
+                        _clipNameCtrl.text = 'Video Extracted Music';
+                        _trimStartSec = 0.0;
+                        _trimEndSec = 12.0;
+                      }
+                    });
+                  }
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          // Instagram Reels / YouTube Shorts Link or Share Input
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _reelShortUrlCtrl,
+                  style: const TextStyle(fontSize: 11),
+                  decoration: InputDecoration(
+                    hintText: '📲 Paste IG Reel / YT Short Link (or Share directly from Instagram/YouTube app)...',
+                    filled: true,
+                    fillColor: const Color(0xFF090E1A),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.pinkAccent,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                ),
+                onPressed: () async {
+                  if (_reelShortUrlCtrl.text.trim().isEmpty) return;
+                  setState(() => _isExtractingMedia = true);
+                  final path = await RealTileStudioManager.extractAudioFromReelOrShortUrl(_reelShortUrlCtrl.text);
+                  if (mounted) {
+                    setState(() {
+                      _isExtractingMedia = false;
+                      if (path != null) {
+                        _loadedDraftFilePath = path;
+                        _loadedDraftTitle = 'IG Reel / YT Short Music';
+                        _clipNameCtrl.text = 'Reel/Short Cut';
+                        _trimStartSec = 0.0;
+                        _trimEndSec = 10.0;
+                      }
+                    });
+                  }
+                },
+                child: const Text('Extract Reel/Short', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900)),
+              ),
+            ],
+          ),
+
+          if (_isExtractingMedia)
+            const Padding(
+              padding: EdgeInsets.all(10.0),
+              child: LinearProgressIndicator(color: Colors.amberAccent),
+            ),
+
+          // IN-APP TRIMMER & PREVIEW PLAY CONFIRMATION BOX
+          if (_loadedDraftFilePath != null) ...[
+            const Divider(color: Colors.white24, height: 18),
+            Text(
+              '✂️ TRIM & PREVIEW BEFORE ADDING: $_loadedDraftTitle',
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Color(0xFF00E676)),
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _clipNameCtrl,
+              style: const TextStyle(fontSize: 11),
+              decoration: const InputDecoration(
+                labelText: 'Clip Label / Name',
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Start: ${_trimStartSec.toStringAsFixed(1)}s',
+                    style: const TextStyle(fontSize: 11, color: Colors.cyanAccent, fontWeight: FontWeight.bold)),
+                Text('Duration: ${(_trimEndSec - _trimStartSec).toStringAsFixed(1)}s',
+                    style: const TextStyle(fontSize: 11, color: Colors.amberAccent, fontWeight: FontWeight.bold)),
+                Text('End: ${_trimEndSec.toStringAsFixed(1)}s',
+                    style: const TextStyle(fontSize: 11, color: Colors.pinkAccent, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            RangeSlider(
+              values: RangeValues(
+                _trimStartSec.clamp(0.0, _maxDraftDurationSec),
+                _trimEndSec.clamp(_trimStartSec + 0.5, _maxDraftDurationSec),
+              ),
+              min: 0.0,
+              max: _maxDraftDurationSec,
+              activeColor: Colors.amberAccent,
+              onChanged: (RangeValues values) {
+                setState(() {
+                  _trimStartSec = values.start;
+                  _trimEndSec = values.end;
+                });
+              },
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                TextButton(
+                  onPressed: () => setState(() => _maxDraftDurationSec = (_maxDraftDurationSec == 60.0) ? 240.0 : 60.0),
+                  child: Text(
+                    _maxDraftDurationSec == 60.0 ? '🔍 Range: 60s (Tap for 240s)' : '🔍 Range: 240s (Tap for 60s)',
+                    style: const TextStyle(fontSize: 10, color: Colors.white70),
+                  ),
+                ),
+                Row(
+                  children: [
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF00E5FF),
+                        foregroundColor: Colors.black,
+                      ),
+                      icon: const Icon(Icons.play_arrow, size: 16),
+                      label: const Text('▶ Preview Trim', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900)),
+                      onPressed: () {
+                        RealTileStudioManager.playSpecificTrimmedClip(
+                          _loadedDraftFilePath!,
+                          (_trimStartSec * 1000).toInt(),
+                          (_trimEndSec * 1000).toInt(),
+                        );
+                      },
+                    ),
+                    const SizedBox(width: 6),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF00E676),
+                        foregroundColor: Colors.black,
+                      ),
+                      icon: const Icon(Icons.check_circle, size: 16),
+                      label: const Text('✅ Add to Tile', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900)),
+                      onPressed: () async {
+                        final newClip = CustomTileClip(
+                          id: 'clip_${DateTime.now().millisecondsSinceEpoch}',
+                          tileKey: _selectedTileForStudio,
+                          language: _commLanguage,
+                          title: _clipNameCtrl.text.trim().isEmpty ? 'Custom Sound' : _clipNameCtrl.text.trim(),
+                          filePath: _loadedDraftFilePath!,
+                          startMs: (_trimStartSec * 1000).toInt(),
+                          endMs: (_trimEndSec * 1000).toInt(),
+                        );
+                        RealTileStudioManager.allClips.insert(0, newClip);
+                        await RealTileStudioManager.saveClips();
+                        await RealTileStudioManager.setRealMode(true);
+                        if (mounted) {
+                          setState(() {
+                            _loadedDraftFilePath = null;
+                            _lastSpokenBanner =
+                                '✅ Added "${newClip.title}" to [$_selectedTileForStudio • $_commLanguage] & Switched to REAL Mode!';
+                          });
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

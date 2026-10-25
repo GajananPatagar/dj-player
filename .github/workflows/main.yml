@@ -43,8 +43,17 @@ jobs:
             cat << 'KTEOF' > "$MAIN_KT"
           $PKG_LINE
           import android.Manifest
+          import android.app.Activity
+          import android.content.Intent
           import android.content.pm.PackageManager
+          import android.media.MediaCodec
+          import android.media.MediaExtractor
+          import android.media.MediaFormat
+          import android.media.MediaMuxer
           import android.media.MediaRecorder
+          import android.net.Uri
+          import java.io.FileOutputStream
+          import java.nio.ByteBuffer
           import android.media.MediaScannerConnection
           import android.media.audiofx.Equalizer
           import android.media.audiofx.LoudnessEnhancer
@@ -68,16 +77,122 @@ jobs:
               private var currentRecordPath: String? = null
               private var karaokeEq: Equalizer? = null
               private var methodChannel: MethodChannel? = null
+              private var pendingFileResult: MethodChannel.Result? = null
+              private var pendingIsVideo: Boolean = false
+              private var initialSharedMedia: String? = null
 
               private var virtualizer: Virtualizer? = null
 
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
                   tts = TextToSpeech(this, this)
+                  handleIncomingShareIntent(intent)
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                       if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                           requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.WRITE_EXTERNAL_STORAGE), 200)
                       }
+                  }
+              }
+
+
+              override fun onNewIntent(intent: Intent) {
+                  super.onNewIntent(intent)
+                  handleIncomingShareIntent(intent)
+              }
+
+              private fun handleIncomingShareIntent(intent: Intent?) {
+                  if (intent == null) return
+                  if (Intent.ACTION_SEND == intent.action) {
+                      val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
+                      val sharedStream = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+                      if (!sharedText.isNullOrEmpty()) {
+                          initialSharedMedia = sharedText
+                          methodChannel?.invokeMethod("onSharedMedia", sharedText)
+                      } else if (sharedStream != null) {
+                          val extracted = copyUriAndExtractAudio(sharedStream, true)
+                          if (extracted != null) {
+                              initialSharedMedia = extracted
+                              methodChannel?.invokeMethod("onSharedMedia", extracted)
+                          }
+                      }
+                  }
+              }
+
+              override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+                  super.onActivityResult(requestCode, resultCode, data)
+                  if (requestCode == 701) {
+                      if (resultCode == Activity.RESULT_OK && data?.data != null) {
+                          val path = copyUriAndExtractAudio(data.data!!, pendingIsVideo)
+                          pendingFileResult?.success(path)
+                      } else {
+                          pendingFileResult?.success(null)
+                      }
+                      pendingFileResult = null
+                  }
+              }
+
+              private fun copyUriAndExtractAudio(uri: Uri, extractIfVideo: Boolean): String? {
+                  return try {
+                      val mime = contentResolver.getType(uri) ?: ""
+                      val isVid = extractIfVideo || mime.startsWith("video")
+                      val ext = if (isVid) ".mp4" else ".m4a"
+                      val tempIn = File(filesDir, "picked_${System.currentTimeMillis()}$ext")
+                      contentResolver.openInputStream(uri)?.use { input ->
+                          FileOutputStream(tempIn).use { output ->
+                              input.copyTo(output)
+                          }
+                      }
+                      if (isVid) {
+                          extractAudioTrackHardware(tempIn.absolutePath) ?: tempIn.absolutePath
+                      } else {
+                          tempIn.absolutePath
+                      }
+                  } catch (_: Exception) {
+                      null
+                  }
+              }
+
+              private fun extractAudioTrackHardware(videoPath: String): String? {
+                  return try {
+                      val outAudioFile = File(filesDir, "extracted_audio_${System.currentTimeMillis()}.m4a")
+                      val extractor = MediaExtractor()
+                      extractor.setDataSource(videoPath)
+                      var audioTrackIndex = -1
+                      for (i in 0 until extractor.trackCount) {
+                          val format = extractor.getTrackFormat(i)
+                          val mime = format.getString(MediaFormat.KEY_MIME) ?: ""
+                          if (mime.startsWith("audio/")) {
+                              audioTrackIndex = i
+                              break
+                          }
+                      }
+                      if (audioTrackIndex < 0) {
+                          extractor.release()
+                          return videoPath
+                      }
+                      extractor.selectTrack(audioTrackIndex)
+                      val format = extractor.getTrackFormat(audioTrackIndex)
+                      val muxer = MediaMuxer(outAudioFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+                      val dstIndex = muxer.addTrack(format)
+                      muxer.start()
+                      val buffer = ByteBuffer.allocate(256 * 1024)
+                      val bufferInfo = MediaCodec.BufferInfo()
+                      while (true) {
+                          val sampleSize = extractor.readSampleData(buffer, 0)
+                          if (sampleSize < 0) break
+                          bufferInfo.offset = 0
+                          bufferInfo.size = sampleSize
+                          bufferInfo.presentationTimeUs = extractor.sampleTime
+                          bufferInfo.flags = extractor.sampleFlags
+                          muxer.writeSampleData(dstIndex, buffer, bufferInfo)
+                          extractor.advance()
+                      }
+                      muxer.stop()
+                      muxer.release()
+                      extractor.release()
+                      outAudioFile.absolutePath
+                  } catch (_: Exception) {
+                      videoPath
                   }
               }
 
@@ -279,6 +394,28 @@ jobs:
                                   result.success(currentRecordPath)
                               }
                           }
+                          "pickMediaAndExtractAudio" -> {
+                              pendingFileResult = result
+                              pendingIsVideo = call.argument<Boolean>("isVideo") ?: false
+                              val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                                  type = if (pendingIsVideo) "video/*" else "audio/*"
+                                  addCategory(Intent.CATEGORY_OPENABLE)
+                              }
+                              startActivityForResult(Intent.createChooser(intent, "Select Media"), 701)
+                          }
+                          "extractAudioFromUri" -> {
+                              val u = call.argument<String>("uri") ?: ""
+                              if (u.startsWith("content://")) {
+                                  result.success(copyUriAndExtractAudio(Uri.parse(u), true))
+                              } else {
+                                  result.success(extractAudioTrackHardware(u))
+                              }
+                          }
+                          "getInitialSharedMedia" -> {
+                              val s = initialSharedMedia
+                              initialSharedMedia = null
+                              result.success(s)
+                          }
                           else -> result.notImplemented()
                       }
                   }
@@ -305,7 +442,10 @@ jobs:
               sed -i 's/<application/<application android:usesCleartextTraffic="true"/' "$MANIFEST"
             fi
             if ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
-              sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <uses-permission android:name="android.permission.RECORD_AUDIO"\/>\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"\/>\n    <application/' "$MANIFEST"
+              sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <uses-permission android:name="android.permission.RECORD_AUDIO"\/>\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"\/>\n    <application/' "$MANIFEST"
+            fi
+            if ! grep -q "android.intent.action.SEND" "$MANIFEST"; then
+              sed -i 's|<category android:name="android.intent.category.LAUNCHER"/>|<category android:name="android.intent.category.LAUNCHER"/></intent-filter><intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/><data android:mimeType="video/*"/><data android:mimeType="audio/*"/>|g' "$MANIFEST"
             fi
           fi
           if [ -f "assets/icon.png" ]; then

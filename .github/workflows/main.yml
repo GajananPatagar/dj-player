@@ -568,8 +568,15 @@ jobs:
             rm -rf android/app/src/main/res/mipmap-anydpi-v26
           fi
 
-      - name: Install Dependencies & Build Release APK
+      - name: Force Android V2 Embedding & Clean Build
         run: |
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          if [ -f "$MANIFEST" ]; then
+            if ! grep -q "flutterEmbedding" "$MANIFEST"; then
+              sed -i 's|<application|<application\n        <meta-data android:name="flutterEmbedding" android:value="2" />|g' "$MANIFEST"
+            fi
+          fi
+          flutter clean
           flutter pub get
           flutter build apk --release --no-tree-shake-icons
 

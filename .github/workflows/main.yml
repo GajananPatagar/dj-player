@@ -52,6 +52,14 @@ jobs:
           import android.media.MediaMuxer
           import android.media.MediaRecorder
           import android.net.Uri
+          import android.os.Handler
+          import android.os.Looper
+          import android.webkit.WebResourceRequest
+          import android.webkit.WebResourceResponse
+          import android.webkit.WebView
+          import android.webkit.WebViewClient
+          import java.net.HttpURLConnection
+          import java.net.URL
           import java.io.FileOutputStream
           import java.nio.ByteBuffer
           import android.media.MediaScannerConnection
@@ -107,7 +115,9 @@ jobs:
                       val sharedStream = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
                       if (!sharedText.isNullOrEmpty()) {
                           initialSharedMedia = sharedText
-                          methodChannel?.invokeMethod("onSharedMedia", sharedText)
+                          Handler(Looper.getMainLooper()).postDelayed({
+                              methodChannel?.invokeMethod("onSharedMedia", sharedText)
+                          }, 500)
                       } else if (sharedStream != null) {
                           val extracted = copyUriAndExtractAudio(sharedStream, true)
                           if (extracted != null) {
@@ -193,6 +203,102 @@ jobs:
                       outAudioFile.absolutePath
                   } catch (_: Exception) {
                       videoPath
+                  }
+              }
+
+
+              private fun resolveAndExtractUrlNative(rawShareText: String, result: MethodChannel.Result) {
+                  val urlRegex = Regex("https?://[^\\s\"<>]+")
+                  val match = urlRegex.find(rawShareText)
+                  val targetUrl = match?.value ?: rawShareText.trim()
+                  var completed = false
+                  val mainHandler = Handler(Looper.getMainLooper())
+
+                  fun finishWithUrl(mediaUrl: String?) {
+                      if (completed) return
+                      completed = true
+                      if (mediaUrl == null) {
+                          mainHandler.post { result.success(null) }
+                          return
+                      }
+                      Thread {
+                          try {
+                              val conn = URL(mediaUrl).openConnection() as HttpURLConnection
+                              conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36")
+                              conn.connectTimeout = 12000
+                              conn.readTimeout = 20000
+                              conn.instanceFollowRedirects = true
+                              val tempVid = File(filesDir, "native_reel_${System.currentTimeMillis()}.mp4")
+                              conn.inputStream.use { inp ->
+                                  FileOutputStream(tempVid).use { out ->
+                                      inp.copyTo(out)
+                                  }
+                              }
+                              if (tempVid.exists() && tempVid.length() > 10000) {
+                                  val audioPath = extractAudioTrackHardware(tempVid.absolutePath) ?: tempVid.absolutePath
+                                  mainHandler.post { result.success(audioPath) }
+                              } else {
+                                  mainHandler.post { result.success(null) }
+                              }
+                          } catch (_: Exception) {
+                              mainHandler.post { result.success(null) }
+                          }
+                      }.start()
+                  }
+
+                  mainHandler.post {
+                      try {
+                          val wv = WebView(applicationContext)
+                          wv.settings.javaScriptEnabled = true
+                          wv.settings.domStorageEnabled = true
+                          wv.settings.mediaPlaybackRequiresUserGesture = false
+                          wv.settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+
+                          wv.webViewClient = object : WebViewClient() {
+                              override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                                  val reqUrl = request?.url?.toString() ?: ""
+                                  if (!completed && (reqUrl.contains(".mp4") || reqUrl.contains(".m4a") || reqUrl.contains("googlevideo.com/videoplayback") || reqUrl.contains("cdninstagram.com") || reqUrl.contains("fbcdn.net")) && !reqUrl.contains(".jpg") && !reqUrl.contains(".png") && !reqUrl.contains(".webp")) {
+                                      if (reqUrl.contains("mp4") || reqUrl.contains("videoplayback") || reqUrl.contains("audio")) {
+                                          mainHandler.post {
+                                              try { wv.destroy() } catch (_: Exception) {}
+                                          }
+                                          finishWithUrl(reqUrl)
+                                      }
+                                  }
+                                  return super.shouldInterceptRequest(view, request)
+                              }
+
+                              override fun onPageFinished(view: WebView?, url: String?) {
+                                  super.onPageFinished(view, url)
+                                  view?.evaluateJavascript(
+                                      "(function(){ var v = document.querySelector('video'); if(v && v.src) return v.src; var m = document.querySelector('meta[property="og:video"]'); if(m) return m.content; return ''; })()"
+                                  ) { resStr ->
+                                      val clean = resStr?.replace(""", "")?.trim() ?: ""
+                                      if (!completed && clean.startsWith("http")) {
+                                          try { wv.destroy() } catch (_: Exception) {}
+                                          finishWithUrl(clean)
+                                      }
+                                  }
+                              }
+                          }
+
+                          val loadUrl = if (targetUrl.contains("instagram.com")) {
+                              val sc = Regex("(?:reel|reels|p)/([A-Za-z0-9_-]+)").find(targetUrl)?.groupValues?.get(1)
+                              if (sc != null) "https://www.instagram.com/p/$sc/embed/captioned/" else targetUrl
+                          } else {
+                              targetUrl
+                          }
+                          wv.loadUrl(loadUrl)
+
+                          mainHandler.postDelayed({
+                              if (!completed) {
+                                  try { wv.destroy() } catch (_: Exception) {}
+                                  finishWithUrl(null)
+                              }
+                          }, 9500)
+                      } catch (_: Exception) {
+                          finishWithUrl(null)
+                      }
                   }
               }
 
@@ -415,6 +521,10 @@ jobs:
                               val s = initialSharedMedia
                               initialSharedMedia = null
                               result.success(s)
+                          }
+                          "resolveAndExtractUrlNative" -> {
+                              val u = call.argument<String>("url") ?: ""
+                              resolveAndExtractUrlNative(u, result)
                           }
                           else -> result.notImplemented()
                       }

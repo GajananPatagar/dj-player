@@ -29,6 +29,8 @@ class AppSoundEngine {
   }
   static bool _isSpeakingLock = false;
   static bool hardwareVolumeEntryMode = false;
+  static final ValueNotifier<int> activeTabIndexNotifier = ValueNotifier<int>(0);
+  static final ValueNotifier<String?> incomingSharedMediaNotifier = ValueNotifier<String?>(null);
 
   static const Map<String, String> _knPhonetics = {
     'gajanan': 'ಗಜಾನನ',
@@ -81,6 +83,15 @@ class AppSoundEngine {
 
   static void initHardwareVolumeListener() {
     _nativeChannel.setMethodCallHandler((call) async {
+      if (call.method == 'onSharedMedia' && call.arguments != null) {
+        final String shared = call.arguments.toString().trim();
+        if (shared.isNotEmpty) {
+          // Automatically switch to Cricket Commentary Page (Tab Index 1) immediately!
+          activeTabIndexNotifier.value = 1;
+          incomingSharedMediaNotifier.value = shared + '##' + DateTime.now().millisecondsSinceEpoch.toString();
+        }
+        return;
+      }
       if (!hardwareVolumeEntryMode) return;
       if (call.method == 'onVolumeKey') {
         final String dir = (call.arguments ?? '').toString();
@@ -329,8 +340,44 @@ class MasterHomeShell extends StatefulWidget {
   State<MasterHomeShell> createState() => _MasterHomeShellState();
 }
 
-class _MasterHomeShellState extends State<MasterHomeShell> {
+class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingObserver {
   int _selectedIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    AppSoundEngine.activeTabIndexNotifier.addListener(() {
+      if (mounted && _selectedIndex != AppSoundEngine.activeTabIndexNotifier.value) {
+        setState(() => _selectedIndex = AppSoundEngine.activeTabIndexNotifier.value);
+      }
+    });
+    _checkPendingSharedIntent();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkPendingSharedIntent();
+    }
+  }
+
+  Future<void> _checkPendingSharedIntent() async {
+    try {
+      final String? initial = await AppSoundEngine._nativeChannel.invokeMethod<String>('getInitialSharedMedia');
+      if (initial != null && initial.trim().isNotEmpty) {
+        AppSoundEngine.activeTabIndexNotifier.value = 1;
+        AppSoundEngine.incomingSharedMediaNotifier.value =
+            initial.trim() + '##' + DateTime.now().millisecondsSinceEpoch.toString();
+      }
+    } catch (_) {}
+  }
 
   final List<Widget> _pages = const [
     AudioStudioScreen(),
@@ -395,7 +442,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> {
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
-        onTap: (idx) => setState(() => _selectedIndex = idx),
+        onTap: (idx) { AppSoundEngine.activeTabIndexNotifier.value = idx; setState(() => _selectedIndex = idx); },
         backgroundColor: const Color(0xFF0B1120),
         selectedItemColor: const Color(0xFF00E5FF),
         unselectedItemColor: Colors.white54,

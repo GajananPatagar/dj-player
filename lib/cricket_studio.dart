@@ -15,6 +15,7 @@ class CricketCommentaryScreen extends StatefulWidget {
 
 class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
   final Random _rng = Random();
+  final ScrollController _pageScrollCtrl = ScrollController();
 
   String _commLanguage = 'KANNADA'; // KANNADA, HINDI, ENGLISH
   String _lastSpokenBanner = 'Tap any tile below for high-energy Jani Murthy / Shastri / Chopra commentary!';
@@ -75,8 +76,19 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
       onSharedMediaReceived: (shared) async {
         if (!mounted) return;
         setState(() {
+          _reelShortUrlCtrl.text = shared;
           _isExtractingMedia = true;
-          _lastSpokenBanner = '📲 Extracting Audio from Shared Instagram Reel / YT Short...';
+          _lastSpokenBanner = '📲 Extracting Exact Audio from Shared Reel / Short... Please wait ~4s';
+        });
+        // Auto-scroll straight down to the Spectrum Trimmer Studio so user sees it immediately!
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (_pageScrollCtrl.hasClients) {
+            _pageScrollCtrl.animateTo(
+              _pageScrollCtrl.position.maxScrollExtent,
+              duration: const Duration(milliseconds: 500),
+              curve: Curves.easeOut,
+            );
+          }
         });
         final path = await RealTileStudioManager.extractAudioFromReelOrShortUrl(shared);
         if (mounted) {
@@ -1379,6 +1391,7 @@ class _CricketCommentaryScreenState extends State<CricketCommentaryScreen> {
 
         Expanded(
           child: ListView(
+            controller: _pageScrollCtrl,
             padding: const EdgeInsets.all(10),
             children: [
               // 1. 3-LANGUAGE FAMOUS COMMENTATOR SELECTOR

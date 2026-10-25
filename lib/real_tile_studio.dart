@@ -68,25 +68,27 @@ class RealTileStudioManager {
     {'key': 'OTHERS', 'title': '✨ OTHERS', 'sub': 'SPECIAL CALL', 'color': 0xFF37474F, 'emotion': 'FAST'},
   ];
 
+  static Function(String)? _sharedCallback;
+
   static Future<void> init({Function(String sharedTextOrPath)? onSharedMediaReceived}) async {
+    _sharedCallback = onSharedMediaReceived;
     if (!_initialized) {
       _initialized = true;
       await loadSavedData();
-      _nativeChannel.setMethodCallHandler((call) async {
-        if (call.method == 'onSharedMedia' && call.arguments != null) {
-          final String shared = call.arguments.toString();
-          if (onSharedMediaReceived != null && shared.isNotEmpty) {
-            onSharedMediaReceived(shared);
-          }
+      AppSoundEngine.incomingSharedMediaNotifier.addListener(() {
+        final String? raw = AppSoundEngine.incomingSharedMediaNotifier.value;
+        if (raw != null && raw.isNotEmpty && _sharedCallback != null) {
+          final String clean = raw.split('##').first;
+          _sharedCallback!(clean);
         }
       });
     }
-    try {
-      final String? initialShared = await _nativeChannel.invokeMethod<String>('getInitialSharedMedia');
-      if (initialShared != null && initialShared.isNotEmpty && onSharedMediaReceived != null) {
-        onSharedMediaReceived(initialShared);
-      }
-    } catch (_) {}
+    final String? existing = AppSoundEngine.incomingSharedMediaNotifier.value;
+    if (existing != null && existing.isNotEmpty && _sharedCallback != null) {
+      final String clean = existing.split('##').first;
+      AppSoundEngine.incomingSharedMediaNotifier.value = null;
+      _sharedCallback!(clean);
+    }
   }
 
   static Future<void> loadSavedData() async {
@@ -290,6 +292,56 @@ class RealTileStudioManager {
     final int ts = DateTime.now().millisecondsSinceEpoch;
     final String outAudioPath = '${dir.path}/exact_reel_short_$ts.m4a';
     final String tempVideoPath = '${dir.path}/temp_video_$ts.mp4';
+
+    // TIER 0A: Native Android Headless WebView & Hardware MediaExtractor (Works on IG Reels & YT Shorts with cookies/JS!)
+    try {
+      final String? nativeExtracted = await _nativeChannel
+          .invokeMethod<String>('resolveAndExtractUrlNative', {'url': targetUrl})
+          .timeout(const Duration(seconds: 18));
+      if (nativeExtracted != null && File(nativeExtracted).existsSync() && File(nativeExtracted).lengthSync() > 8000) {
+        return nativeExtracted;
+      }
+    } catch (_) {}
+
+    // TIER 0B: Multi-Node Cobalt Media API (Extracts direct audio/video from Instagram Reels & YouTube Shorts)
+    const List<String> cobaltNodes = [
+      'https://Cobalt.avo.sh',
+      'https://co.eepy.today',
+      'https://cobalt-api.kwiatekmiki.com',
+      'https://api.cobalt.tools/api/json',
+    ];
+    for (final cNode in cobaltNodes) {
+      try {
+        final cRes = await http
+            .post(
+              Uri.parse(cNode),
+              headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Android 14; Mobile)',
+              },
+              body: jsonEncode({
+                'url': targetUrl,
+                'isAudioOnly': true,
+                'aFormat': 'mp3',
+                'downloadMode': 'audio',
+              }),
+            )
+            .timeout(const Duration(seconds: 7));
+        if (cRes.statusCode == 200) {
+          final Map cData = jsonDecode(cRes.body);
+          final String? dlUrl = cData['url']?.toString();
+          if (dlUrl != null && dlUrl.startsWith('http')) {
+            final mediaRes = await http.get(Uri.parse(dlUrl)).timeout(const Duration(seconds: 25));
+            if (mediaRes.statusCode == 200 && mediaRes.bodyBytes.length > 10000) {
+              final File af = File(outAudioPath);
+              await af.writeAsBytes(mediaRes.bodyBytes, flush: true);
+              return af.path;
+            }
+          }
+        }
+      } catch (_) {}
+    }
 
     // =========================================================================
     // PATH A: INSTAGRAM REELS / POSTS (instagram.com/reel/... or /reels/... or /p/...)

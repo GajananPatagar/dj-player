@@ -23,34 +23,49 @@ void main() {
 }
 
 class ImsSecurityManager {
-  static const String defaultMasterPin = '1681';
-  static const String _prefUnlockedKey = 'ims_first_install_unlocked_v610';
-  static const String _prefCustomPinKey = 'ims_custom_pin_v610';
+  // Internal fallback seed (NEVER displayed in any UI label, hint, or dialog!)
+  static const String _internalFallbackPin = '1681';
+  static const String _prefUnlockedKey = 'ims_first_install_unlocked_v650';
+  static const String _prefRelockTokenKey = 'ims_unlocked_relock_token_v650';
+  static const String _prefCustomPinKey = 'ims_custom_pin_v650';
+  static const String _prefCachedOtaPinKey = 'ims_cached_ota_pin_v650';
 
-  /// Returns true if the user has already unlocked the app once after installation.
-  /// Once unlocked on 1st open, everyday launches open directly without asking again!
+  /// Checks if 1st-time installation lock has already been unlocked (and matches current OTA relock token).
   static Future<bool> isFirstTimeInstallUnlocked() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      if (prefs.getBool(_prefUnlockedKey) == true) return true;
+      final bool unlocked = prefs.getBool(_prefUnlockedKey) ?? false;
+      final int savedToken = prefs.getInt(_prefRelockTokenKey) ?? 1;
+      final int remoteToken = OtaUpdateEngine.remoteRelockToken.value;
+      if (unlocked && savedToken >= remoteToken) {
+        return true;
+      }
     } catch (_) {}
     try {
       final dir = await getApplicationDocumentsDirectory();
-      final f = File('${dir.path}/ims_unlocked_v610.flag');
-      if (await f.exists()) return true;
+      final f = File('${dir.path}/ims_unlocked_v650.flag');
+      if (await f.exists()) {
+        final String content = (await f.readAsString()).trim();
+        final int fileTok = int.tryParse(content) ?? 1;
+        if (fileTok >= OtaUpdateEngine.remoteRelockToken.value) {
+          return true;
+        }
+      }
     } catch (_) {}
     return false;
   }
 
   static Future<void> markFirstTimeInstallUnlocked() async {
+    final int tok = OtaUpdateEngine.remoteRelockToken.value;
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_prefUnlockedKey, true);
+      await prefs.setInt(_prefRelockTokenKey, tok);
     } catch (_) {}
     try {
       final dir = await getApplicationDocumentsDirectory();
-      final f = File('${dir.path}/ims_unlocked_v610.flag');
-      await f.writeAsString('UNLOCKED');
+      final f = File('${dir.path}/ims_unlocked_v650.flag');
+      await f.writeAsString('$tok');
     } catch (_) {}
   }
 
@@ -61,20 +76,29 @@ class ImsSecurityManager {
     } catch (_) {}
     try {
       final dir = await getApplicationDocumentsDirectory();
-      final f = File('${dir.path}/ims_unlocked_v610.flag');
+      final f = File('${dir.path}/ims_unlocked_v650.flag');
       if (await f.exists()) await f.delete();
     } catch (_) {}
   }
 
+  /// Resolves the active PIN:
+  /// Priority 1: Live OTA PIN from `ims_live_ota.json` on GitHub (`OtaUpdateEngine.remoteOtaPin`)
+  /// Priority 2: Custom PIN set by user inside the app
+  /// Priority 3: Internal fallback seed
   static Future<String> getActivePin() async {
+    final String liveOtaPin = OtaUpdateEngine.remoteOtaPin.value.trim();
     try {
       final prefs = await SharedPreferences.getInstance();
+      final String? cachedOta = prefs.getString(_prefCachedOtaPinKey);
       final String? custom = prefs.getString(_prefCustomPinKey);
       if (custom != null && custom.trim().isNotEmpty) {
         return custom.trim();
       }
+      if (cachedOta != null && cachedOta.trim().isNotEmpty) {
+        return cachedOta.trim();
+      }
     } catch (_) {}
-    return defaultMasterPin;
+    return liveOtaPin.isNotEmpty ? liveOtaPin : _internalFallbackPin;
   }
 
   static Future<void> setCustomPin(String newPin) async {
@@ -88,9 +112,12 @@ class ImsSecurityManager {
 
   static Future<bool> verifyPin(String entered) async {
     final String clean = entered.trim();
+    if (clean.isEmpty) return false;
     final String activePin = await getActivePin();
-    final String remotePin = OtaUpdateEngine.remoteDefaultPin.value.trim();
-    return clean == activePin || clean == defaultMasterPin || (remotePin.isNotEmpty && clean == remotePin);
+    final String remotePin = OtaUpdateEngine.remoteOtaPin.value.trim();
+    return clean == activePin ||
+        (remotePin.isNotEmpty && clean == remotePin) ||
+        clean == _internalFallbackPin;
   }
 }
 
@@ -102,6 +129,13 @@ class AppSoundEngine {
   static Future<void> boostAllPlayersMax(AudioPlayer p) async {
     try {
       await p.setVolume(1.0);
+    } catch (_) {}
+  }
+
+  /// Ensures Hardware EQ & Virtualizer are 100% bypassed / flat (0dB Normal Original Sound)
+  static Future<void> resetHardwareAudioToNormalFlat() async {
+    try {
+      await _nativeChannel.invokeMethod('resetAudioToNormalFlat');
     } catch (_) {}
   }
 
@@ -417,9 +451,11 @@ class DjPlayCommentaryApp extends StatelessWidget {
   }
 }
 
-/// First-Time Installation Security Gate:
-/// Asks for Password (Default: 1681) ONLY the 1st time the app is opened after installation!
-/// For everyday opens after that, goes straight into MasterHomeShell with zero delay!
+/// First-Time Installation Auto-OTA Scanner + Secret PIN Security Gate:
+/// 1) On 1st-time installation open, automatically scans GitHub OTA for the latest version & remote PIN,
+///    and if a newer APK build exists, auto-updates before the user starts using the app!
+/// 2) Never displays or hints the PIN anywhere in the UI.
+/// 3) Once unlocked on 1st install, everyday launches open straight into the app!
 class ImsFirstTimeLockGate extends StatefulWidget {
   const ImsFirstTimeLockGate({super.key});
 
@@ -428,7 +464,10 @@ class ImsFirstTimeLockGate extends StatefulWidget {
 }
 
 class _ImsFirstTimeLockGateState extends State<ImsFirstTimeLockGate> {
-  bool _isChecking = true;
+  bool _isBootstrapping = true;
+  bool _isAutoUpdatingOnFirstInstall = false;
+  String _bootstrapStatus = '🔍 Scanning IMS Cloud OTA for Latest Updates...';
+  double? _bootstrapProgress;
   bool _isUnlocked = false;
   String _enteredPin = '';
   String _errorMsg = '';
@@ -436,15 +475,54 @@ class _ImsFirstTimeLockGateState extends State<ImsFirstTimeLockGate> {
   @override
   void initState() {
     super.initState();
-    _checkUnlockStatus();
+    _runStartupOtaScanAndLockCheck();
   }
 
-  Future<void> _checkUnlockStatus() async {
-    final bool unlocked = await ImsSecurityManager.isFirstTimeInstallUnlocked();
+  Future<void> _runStartupOtaScanAndLockCheck() async {
+    // Ensure Hardware EQ & Virtualizer start 100% flat / normal (0dB Original Audio)
+    await AppSoundEngine.resetHardwareAudioToNormalFlat();
+
+    // First sync live OTA manifest (fetches latest remote PIN & forceRelockToken in <1.5s)
+    await OtaUpdateEngine.syncInAppLiveCloudOta();
+    final bool alreadyUnlocked = await ImsSecurityManager.isFirstTimeInstallUnlocked();
+
+    if (alreadyUnlocked) {
+      if (mounted) {
+        setState(() {
+          _isUnlocked = true;
+          _isBootstrapping = false;
+        });
+      }
+      return;
+    }
+
+    // User is opening the app for the 1st time after installation!
+    // Automatically scan for any newer OTA update and auto-install it before use!
     if (mounted) {
       setState(() {
-        _isUnlocked = unlocked;
-        _isChecking = false;
+        _bootstrapStatus = '🔄 1st-Time Setup: Scanning OTA Server for Latest IMS Build...';
+      });
+    }
+
+    final bool startedApkUpdate = await OtaUpdateEngine.checkAndAutoInstallOtaUpdate(
+      forceManualCheck: true,
+      onProgressCallback: (status, pct) {
+        if (mounted) {
+          setState(() {
+            _bootstrapStatus = status;
+            _bootstrapProgress = pct;
+            if (pct != null && pct < 1.0) {
+              _isAutoUpdatingOnFirstInstall = true;
+            }
+          });
+        }
+      },
+    );
+
+    if (mounted) {
+      setState(() {
+        _isAutoUpdatingOnFirstInstall = startedApkUpdate;
+        _isBootstrapping = false;
       });
     }
   }
@@ -457,7 +535,8 @@ class _ImsFirstTimeLockGateState extends State<ImsFirstTimeLockGate> {
     });
 
     final String activePin = await ImsSecurityManager.getActivePin();
-    if (_enteredPin.length >= activePin.length || _enteredPin == ImsSecurityManager.defaultMasterPin) {
+    final int targetLen = activePin.length >= 4 ? activePin.length : 4;
+    if (_enteredPin.length >= targetLen) {
       final bool valid = await ImsSecurityManager.verifyPin(_enteredPin);
       if (valid) {
         AppSoundEngine.playSynthesizedSfx('BELL');
@@ -465,9 +544,9 @@ class _ImsFirstTimeLockGateState extends State<ImsFirstTimeLockGate> {
         if (mounted) {
           setState(() => _isUnlocked = true);
         }
-      } else if (_enteredPin.length >= activePin.length) {
+      } else {
         setState(() {
-          _errorMsg = '❌ Incorrect Activation PIN — Try Again';
+          _errorMsg = '❌ Invalid Security Code';
           _enteredPin = '';
         });
       }
@@ -484,13 +563,6 @@ class _ImsFirstTimeLockGateState extends State<ImsFirstTimeLockGate> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isChecking) {
-      return const Scaffold(
-        backgroundColor: Color(0xFF050914),
-        body: Center(child: CircularProgressIndicator(color: Color(0xFF00E5FF))),
-      );
-    }
-
     if (_isUnlocked) {
       return MasterHomeShell(
         onRelockRequested: () async {
@@ -522,7 +594,6 @@ class _ImsFirstTimeLockGateState extends State<ImsFirstTimeLockGate> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // IMS Crest Badge
                   Container(
                     width: 82,
                     height: 82,
@@ -561,15 +632,49 @@ class _ImsFirstTimeLockGateState extends State<ImsFirstTimeLockGate> {
                       letterSpacing: 1.1,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 6),
+
+                  // 1st-Time Install Auto-OTA Scanner Status Box
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF00E676).withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFF00E676).withOpacity(0.45)),
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          _bootstrapStatus,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF00E676),
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        if (_isBootstrapping || _isAutoUpdatingOnFirstInstall) ...[
+                          const SizedBox(height: 6),
+                          LinearProgressIndicator(
+                            value: _bootstrapProgress,
+                            backgroundColor: Colors.white12,
+                            color: Colors.amberAccent,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
                   const Text(
-                    '🔐 First-Time Installation Security Lock\n(Unlocks Forever for Everyday Use Once Activated)',
+                    '🔐 Enter Security Access Code\n(One-Time Verification on First Installation)',
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 11.5, color: Color(0xFF00E5FF), fontWeight: FontWeight.w600),
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 16),
 
-                  // Entered PIN Dots Indicator
+                  // Entered PIN Dots Indicator (No PIN hints ever shown!)
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: List.generate(4, (i) {
@@ -605,7 +710,7 @@ class _ImsFirstTimeLockGateState extends State<ImsFirstTimeLockGate> {
                       style: const TextStyle(fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.w900),
                     ),
                   ],
-                  const SizedBox(height: 22),
+                  const SizedBox(height: 20),
 
                   // Glassmorphic Numeric Keypad
                   SizedBox(
@@ -681,8 +786,13 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     AppSoundEngine.activeTabIndexNotifier.addListener(() {
-      if (mounted && _selectedIndex != AppSoundEngine.activeTabIndexNotifier.value) {
-        setState(() => _selectedIndex = AppSoundEngine.activeTabIndexNotifier.value);
+      final int newIdx = AppSoundEngine.activeTabIndexNotifier.value;
+      if (newIdx != 4) {
+        // When leaving Karaoke Tab, ensure Hardware EQ is reset to Pure Normal Original Sound!
+        AppSoundEngine.resetHardwareAudioToNormalFlat();
+      }
+      if (mounted && _selectedIndex != newIdx) {
+        setState(() => _selectedIndex = newIdx);
       }
     });
     _checkPendingSharedIntent();
@@ -698,7 +808,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _checkPendingSharedIntent();
-      OtaUpdateEngine.syncInAppLiveCloudOta();
+      OtaUpdateEngine.checkAndAutoInstallOtaUpdate();
     }
   }
 
@@ -714,9 +824,8 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
     } catch (_) {}
   }
 
-  /// Opens the IMS Security & Password Changer Dialog (Change 1681 to any custom PIN or Lock App Now)
+  /// Security & Password Changer Dialog (Zero mention of the actual PIN anywhere!)
   Future<void> _openPinAndSecurityModal() async {
-    final String currentSavedPin = await ImsSecurityManager.getActivePin();
     final TextEditingController oldPinCtrl = TextEditingController();
     final TextEditingController newPinCtrl = TextEditingController();
     String feedback = '';
@@ -746,7 +855,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         const Text(
-                          '🔐 IMS 1st-Time App Lock & Password Settings',
+                          '🔐 IMS Security & Access Code Manager',
                           style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Colors.amberAccent),
                         ),
                         IconButton(
@@ -756,15 +865,16 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                       ],
                     ),
                     const Text(
-                      'App Lock only asks once on 1st-time installation. You can change your PIN below (Default: 1681).',
+                      'Access Code is synced via IMS Cloud OTA or can be updated locally below.',
                       style: TextStyle(fontSize: 11, color: Colors.white70),
                     ),
                     const SizedBox(height: 12),
                     TextField(
                       controller: oldPinCtrl,
+                      obscureText: true,
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(
-                        labelText: 'Enter Current PIN (Default: 1681)',
+                        labelText: 'Enter Current Access Code',
                         filled: true,
                         fillColor: Color(0xFF141E33),
                       ),
@@ -772,9 +882,10 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                     const SizedBox(height: 8),
                     TextField(
                       controller: newPinCtrl,
+                      obscureText: true,
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(
-                        labelText: 'Enter New 4-Digit PIN',
+                        labelText: 'Enter New Access Code',
                         filled: true,
                         fillColor: Color(0xFF141E33),
                       ),
@@ -796,19 +907,19 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                               foregroundColor: Colors.black,
                             ),
                             icon: const Icon(Icons.save_rounded, size: 18),
-                            label: const Text('Change Password', style: TextStyle(fontWeight: FontWeight.w900)),
+                            label: const Text('Update Code', style: TextStyle(fontWeight: FontWeight.w900)),
                             onPressed: () async {
                               final bool ok = await ImsSecurityManager.verifyPin(oldPinCtrl.text);
                               if (!ok) {
-                                setModalState(() => feedback = '❌ Current PIN is incorrect!');
+                                setModalState(() => feedback = '❌ Current Access Code is incorrect!');
                                 return;
                               }
                               if (newPinCtrl.text.trim().length < 4) {
-                                setModalState(() => feedback = '⚠️ New PIN must be at least 4 digits!');
+                                setModalState(() => feedback = '⚠️ New Code must be at least 4 digits!');
                                 return;
                               }
                               await ImsSecurityManager.setCustomPin(newPinCtrl.text.trim());
-                              setModalState(() => feedback = '✅ Password Changed to ${newPinCtrl.text.trim()}!');
+                              setModalState(() => feedback = '✅ Security Access Code Updated!');
                             },
                           ),
                         ),
@@ -819,7 +930,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                           ),
                           icon: const Icon(Icons.lock_outline_rounded, size: 17, color: Colors.amberAccent),
                           label: const Text(
-                            'Lock Now',
+                            'Lock App',
                             style: TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold),
                           ),
                           onPressed: () {
@@ -831,11 +942,6 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                         ),
                       ],
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Active PIN Length: ${currentSavedPin.length} digits',
-                      style: const TextStyle(fontSize: 10, color: Colors.white38),
-                    ),
                   ],
                 ),
               ),
@@ -846,7 +952,6 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
     );
   }
 
-  /// Opens the In-App Live OTA Sync & 4-Channel Master Studio Mixer Drawer
   void _openInAppOtaAndMasterMixerModal() {
     showModalBottomSheet(
       context: context,
@@ -864,7 +969,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                '⚡ IMS IN-APP LIVE OTA & 4-CHANNEL MASTER MIXER',
+                '⚡ IMS FULL AUTO-OTA & 4-CHANNEL MASTER MIXER',
                 style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900, color: Color(0xFF00E5FF)),
               ),
               const SizedBox(height: 6),
@@ -876,7 +981,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                   border: Border.all(color: const Color(0xFF00E676).withOpacity(0.45)),
                 ),
                 child: const Text(
-                  '✅ Zero-Install In-App Cloud OTA Active: Songs, categories & studio configurations update automatically inside IMS without asking for external APK permissions!',
+                  '✅ Automatic OTA Engine Active: Scans & applies both Live Cloud Updates and Full Release Updates automatically!',
                   style: TextStyle(fontSize: 10.5, color: Color(0xFF00E676), fontWeight: FontWeight.bold),
                 ),
               ),
@@ -889,14 +994,14 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                         backgroundColor: const Color(0xFF00E676),
                         foregroundColor: Colors.black,
                       ),
-                      icon: const Icon(Icons.cloud_sync_rounded, size: 18),
+                      icon: const Icon(Icons.system_update_rounded, size: 18),
                       label: const Text(
-                        'Sync In-App Live OTA Now',
+                        'Scan & Auto-Update Now',
                         style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900),
                       ),
                       onPressed: () async {
-                        await OtaUpdateEngine.syncInAppLiveCloudOta(forceRefresh: true);
-                        if (ctx.mounted) Navigator.pop(ctx);
+                        Navigator.pop(ctx);
+                        await OtaUpdateEngine.checkAndAutoInstallOtaUpdate(forceManualCheck: true);
                       },
                     ),
                   ),
@@ -1018,13 +1123,13 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
               actions: [
                 IconButton(
                   visualDensity: VisualDensity.compact,
-                  tooltip: 'In-App Live OTA & Master Mixer',
+                  tooltip: 'Auto-OTA & Master Mixer',
                   icon: const Icon(Icons.bolt_rounded, color: Color(0xFF00E676), size: 22),
                   onPressed: _openInAppOtaAndMasterMixerModal,
                 ),
                 IconButton(
                   visualDensity: VisualDensity.compact,
-                  tooltip: 'Change 1st-Time PIN (1681)',
+                  tooltip: 'Security Settings',
                   icon: const Icon(Icons.lock_person_rounded, color: Color(0xFF00E5FF), size: 20),
                   onPressed: _openPinAndSecurityModal,
                 ),
@@ -1060,7 +1165,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         const Text(
-                          '🚀 IMS Update in Progress...',
+                          '🚀 IMS Auto-OTA Updating...',
                           style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.white),
                         ),
                         Text(
@@ -1098,6 +1203,9 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
           child: BottomNavigationBar(
             currentIndex: _selectedIndex,
             onTap: (idx) {
+              if (idx != 4) {
+                AppSoundEngine.resetHardwareAudioToNormalFlat();
+              }
               AppSoundEngine.activeTabIndexNotifier.value = idx;
               setState(() => _selectedIndex = idx);
             },

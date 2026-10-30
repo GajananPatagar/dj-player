@@ -45,7 +45,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
   String _selectedOfflineCategory = 'Marriage';
   String _viewMode = 'SONGS'; // SONGS, FAVORITES, OFFLINE
   String _activeQueueScopeBanner = '🌐 Online Queue Active';
-  String _statusBadge = '🟢 v610.0 Ultra Pro • Any-Song Engine & Screen-Off Lock Ready';
+  String _statusBadge = '🟢 v650.0 Ultra Pro • Any-Song Engine & Screen-Off Lock Ready';
 
   bool _isLoading = false;
   bool _isLoadingMore = false;
@@ -77,10 +77,12 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
   String? _preCachedNextTrackId;
   String? _preCachedNextLocalPath;
 
-  // Hardware 5-Band EQ & Bass Boost state
-  double _bassBoostStrength = 0.80;
-  double _loudnessGain = 0.65;
-  List<double> _eqBands = [0.65, 0.55, 0.50, 0.60, 0.72];
+  // Hardware 5-Band EQ & Bass Boost state: Default is 100% NORMAL FLAT 0dB (Pure Original Master Sound!)
+  bool _customEqEnabled = false;
+  String _selectedEqPresetName = '💎 Normal (Original 0dB)';
+  double _bassBoostStrength = 0.0;
+  double _loudnessGain = 0.0;
+  List<double> _eqBands = [0.50, 0.50, 0.50, 0.50, 0.50];
 
   @override
   void initState() {
@@ -475,6 +477,9 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
     }
 
     _syncForegroundNotification();
+    if (!_customEqEnabled) {
+      AppSoundEngine.resetHardwareAudioToNormalFlat();
+    }
 
     try {
       final double targetVol = _isTalkoverDucked ? 0.15 : MasterVolumeController.page1MusicVolume.value;
@@ -1350,22 +1355,73 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
-                        '🎚 5-BAND PRO EQUALIZER, BASS & SLEEP TIMER',
-                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900, color: Colors.amberAccent),
+                      const Expanded(
+                        child: Text(
+                          '🎚 SOUND MODE, 5-BAND EQ & SLEEP TIMER',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Colors.amberAccent),
+                        ),
                       ),
-                      TextButton(
-                        onPressed: () {
-                          setModalState(() {
-                            _bassBoostStrength = 0.85;
-                            _loudnessGain = 0.70;
-                            _eqBands = [0.75, 0.65, 0.50, 0.65, 0.78];
-                          });
-                          _applyNativeDspSettings();
+                      Switch(
+                        value: _customEqEnabled,
+                        activeColor: const Color(0xFF00E676),
+                        onChanged: (val) {
+                          setModalState(() => _customEqEnabled = val);
+                          setState(() => _customEqEnabled = val);
+                          if (!val) {
+                            setModalState(() {
+                              _selectedEqPresetName = '💎 Normal (Original 0dB)';
+                              _bassBoostStrength = 0.0;
+                              _loudnessGain = 0.0;
+                              _eqBands = [0.50, 0.50, 0.50, 0.50, 0.50];
+                            });
+                            AppSoundEngine.resetHardwareAudioToNormalFlat();
+                          } else {
+                            _applyNativeDspSettings();
+                          }
                         },
-                        child: const Text('Reset DJ Bass', style: TextStyle(fontSize: 11, color: Color(0xFF00E5FF))),
                       ),
                     ],
+                  ),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        {'name': '💎 Normal (Original 0dB)', 'custom': false, 'bass': 0.0, 'loud': 0.0, 'bands': [0.50, 0.50, 0.50, 0.50, 0.50]},
+                        {'name': '🔊 DJ Sub-Bass', 'custom': true, 'bass': 0.80, 'loud': 0.45, 'bands': [0.78, 0.65, 0.50, 0.58, 0.72]},
+                        {'name': '💍 Wedding Hall Clear', 'custom': true, 'bass': 0.45, 'loud': 0.35, 'bands': [0.62, 0.55, 0.58, 0.68, 0.70]},
+                        {'name': '👗 Fashion Runway', 'custom': true, 'bass': 0.75, 'loud': 0.50, 'bands': [0.76, 0.68, 0.48, 0.62, 0.75]},
+                        {'name': '🎤 Vocal Crystal', 'custom': true, 'bass': 0.25, 'loud': 0.30, 'bands': [0.48, 0.54, 0.66, 0.72, 0.65]},
+                      ].map((p) {
+                        final String pName = p['name'] as String;
+                        final bool sel = (_selectedEqPresetName == pName);
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 6, bottom: 6),
+                          child: ChoiceChip(
+                            label: Text(pName, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900)),
+                            selected: sel,
+                            selectedColor: const Color(0xFF00E676),
+                            labelStyle: TextStyle(color: sel ? Colors.black : Colors.white),
+                            onSelected: (_) {
+                              final bool isCust = p['custom'] as bool;
+                              final List<double> b = List<double>.from(p['bands'] as List);
+                              setModalState(() {
+                                _selectedEqPresetName = pName;
+                                _customEqEnabled = isCust;
+                                _bassBoostStrength = p['bass'] as double;
+                                _loudnessGain = p['loud'] as double;
+                                _eqBands = b;
+                              });
+                              setState(() {});
+                              if (!isCust) {
+                                AppSoundEngine.resetHardwareAudioToNormalFlat();
+                              } else {
+                                _applyNativeDspSettings();
+                              }
+                            },
+                          ),
+                        );
+                      }).toList(),
+                    ),
                   ),
                   Text(
                     '🔊 Sub-Bass 8118 Boost: ${(_bassBoostStrength * 100).toInt()}%',
@@ -1456,6 +1512,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
   }
 
   Future<void> _applyNativeDspSettings() async {
+    setState(() => _customEqEnabled = true);
     try {
       await _nativeChannel.invokeMethod('setHardwareDsp', {
         'bass': (_bassBoostStrength * 1000).toInt(),

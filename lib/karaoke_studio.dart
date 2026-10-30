@@ -281,12 +281,12 @@ class _KaraokeStudioScreenState extends State<KaraokeStudioScreen> {
           : '🎛 AI Center-Vocal Remover Armed (-15dB Vocal Cut): $cleanTitle';
     });
 
-    // 4. Engage Native Android Hardware Vocal-Cut DSP
-    await _applyNativeKaraokeVocalCutDsp();
-
+    // 4. ONLY engage Hardware Vocal-Cut DSP when actively playing or recording in Karaoke Tab!
     if (startRecordingImmediately) {
+      await _applyNativeKaraokeVocalCutDsp();
       await _startSingingRecording();
     } else if (startKaraokePlayback) {
+      await _applyNativeKaraokeVocalCutDsp();
       await _startKaraokePracticePlayback();
     }
   }
@@ -382,6 +382,7 @@ class _KaraokeStudioScreenState extends State<KaraokeStudioScreen> {
       await _karaokeBackingPlayer.stop();
       await _userVocalStemPlayer.stop();
       await _choirHarmonyPlayer.stop();
+      await AppSoundEngine.resetHardwareAudioToNormalFlat();
     } catch (_) {}
     if (mounted) {
       setState(() {

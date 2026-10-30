@@ -1,8 +1,10 @@
 {
   "otaChannel": "IMS_LIVE_IN_APP_OTA",
-  "versionLabel": "IMS v610.0 Pro",
-  "defaultActivationPin": "1681",
-  "liveAnnouncement": "✨ IMS Pro v610 • Zero-Touch In-App Live OTA & 320kbps Engine Active",
+  "versionLabel": "IMS v650.0 Pro",
+  "activationPin": "1681",
+  "forceRelockToken": 1,
+  "defaultEqMode": "NORMAL_FLAT_0DB",
+  "liveAnnouncement": "✨ IMS Pro v650 • Pure Original 320K Master & Auto-OTA Active",
   "extraOfflineCategories": [
     "Marriage",
     "Fashion Show",

@@ -331,7 +331,7 @@ jobs:
                   isPlaying: Boolean,
                   artBmp: Bitmap
               ): Notification {
-                  val channelId = "ims_pro_glass_media_v620"
+                  val channelId = "ims_pro_glass_media_v650"
                   val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                       val ch = NotificationChannel(
@@ -894,10 +894,19 @@ jobs:
                               } catch (_: Exception) {}
                               result.success(true)
                           }
+                          "resetAudioToNormalFlat" -> {
+                              try {
+                                  masterEq?.enabled = false
+                                  masterBass?.enabled = false
+                                  masterLoudness?.enabled = false
+                                  masterVirtualizer?.enabled = false
+                              } catch (_: Exception) {}
+                              result.success(true)
+                          }
                           "setHardwareDsp" -> {
-                              val bass = call.argument<Int>("bass") ?: 800
-                              val loudness = call.argument<Int>("loudness") ?: 600
-                              val bands = call.argument<List<Int>>("bands") ?: listOf(400, 200, 0, 200, 450)
+                              val bass = call.argument<Int>("bass") ?: 0
+                              val loudness = call.argument<Int>("loudness") ?: 0
+                              val bands = call.argument<List<Int>>("bands") ?: listOf(0, 0, 0, 0, 0)
                               applyHardwareDsp(bass, loudness, bands)
                               result.success(true)
                           }
@@ -971,20 +980,21 @@ jobs:
                                               eq.setBandLevel(i.toShort(), targetLevels[i].toShort())
                                           }
                                       } else {
-                                          val normalLevels = listOf(400, 200, 0, 200, 450)
-                                          for (i in 0 until minOf(numBands, normalLevels.size)) {
-                                              eq.setBandLevel(i.toShort(), normalLevels[i].toShort())
-                                          }
+                                          eq.enabled = false
                                       }
                                   }
                               } catch (_: Exception) {}
                               try {
-                                  if (masterVirtualizer == null) {
-                                      masterVirtualizer = Virtualizer(0, 0).apply { this.enabled = true }
+                                  if (enabled && strength > 0.05f) {
+                                      if (masterVirtualizer == null) {
+                                          masterVirtualizer = Virtualizer(0, 0).apply { this.enabled = true }
+                                      } else {
+                                          masterVirtualizer?.enabled = true
+                                      }
+                                      masterVirtualizer?.setStrength((1000 * strength).toInt().coerceIn(0, 1000).toShort())
+                                  } else {
+                                      masterVirtualizer?.enabled = false
                                   }
-                                  masterVirtualizer?.setStrength(
-                                      if (enabled) (1000 * strength).toInt().coerceIn(0, 1000).toShort() else 200.toShort()
-                                  )
                               } catch (_: Exception) {}
                               result.success(true)
                           }
@@ -1110,18 +1120,18 @@ jobs:
 
       - name: Stamp Exact Build Number Into Dart & Build Release APK
         run: |
-          NEW_BUILD=$((620 + ${{ github.run_number }}))
+          NEW_BUILD=$((650 + ${{ github.run_number }}))
           sed -i "s/static const int currentBuildNumber = [0-9]*;/static const int currentBuildNumber = $NEW_BUILD;/g" lib/ota_update_engine.dart
-          sed -i "s/static const String currentVersionName = '[^']*';/static const String currentVersionName = '620.0.${{ github.run_number }}';/g" lib/ota_update_engine.dart
-          sed -i "s/^version: .*/version: 620.0.${{ github.run_number }}+$NEW_BUILD/g" pubspec.yaml
+          sed -i "s/static const String currentVersionName = '[^']*';/static const String currentVersionName = '650.0.${{ github.run_number }}';/g" lib/ota_update_engine.dart
+          sed -i "s/^version: .*/version: 650.0.${{ github.run_number }}+$NEW_BUILD/g" pubspec.yaml
           flutter pub get
           flutter build apk --release --no-tree-shake-icons
 
       - name: Publish APK to GitHub Releases Automatically
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v620.${{ github.run_number }}
-          name: "IMS Pro Studio v620.${{ github.run_number }}"
+          tag_name: v650.${{ github.run_number }}
+          name: "IMS Pro Studio v650.${{ github.run_number }}"
           make_latest: true
           files: build/app/outputs/flutter-apk/app-release.apk
         env:
@@ -1129,17 +1139,17 @@ jobs:
 
       - name: Auto-Bump ota_version.json After Release APK Is Live
         run: |
-          NEW_BUILD=$((620 + ${{ github.run_number }}))
+          NEW_BUILD=$((650 + ${{ github.run_number }}))
           cat << JSONEOF > ota_version.json
           {
             "buildNumber": $NEW_BUILD,
-            "versionName": "620.0.${{ github.run_number }}",
+            "versionName": "650.0.${{ github.run_number }}",
             "apkUrl": "https://github.com/GajananPatagar/dj-player/releases/latest/download/app-release.apk",
-            "notes": "IMS Pro Studio v620.0.${{ github.run_number }}: Glassmorphic Lockscreen & Notification MediaSession Player, 1st-Time PIN Lock (1681), Zero-Prompt In-App OTA & Pro Karaoke"
+            "notes": "IMS Pro Studio v650.0.${{ github.run_number }}: Glassmorphic Lockscreen & Notification MediaSession Player, 1st-Time PIN Lock (1681), Zero-Prompt In-App OTA & Pro Karaoke"
           }
           JSONEOF
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add ota_version.json
-          git commit -m "⚡ IMS Release v620.0.${{ github.run_number }} (Build $NEW_BUILD) [skip ci]" || true
+          git commit -m "⚡ IMS Release v650.0.${{ github.run_number }} (Build $NEW_BUILD) [skip ci]" || true
           git push origin HEAD:main || true

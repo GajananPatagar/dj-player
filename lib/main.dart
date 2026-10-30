@@ -435,7 +435,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
-                          'DJ Play & Commentary Pro v505',
+                          'DJ Play & Commentary Pro v510',
                           style: TextStyle(
                             fontSize: 13.5,
                             fontWeight: FontWeight.w900,

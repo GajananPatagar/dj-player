@@ -8,15 +8,15 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class OtaUpdateEngine {
-  static const int currentBuildNumber = 505;
-  static const String currentVersionName = '505.0.0';
+  static const int currentBuildNumber = 510;
+  static const String currentVersionName = '510.0.0';
   static const String githubRepoOwner = 'GajananPatagar';
   static const String githubRepoName = 'dj-player';
 
   static const MethodChannel _nativeChannel = MethodChannel('dj_native_tts');
 
   static final ValueNotifier<String> otaStatusBanner = ValueNotifier<String>(
-    '✨ v505.0 Ultra Pro • Auto-OTA & Daily Self-Update Active',
+    '✨ v510.0 Ultra Pro • Auto-OTA & Daily Self-Update Active',
   );
   static final ValueNotifier<double?> otaDownloadProgress = ValueNotifier<double?>(null);
   static final ValueNotifier<String> dailyRefreshStamp = ValueNotifier<String>('');
@@ -50,13 +50,13 @@ class OtaUpdateEngine {
     try {
       final prefs = await SharedPreferences.getInstance();
       final String today = _todayDateKey();
-      final String lastUpdatedDay = prefs.getString('v505_last_daily_self_update') ?? '';
+      final String lastUpdatedDay = prefs.getString('v510_last_daily_self_update') ?? '';
       dailyRefreshStamp.value = 'Synced $today';
 
       if (lastUpdatedDay != today) {
         otaStatusBanner.value = '🔄 Daily Self-Update: Refreshing $today New Songs & Mixes...';
         await onDailyContentRefresh();
-        await prefs.setString('v505_last_daily_self_update', today);
+        await prefs.setString('v510_last_daily_self_update', today);
         otaStatusBanner.value = '🟢 Auto-Updated for $today • v$currentVersionName Pro';
       }
     } catch (_) {}
@@ -74,7 +74,7 @@ class OtaUpdateEngine {
       String? apkDownloadUrl;
 
       final Map<String, String> headers = {
-        'User-Agent': 'DJPlayer-OTA-Updater/505.0 (Android)',
+        'User-Agent': 'DJPlayer-OTA-Updater/510.0 (Android)',
         'Accept': 'application/json',
         'Cache-Control': 'no-cache',
       };
@@ -143,7 +143,7 @@ class OtaUpdateEngine {
       otaDownloadProgress.value = 0.02;
       final client = http.Client();
       final req = http.Request('GET', Uri.parse(apkUrl));
-      req.headers['User-Agent'] = 'Mozilla/5.0 (Linux; Android 14) DJPlayerOTA/505.0';
+      req.headers['User-Agent'] = 'Mozilla/5.0 (Linux; Android 14) DJPlayerOTA/510.0';
       final http.StreamedResponse response = await client.send(req).timeout(const Duration(seconds: 30));
 
       if (response.statusCode != 200) {

@@ -104,7 +104,7 @@ jobs:
               }
 
               private fun buildMediaNotification(title: String, artist: String, isPlaying: Boolean): Notification {
-                  val channelId = "dj_pro_bg_playback_v505"
+                  val channelId = "dj_pro_bg_playback_v510"
                   val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                       val ch = NotificationChannel(
@@ -194,6 +194,7 @@ jobs:
           import android.media.audiofx.BassBoost
           import android.media.audiofx.Equalizer
           import android.media.audiofx.LoudnessEnhancer
+          import android.media.audiofx.Virtualizer
           import android.net.Uri
           import android.net.wifi.WifiManager
           import android.os.Build
@@ -234,6 +235,7 @@ jobs:
               private var masterEq: Equalizer? = null
               private var masterBass: BassBoost? = null
               private var masterLoudness: LoudnessEnhancer? = null
+              private var masterVirtualizer: Virtualizer? = null
               private var directWakeLock: PowerManager.WakeLock? = null
               private var directWifiLock: WifiManager.WifiLock? = null
 
@@ -724,6 +726,44 @@ jobs:
                               result.success(true)
                           }
                           "setKaraokeVocalCut" -> {
+                              val enabled = call.argument<Boolean>("enabled") ?: true
+                              val strength = (call.argument<Double>("strength") ?: 1.0).toFloat().coerceIn(0.0f, 1.0f)
+                              try {
+                                  if (masterEq == null) {
+                                      masterEq = Equalizer(0, 0).apply { this.enabled = true }
+                                  }
+                                  val eq = masterEq
+                                  if (eq != null) {
+                                      val numBands = eq.numberOfBands.toInt()
+                                      if (enabled && strength > 0.05f) {
+                                          // Carve out human lead vocal frequencies (230Hz, 910Hz, 3.6kHz) by up to -1500mB (-15dB)
+                                          // while boosting 60Hz Sub-Bass rhythm and 14kHz Stereo Air!
+                                          val targetLevels = listOf(
+                                              750,
+                                              (-1200 * strength).toInt(),
+                                              (-1500 * strength).toInt(),
+                                              (-1350 * strength).toInt(),
+                                              700
+                                          )
+                                          for (i in 0 until minOf(numBands, targetLevels.size)) {
+                                              eq.setBandLevel(i.toShort(), targetLevels[i].toShort())
+                                          }
+                                      } else {
+                                          val normalLevels = listOf(400, 200, 0, 200, 450)
+                                          for (i in 0 until minOf(numBands, normalLevels.size)) {
+                                              eq.setBandLevel(i.toShort(), normalLevels[i].toShort())
+                                          }
+                                      }
+                                  }
+                              } catch (_: Exception) {}
+                              try {
+                                  if (masterVirtualizer == null) {
+                                      masterVirtualizer = Virtualizer(0, 0).apply { this.enabled = true }
+                                  }
+                                  masterVirtualizer?.setStrength(
+                                      if (enabled) (1000 * strength).toInt().coerceIn(0, 1000).toShort() else 200.toShort()
+                                  )
+                              } catch (_: Exception) {}
                               result.success(true)
                           }
                           "startCleanVocalRecord" -> {
@@ -814,6 +854,7 @@ jobs:
                   masterEq?.release()
                   masterBass?.release()
                   masterLoudness?.release()
+                  masterVirtualizer?.release()
                   super.onDestroy()
               }
           }
@@ -850,18 +891,18 @@ jobs:
 
       - name: Stamp Exact Build Number Into Dart & Build Release APK
         run: |
-          NEW_BUILD=$((505 + ${{ github.run_number }}))
+          NEW_BUILD=$((510 + ${{ github.run_number }}))
           sed -i "s/static const int currentBuildNumber = [0-9]*;/static const int currentBuildNumber = $NEW_BUILD;/g" lib/ota_update_engine.dart
-          sed -i "s/static const String currentVersionName = '[^']*';/static const String currentVersionName = '505.0.${{ github.run_number }}';/g" lib/ota_update_engine.dart
-          sed -i "s/^version: .*/version: 505.0.${{ github.run_number }}+$NEW_BUILD/g" pubspec.yaml
+          sed -i "s/static const String currentVersionName = '[^']*';/static const String currentVersionName = '510.0.${{ github.run_number }}';/g" lib/ota_update_engine.dart
+          sed -i "s/^version: .*/version: 510.0.${{ github.run_number }}+$NEW_BUILD/g" pubspec.yaml
           flutter pub get
           flutter build apk --release --no-tree-shake-icons
 
       - name: Publish APK to GitHub Releases Automatically (For OTA Auto-Updater)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v505.${{ github.run_number }}
-          name: "DJ Play & Commentary Pro v505.${{ github.run_number }} (Auto-OTA Release)"
+          tag_name: v510.${{ github.run_number }}
+          name: "DJ Play & Commentary Pro v510.${{ github.run_number }} (Auto-OTA Release)"
           make_latest: true
           files: build/app/outputs/flutter-apk/app-release.apk
         env:
@@ -869,17 +910,17 @@ jobs:
 
       - name: Auto-Bump ota_version.json After Release APK Is Live (Triggers Instant In-App OTA!)
         run: |
-          NEW_BUILD=$((505 + ${{ github.run_number }}))
+          NEW_BUILD=$((510 + ${{ github.run_number }}))
           cat << JSONEOF > ota_version.json
           {
             "buildNumber": $NEW_BUILD,
-            "versionName": "505.0.${{ github.run_number }}",
+            "versionName": "510.0.${{ github.run_number }}",
             "apkUrl": "https://github.com/GajananPatagar/dj-player/releases/latest/download/app-release.apk",
-            "notes": "v505.0.${{ github.run_number }} Auto-OTA: Zero Startup Popups, Offline Song Number Changer (#1..#N), Custom Start Cue & Pro DJ FX"
+            "notes": "v510.0.${{ github.run_number }} Auto-OTA: Zero Startup Popups, Offline Song Number Changer (#1..#N), Custom Start Cue & Pro DJ FX"
           }
           JSONEOF
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add ota_version.json
-          git commit -m "⚡ Auto-OTA Release v505.0.${{ github.run_number }} (Build $NEW_BUILD) [skip ci]" || true
+          git commit -m "⚡ Auto-OTA Release v510.0.${{ github.run_number }} (Build $NEW_BUILD) [skip ci]" || true
           git push origin HEAD:main || true

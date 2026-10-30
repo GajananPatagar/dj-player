@@ -435,7 +435,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
-                          'DJ Play & Commentary Pro v500',
+                          'DJ Play & Commentary Pro v505',
                           style: TextStyle(
                             fontSize: 13.5,
                             fontWeight: FontWeight.w900,
@@ -476,7 +476,6 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
       ),
       body: Column(
         children: [
-          // Zero-Touch Automatic OTA Progress Indicator (Only visible while an OTA APK is downloading)
           ValueListenableBuilder<double?>(
             valueListenable: OtaUpdateEngine.otaDownloadProgress,
             builder: (context, progress, _) {

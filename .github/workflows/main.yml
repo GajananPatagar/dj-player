@@ -33,7 +33,7 @@ jobs:
           flutter create --platforms=android --org com.gajanan.djplaycommentry --project-name dj_player .
           grep -n "void main()" lib/main.dart
 
-      - name: Inject Background WakeLock Service, OTA Installer, Hardware DSP EQ, Recorder & TTS Into MainActivity.kt
+      - name: Inject Zero-Popup Background WakeLock Service, OTA Installer, Hardware DSP EQ, Recorder & TTS Into MainActivity.kt
         run: |
           MAIN_KT=$(find android/app/src/main -name "MainActivity.kt" | head -n 1)
           PKG_DIR=$(dirname "$MAIN_KT")
@@ -104,7 +104,7 @@ jobs:
               }
 
               private fun buildMediaNotification(title: String, artist: String, isPlaying: Boolean): Notification {
-                  val channelId = "dj_pro_bg_playback_v500"
+                  val channelId = "dj_pro_bg_playback_v505"
                   val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                       val ch = NotificationChannel(
@@ -195,6 +195,7 @@ jobs:
           import android.media.audiofx.Equalizer
           import android.media.audiofx.LoudnessEnhancer
           import android.net.Uri
+          import android.net.wifi.WifiManager
           import android.os.Build
           import android.os.Bundle
           import android.os.Environment
@@ -233,6 +234,8 @@ jobs:
               private var masterEq: Equalizer? = null
               private var masterBass: BassBoost? = null
               private var masterLoudness: LoudnessEnhancer? = null
+              private var directWakeLock: PowerManager.WakeLock? = null
+              private var directWifiLock: WifiManager.WifiLock? = null
 
               private val bgHeartbeatHandler = Handler(Looper.getMainLooper())
               private val bgHeartbeatRunnable = object : Runnable {
@@ -254,6 +257,23 @@ jobs:
                   tts = TextToSpeech(this, this)
                   handleIncomingShareIntent(intent)
 
+                  // Silently acquire CPU WakeLock & High-Perf WifiLock using manifest-granted permissions (0 popups!)
+                  try {
+                      val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                      directWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DJPlayer::DirectCpuLock").apply {
+                          setReferenceCounted(false)
+                          acquire(12 * 60 * 60 * 1000L)
+                      }
+                  } catch (_: Exception) {}
+
+                  try {
+                      val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                      directWifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "DJPlayer::DirectWifiLock").apply {
+                          setReferenceCounted(false)
+                          acquire()
+                      }
+                  } catch (_: Exception) {}
+
                   try {
                       val filter = IntentFilter("com.gajanan.djplaycommentry.MEDIA_CMD")
                       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -263,30 +283,7 @@ jobs:
                       }
                   } catch (_: Exception) {}
 
-                  bgHeartbeatHandler.postDelayed(bgHeartbeatRunnable, 3000)
-
-                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                      val perms = mutableListOf(
-                          Manifest.permission.RECORD_AUDIO,
-                          Manifest.permission.READ_EXTERNAL_STORAGE,
-                          Manifest.permission.WRITE_EXTERNAL_STORAGE
-                      )
-                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                          perms.add(Manifest.permission.POST_NOTIFICATIONS)
-                          perms.add(Manifest.permission.READ_MEDIA_AUDIO)
-                      }
-                      requestPermissions(perms.toTypedArray(), 200)
-
-                      try {
-                          val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-                          if (!pm.isIgnoringBatteryOptimizations(packageName)) {
-                              val wlIntent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                                  data = Uri.parse("package:$packageName")
-                              }
-                              startActivity(wlIntent)
-                          }
-                      } catch (_: Exception) {}
-                  }
+                  bgHeartbeatHandler.postDelayed(bgHeartbeatRunnable, 2500)
               }
 
               override fun onNewIntent(intent: Intent) {
@@ -600,6 +597,12 @@ jobs:
               }
 
               private fun startIsolatedVoiceRecorder(fileName: String, useEchoCancelledSource: Boolean): String? {
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                      if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                          requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 201)
+                          return null
+                      }
+                  }
                   try {
                       recorder?.release()
                       val outFile = File(filesDir, fileName + ".m4a")
@@ -797,6 +800,12 @@ jobs:
               override fun onDestroy() {
                   bgHeartbeatHandler.removeCallbacks(bgHeartbeatRunnable)
                   try {
+                      if (directWakeLock?.isHeld == true) directWakeLock?.release()
+                  } catch (_: Exception) {}
+                  try {
+                      if (directWifiLock?.isHeld == true) directWifiLock?.release()
+                  } catch (_: Exception) {}
+                  try {
                       unregisterReceiver(mediaCmdReceiver)
                   } catch (_: Exception) {}
                   tts?.stop()
@@ -820,7 +829,7 @@ jobs:
               sed -i 's/<application/<application android:usesCleartextTraffic="true"/' "$MANIFEST"
             fi
             if ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
-              sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <uses-permission android:name="android.permission.WAKE_LOCK"\/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"\/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"\/>\n    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"\/>\n    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"\/>\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"\/>\n    <uses-permission android:name="android.permission.RECORD_AUDIO"\/>\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"\/>\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"\/>\n    <application/' "$MANIFEST"
+              sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <uses-permission android:name="android.permission.WAKE_LOCK"\/>\n    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"\/>\n    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"\/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"\/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"\/>\n    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"\/>\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"\/>\n    <uses-permission android:name="android.permission.RECORD_AUDIO"\/>\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"\/>\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"\/>\n    <application/' "$MANIFEST"
             fi
             if ! grep -q "DjMediaForegroundService" "$MANIFEST"; then
               sed -i 's|</application>|    <service android:name=".DjMediaForegroundService" android:enabled="true" android:exported="false" android:foregroundServiceType="mediaPlayback" />\n    </application>|g' "$MANIFEST"
@@ -839,17 +848,38 @@ jobs:
             rm -rf android/app/src/main/res/mipmap-anydpi-v26
           fi
 
-      - name: Build Release APK (Preserving Injected Android Native Services!)
+      - name: Stamp Exact Build Number Into Dart & Build Release APK
         run: |
+          NEW_BUILD=$((505 + ${{ github.run_number }}))
+          sed -i "s/static const int currentBuildNumber = [0-9]*;/static const int currentBuildNumber = $NEW_BUILD;/g" lib/ota_update_engine.dart
+          sed -i "s/static const String currentVersionName = '[^']*';/static const String currentVersionName = '505.0.${{ github.run_number }}';/g" lib/ota_update_engine.dart
+          sed -i "s/^version: .*/version: 505.0.${{ github.run_number }}+$NEW_BUILD/g" pubspec.yaml
           flutter pub get
           flutter build apk --release --no-tree-shake-icons
 
       - name: Publish APK to GitHub Releases Automatically (For OTA Auto-Updater)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v500.${{ github.run_number }}
-          name: "DJ Play & Commentary Pro v500.${{ github.run_number }} (Auto-OTA Release)"
+          tag_name: v505.${{ github.run_number }}
+          name: "DJ Play & Commentary Pro v505.${{ github.run_number }} (Auto-OTA Release)"
           make_latest: true
           files: build/app/outputs/flutter-apk/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Auto-Bump ota_version.json After Release APK Is Live (Triggers Instant In-App OTA!)
+        run: |
+          NEW_BUILD=$((505 + ${{ github.run_number }}))
+          cat << JSONEOF > ota_version.json
+          {
+            "buildNumber": $NEW_BUILD,
+            "versionName": "505.0.${{ github.run_number }}",
+            "apkUrl": "https://github.com/GajananPatagar/dj-player/releases/latest/download/app-release.apk",
+            "notes": "v505.0.${{ github.run_number }} Auto-OTA: Zero Startup Popups, Offline Song Number Changer (#1..#N), Custom Start Cue & Pro DJ FX"
+          }
+          JSONEOF
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add ota_version.json
+          git commit -m "⚡ Auto-OTA Release v505.0.${{ github.run_number }} (Build $NEW_BUILD) [skip ci]" || true
+          git push origin HEAD:main || true

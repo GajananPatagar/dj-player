@@ -26,7 +26,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
   final TextEditingController _searchCtrl = TextEditingController();
 
   final List<Map<String, String>> _onlineCategories = const [
-    {'label': '💛❤️ Kannada', 'key': 'Kannada', 'query': 'Kannada Superhit Songs'},
+    {'label': '👑 Kannada', 'key': 'Kannada', 'query': 'Kannada Superhit Songs'},
     {'label': '🇮🇳 Hindi', 'key': 'Hindi', 'query': 'Hindi Bollywood Hit Songs'},
     {'label': '💍 Marriage', 'key': 'Marriage', 'query': 'Indian Wedding Marriage Dance Songs Kannada Hindi'},
     {'label': '👗 Fashion Show', 'key': 'Fashion Show', 'query': 'Fashion Show Ramp Walk Bass Runway Music'},
@@ -45,11 +45,13 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
   String _selectedOfflineCategory = 'Marriage';
   String _viewMode = 'SONGS'; // SONGS, FAVORITES, OFFLINE
   String _activeQueueScopeBanner = '🌐 Online Queue Active';
-  String _statusBadge = '🟢 v500.0 Pro • Any-Song Omni-Engine & Background Lock Active';
+  String _statusBadge = '🟢 v505.0 Ultra Pro • Any-Song Engine & Screen-Off Lock Ready';
 
   bool _isLoading = false;
   bool _isLoadingMore = false;
   bool _isBusySwitching = false;
+  bool _showQuickDjPads = false;
+  bool _autoDjCrossfade = true;
   int _currentSearchPage = 1;
   List<String> _lastActiveQueries = ['Kannada Superhit Songs'];
 
@@ -78,7 +80,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
   // Hardware 5-Band EQ & Bass Boost state
   double _bassBoostStrength = 0.80;
   double _loudnessGain = 0.65;
-  List<double> _eqBands = [0.65, 0.55, 0.50, 0.60, 0.72]; // 60Hz, 230Hz, 910Hz, 3.6kHz, 14kHz
+  List<double> _eqBands = [0.65, 0.55, 0.50, 0.60, 0.72];
 
   @override
   void initState() {
@@ -100,7 +102,6 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
       }
     });
 
-    // Initialize Daily Self-Update + Zero-Click Auto-OTA APK Updater
     OtaUpdateEngine.initAutoOtaAndDailySelfUpdate(
       onDailyContentRefresh: () async {
         await _fetchCategoryOrTrending(_selectedOnlineCat, resetPage: true);
@@ -135,7 +136,6 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
   }
 
   void _registerNativeMediaCallbacks() {
-    // Listen via AppSoundEngine.mediaNotificationActionNotifier so MainActivity channel is shared cleanly
     AppSoundEngine.mediaNotificationActionNotifier.addListener(() async {
       final String? raw = AppSoundEngine.mediaNotificationActionNotifier.value;
       if (raw != null && raw.isNotEmpty) {
@@ -155,7 +155,6 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
             _syncForegroundNotification();
           }
         } else if (action == 'HEARTBEAT') {
-          // Screen-off watchdog: if song reached end while screen was off, force jump to next song immediately!
           if (_shouldBePlayingInBg && !_isBusySwitching && _nowPlayingTrack != null) {
             if (_duration.inMilliseconds > 4000 &&
                 _position.inMilliseconds >= (_duration.inMilliseconds - 450)) {
@@ -179,7 +178,6 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
         _position = pos;
       }
 
-      // Check A-B Section Loop
       if (_loopPointASec != null &&
           _loopPointBSec != null &&
           _loopPointBSec! > _loopPointASec! &&
@@ -188,7 +186,6 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
         return;
       }
 
-      // Screen-off near-end auto-advance safeguard
       if (_shouldBePlayingInBg &&
           !_isBusySwitching &&
           _duration.inMilliseconds > 5000 &&
@@ -242,8 +239,6 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
     } catch (_) {}
   }
 
-  /// Pre-caches the NEXT song in the queue to a local temp file while the current song is playing
-  /// so when the screen is OFF or locked, the next song starts from local storage in 0.01s with ZERO network failure!
   Future<void> _preCacheNextTrackInBackground() async {
     if (_playbackQueue.length < 2 || _queueIndex < 0) return;
     final int nextIdx = (_queueIndex + 1) % _playbackQueue.length;
@@ -251,7 +246,6 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
     final String nextId = (nextTrack['id'] ?? '').toString();
     if (nextId.isEmpty || nextId == _preCachedNextTrackId) return;
 
-    // If next track is already an offline file, no need to download
     if (nextTrack['localPath'] != null && File(nextTrack['localPath'].toString()).existsSync()) {
       _preCachedNextTrackId = nextId;
       _preCachedNextLocalPath = nextTrack['localPath'].toString();
@@ -389,8 +383,6 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
     }
   }
 
-  /// Strict View List Resolver:
-  /// When in OFFLINE mode, returns ONLY songs belonging to `_selectedOfflineCategory`!
   List<Map<String, dynamic>> _currentVisibleList() {
     if (_viewMode == 'OFFLINE') {
       return VaultManager.getOfflineSongsByCategory(_selectedOfflineCategory);
@@ -401,15 +393,26 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
     return _tracks;
   }
 
-  /// Starts playback and locks `_playbackQueue` strictly to the current section!
-  /// If started inside Offline -> Marriage, ONLY Marriage offline songs will ever play in this queue!
+  /// Syncs `_playbackQueue` whenever the user changes Song Numbers inside the currently active Offline Folder or Favorites!
+  void _refreshActiveQueueAfterReorder() {
+    final List<Map<String, dynamic>> updatedVisible = _currentVisibleList();
+    if (_playbackQueue.isEmpty || _nowPlayingTrack == null) return;
+    final String currentPlayingId = _nowPlayingTrack!['id'].toString();
+    final bool isCurrentInUpdated = updatedVisible.any((e) => e['id'].toString() == currentPlayingId);
+    if (isCurrentInUpdated) {
+      _playbackQueue = List<Map<String, dynamic>>.from(updatedVisible);
+      _queueIndex = _playbackQueue.indexWhere((e) => e['id'].toString() == currentPlayingId);
+    }
+  }
+
   Future<void> _startPlaybackFromVisibleList(int index, {bool enableShuffle = false}) async {
     final List<Map<String, dynamic>> visible = _currentVisibleList();
     if (index < 0 || index >= visible.length) return;
 
     _playbackQueue = List<Map<String, dynamic>>.from(visible);
     if (_viewMode == 'OFFLINE') {
-      _activeQueueScopeBanner = '🔒 Offline Folder Lock: $_selectedOfflineCategory Only (${_playbackQueue.length} Songs)';
+      _activeQueueScopeBanner =
+          '🔒 Offline Folder Lock: $_selectedOfflineCategory Only (${_playbackQueue.length} Songs)';
     } else if (_viewMode == 'FAVORITES') {
       _activeQueueScopeBanner = '❤️ Favorites Queue (${_playbackQueue.length} Songs)';
     } else {
@@ -434,25 +437,24 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
 
     final Map<String, dynamic> track = _playbackQueue[qIdx];
     final String trackId = (track['id'] ?? '').toString();
+    final int customStartSec = int.tryParse((track['customStartSec'] ?? '0').toString()) ?? 0;
 
     if (mounted) {
       setState(() {
         _queueIndex = qIdx;
         _nowPlayingTrack = Map<String, dynamic>.from(track);
-        _statusBadge = '⚡ Playing: ${track['title']} ($_activeQueueScopeBanner)';
+        _statusBadge = '⚡ Playing #${qIdx + 1}: ${track['title']}';
       });
     } else {
       _queueIndex = qIdx;
       _nowPlayingTrack = Map<String, dynamic>.from(track);
     }
 
-    // Immediately notify Android Foreground Service so CPU WakeLock & Notification stay active with screen off!
     _syncForegroundNotification();
 
     try {
       final double targetVol = _isTalkoverDucked ? 0.15 : MasterVolumeController.page1MusicVolume.value;
 
-      // 1. Check if song is saved in Offline Vault
       if (track['localPath'] != null) {
         final File file = File(track['localPath'].toString());
         if (await file.exists()) {
@@ -460,10 +462,13 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
           await _player.setVolume(targetVol);
           await _player.play(DeviceFileSource(file.path));
           await _player.setPlaybackRate(_playbackSpeed);
+          if (customStartSec > 0) {
+            await _player.seek(Duration(seconds: customStartSec));
+          }
           if (mounted) {
             setState(() {
               _statusBadge =
-                  '🟢 Offline [${track['category'] ?? _selectedOfflineCategory}]: ${track['title']}';
+                  '🟢 Offline #${qIdx + 1} [${track['category'] ?? _selectedOfflineCategory}]: ${track['title']}';
             });
           }
           _isBusySwitching = false;
@@ -473,7 +478,6 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
         }
       }
 
-      // 2. Check if this song was already pre-cached in background while previous song played!
       if (_preCachedNextTrackId == trackId &&
           _preCachedNextLocalPath != null &&
           File(_preCachedNextLocalPath!).existsSync()) {
@@ -481,9 +485,12 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
         await _player.setVolume(targetVol);
         await _player.play(DeviceFileSource(_preCachedNextLocalPath!));
         await _player.setPlaybackRate(_playbackSpeed);
+        if (customStartSec > 0) {
+          await _player.seek(Duration(seconds: customStartSec));
+        }
         if (mounted) {
           setState(() {
-            _statusBadge = '🟢 Instant Cached 320kbps: ${track['title']}';
+            _statusBadge = '🟢 Instant Cached #${qIdx + 1}: ${track['title']}';
           });
         }
         _isBusySwitching = false;
@@ -492,7 +499,6 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
         return;
       }
 
-      // 3. Stream from live multi-mirror URLs
       final List urls = (track['urls'] as List?) ?? [];
       bool started = false;
       for (final rawUrl in urls) {
@@ -500,10 +506,13 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
           await _player.stop();
           await _player.play(UrlSource(rawUrl.toString()), volume: targetVol);
           await _player.setPlaybackRate(_playbackSpeed);
+          if (customStartSec > 0) {
+            await _player.seek(Duration(seconds: customStartSec));
+          }
           started = true;
           if (mounted) {
             setState(() {
-              _statusBadge = '🟢 Playing 320kbps Full Song: ${track['title']}';
+              _statusBadge = '🟢 Playing #${qIdx + 1}: ${track['title']}';
             });
           }
           break;
@@ -511,7 +520,6 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
       }
 
       if (!started && _playbackQueue.length > 1) {
-        // If a dead link ever occurs, automatically skip to next track so music never stops!
         _isBusySwitching = false;
         _playNext();
         return;
@@ -549,7 +557,260 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
     });
   }
 
-  /// Pick any local MP3/M4A/WAV song from the user's phone and categorize it into Offline Vault!
+  /// Opens the Interactive Song Number Sequencer Modal!
+  /// Lets the user change the exact Song Number (#1, #2, #3...) inside Offline Category Folders, Favorites, or Online list!
+  Future<void> _promptChangeSongNumberDialog(Map<String, dynamic> trk, int currentIdx) async {
+    final List<Map<String, dynamic>> currentList = _currentVisibleList();
+    if (currentList.length < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add at least 2 songs in this section to change song numbers!')),
+      );
+      return;
+    }
+
+    final String id = (trk['id'] ?? '').toString();
+    final int currentSongNumber = currentIdx + 1;
+    final int totalSongs = currentList.length;
+    final TextEditingController numCtrl = TextEditingController(text: '$currentSongNumber');
+
+    final int? targetOneBasedNum = await showModalBottomSheet<int>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: GlassBox(
+            margin: const EdgeInsets.all(10),
+            padding: const EdgeInsets.all(16),
+            borderRadius: 24,
+            blur: 20,
+            tintColor: const Color(0xFF0B1426),
+            borderColor: Colors.amberAccent,
+            borderWidth: 1.5,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.format_list_numbered_rounded, color: Colors.amberAccent, size: 26),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '🔢 Change Song Number (Currently #$currentSongNumber of $totalSongs)',
+                            style: const TextStyle(
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                            ),
+                          ),
+                          Text(
+                            trk['title'].toString(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 11.5, color: Color(0xFF00E5FF)),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, color: Colors.white60),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+
+                // Quick Shift Buttons (Move to #1, Move Up, Move Down, Move to Last)
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF00E676),
+                        foregroundColor: Colors.black,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      icon: const Icon(Icons.vertical_align_top_rounded, size: 16),
+                      label: const Text('Make #1 (Top)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900)),
+                      onPressed: () => Navigator.pop(ctx, 1),
+                    ),
+                    if (currentSongNumber > 1)
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF00E5FF),
+                          foregroundColor: Colors.black,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        icon: const Icon(Icons.arrow_upward_rounded, size: 16),
+                        label: Text(
+                          'Move Up (#${currentSongNumber - 1})',
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900),
+                        ),
+                        onPressed: () => Navigator.pop(ctx, currentSongNumber - 1),
+                      ),
+                    if (currentSongNumber < totalSongs)
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.amberAccent,
+                          foregroundColor: Colors.black,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        icon: const Icon(Icons.arrow_downward_rounded, size: 16),
+                        label: Text(
+                          'Move Down (#${currentSongNumber + 1})',
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900),
+                        ),
+                        onPressed: () => Navigator.pop(ctx, currentSongNumber + 1),
+                      ),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.white38),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      icon: const Icon(Icons.vertical_align_bottom_rounded, size: 16, color: Colors.white),
+                      label: Text(
+                        'Move Last (#$totalSongs)',
+                        style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.bold),
+                      ),
+                      onPressed: () => Navigator.pop(ctx, totalSongs),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                const Text(
+                  'Tap Any Number Below to Jump Directly:',
+                  style: TextStyle(fontSize: 11, color: Colors.white70, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 150),
+                  child: SingleChildScrollView(
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: List.generate(totalSongs > 60 ? 60 : totalSongs, (i) {
+                        final int numVal = i + 1;
+                        final bool isCurrent = (numVal == currentSongNumber);
+                        return InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: () => Navigator.pop(ctx, numVal),
+                          child: Container(
+                            width: 42,
+                            height: 34,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: isCurrent ? Colors.amberAccent : const Color(0xFF172542),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isCurrent ? Colors.white : const Color(0x5500E5FF),
+                              ),
+                            ),
+                            child: Text(
+                              '#$numVal',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w900,
+                                color: isCurrent ? Colors.black : Colors.white,
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Direct Number Input
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: numCtrl,
+                        keyboardType: TextInputType.number,
+                        style: const TextStyle(fontSize: 13, color: Colors.white, fontWeight: FontWeight.bold),
+                        decoration: InputDecoration(
+                          labelText: 'Type Exact Song Number (1 to $totalSongs)',
+                          labelStyle: const TextStyle(fontSize: 11, color: Colors.amberAccent),
+                          filled: true,
+                          fillColor: const Color(0xFF141E33),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF00E5FF),
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+                      ),
+                      onPressed: () {
+                        final int? parsed = int.tryParse(numCtrl.text.trim());
+                        if (parsed != null) {
+                          Navigator.pop(ctx, parsed.clamp(1, totalSongs));
+                        }
+                      },
+                      child: const Text('Set #', style: TextStyle(fontWeight: FontWeight.w900)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (targetOneBasedNum == null || targetOneBasedNum == currentSongNumber) return;
+
+    await _applySongNumberChange(id, currentIdx, targetOneBasedNum);
+  }
+
+  Future<void> _applySongNumberChange(String trackId, int oldIdx, int targetOneBasedNumber) async {
+    if (_viewMode == 'OFFLINE') {
+      await VaultManager.changeSongNumberInCategory(
+        _selectedOfflineCategory,
+        trackId,
+        targetOneBasedNumber,
+      );
+    } else if (_viewMode == 'FAVORITES') {
+      await VaultManager.changeSongNumberInFavorites(trackId, targetOneBasedNumber);
+    } else {
+      final int targetIdx = (targetOneBasedNumber - 1).clamp(0, _tracks.length - 1);
+      if (oldIdx >= 0 && oldIdx < _tracks.length && oldIdx != targetIdx) {
+        setState(() {
+          final item = _tracks.removeAt(oldIdx);
+          _tracks.insert(targetIdx, item);
+        });
+      }
+    }
+
+    _refreshActiveQueueAfterReorder();
+    if (mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 1),
+          backgroundColor: Colors.amber.shade900,
+          content: Text(
+            '🔢 Song moved to #$targetOneBasedNumber in ${_viewMode == 'OFFLINE' ? _selectedOfflineCategory : _viewMode}!',
+            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+          ),
+        ),
+      );
+    }
+  }
+
   Future<void> _pickLocalSongFromPhone() async {
     try {
       final String? pickedPath = await _nativeChannel.invokeMethod<String>(
@@ -578,8 +839,6 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
     } catch (_) {}
   }
 
-  /// Opens the Glassmorphic Category Picker Modal whenever the user taps Download (⬇) or Folder badge!
-  /// Lets user pick Marriage, Fashion Show, Devotional, Kannada, Hindi, or create a new custom category!
   Future<void> _promptCategoryAndSaveDownload(Map<String, dynamic> trk) async {
     final String id = (trk['id'] ?? '').toString();
     final bool alreadyOff = VaultManager.isOffline(id, isEntry: false);
@@ -718,7 +977,6 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
                       }).toList(),
                     ),
                     const SizedBox(height: 14),
-                    // Create New Custom Category Input
                     Row(
                       children: [
                         Expanded(
@@ -868,6 +1126,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
     final String id = (trk['id'] ?? '').toString();
     final bool isOff = VaultManager.isOffline(id, isEntry: false);
     final String? cat = VaultManager.getTrackOfflineCategory(id);
+    final int currentStartCue = int.tryParse((trk['customStartSec'] ?? '0').toString()) ?? 0;
 
     showModalBottomSheet(
       context: context,
@@ -884,7 +1143,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                trk['title'].toString(),
+                '#${idx + 1} • ${trk['title']}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Colors.amberAccent),
@@ -896,6 +1155,38 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
                 style: const TextStyle(fontSize: 12, color: Colors.cyanAccent),
               ),
               const Divider(color: Colors.white24, height: 18),
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.format_list_numbered_rounded, color: Colors.amberAccent),
+                title: Text(
+                  'Change Song Number (Currently #${idx + 1})',
+                  style: const TextStyle(fontWeight: FontWeight.w900, color: Colors.amberAccent),
+                ),
+                subtitle: const Text(
+                  'Move to #1, #2, #3 or any custom position in playlist',
+                  style: TextStyle(fontSize: 10.5, color: Colors.white70),
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _promptChangeSongNumberDialog(trk, idx);
+                },
+              ),
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.timer_outlined, color: Color(0xFF00E676)),
+                title: Text(
+                  'Set Custom Start Second (Current: ${currentStartCue}s)',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: const Text(
+                  'Skip slow intros automatically when this song plays',
+                  style: TextStyle(fontSize: 10.5, color: Colors.white70),
+                ),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  _promptCustomStartCueDialog(trk);
+                },
+              ),
               ListTile(
                 dense: true,
                 leading: const Icon(Icons.playlist_play_rounded, color: Color(0xFF00E5FF)),
@@ -945,7 +1236,73 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
     );
   }
 
-  /// Opens the 5-Band Hardware Equalizer, BassBoost & Sleep Timer Console
+  Future<void> _promptCustomStartCueDialog(Map<String, dynamic> trk) async {
+    final String id = (trk['id'] ?? '').toString();
+    final int existing = int.tryParse((trk['customStartSec'] ?? '0').toString()) ?? 0;
+    final TextEditingController secCtrl = TextEditingController(text: '$existing');
+
+    final int? chosenSec = await showDialog<int>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF0E172A),
+          title: const Text(
+            '⏱ Set Custom Start Second (Skip Intro)',
+            style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900, color: Color(0xFF00E5FF)),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(trk['title'].toString(), style: const TextStyle(fontSize: 12, color: Colors.amberAccent)),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [0, 10, 15, 20, 30, 45].map((s) {
+                  return ActionChip(
+                    backgroundColor: const Color(0xFF172542),
+                    label: Text(s == 0 ? '0s (Normal)' : 'Start @ ${s}s', style: const TextStyle(fontSize: 11)),
+                    onPressed: () => Navigator.pop(ctx, s),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: secCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Or enter exact second (e.g. 18)',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00E676), foregroundColor: Colors.black),
+              onPressed: () {
+                final int v = int.tryParse(secCtrl.text.trim()) ?? 0;
+                Navigator.pop(ctx, v.clamp(0, 300));
+              },
+              child: const Text('Save Cue', style: TextStyle(fontWeight: FontWeight.w900)),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (chosenSec == null) return;
+    trk['customStartSec'] = chosenSec;
+    await VaultManager.setTrackCustomStartCue(id, chosenSec);
+    if (mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('⏱ Saved Start Cue @ ${chosenSec}s for ${trk['title']}')),
+      );
+    }
+  }
+
   void _openEqualizerAndSleepConsole() {
     showModalBottomSheet(
       context: context,
@@ -1107,7 +1464,6 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
     });
   }
 
-  /// Full-Screen Expandable Glassmorphic Now-Playing Deck with Live Time-Synced Lyrics & A-B Loop
   Future<void> _openFullScreenGlassConsole() async {
     if (_nowPlayingTrack == null) return;
     final Map<String, dynamic> trk = _nowPlayingTrack!;
@@ -1162,7 +1518,6 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
                 borderWidth: 1.6,
                 child: Column(
                   children: [
-                    // Top Handle & Mode Bar
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -1201,8 +1556,6 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
                       ],
                     ),
                     const SizedBox(height: 8),
-
-                    // Song Title & Artist
                     Text(
                       currentTrk['title'].toString(),
                       maxLines: 1,
@@ -1216,8 +1569,6 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
                       style: const TextStyle(fontSize: 12, color: Color(0xFF00E5FF)),
                     ),
                     const SizedBox(height: 10),
-
-                    // Center Stage: Live Time-Synced Lyrics OR High-Res Vinyl Cover
                     Expanded(
                       child: showLyricsView
                           ? Column(
@@ -1310,8 +1661,6 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
                             ),
                     ),
                     const SizedBox(height: 10),
-
-                    // 4 Hot-Cue Jump Pads + A-B Section Loop Row
                     SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: Row(
@@ -1339,8 +1688,6 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
                       ),
                     ),
                     const SizedBox(height: 6),
-
-                    // Progress Slider
                     Slider(
                       value: _position.inSeconds
                           .toDouble()
@@ -1359,8 +1706,6 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
                         Text(_fmtDuration(_duration), style: const TextStyle(fontSize: 11, color: Colors.white70)),
                       ],
                     ),
-
-                    // Main Transport Controls
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
@@ -1467,75 +1812,114 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
 
                     return Column(
                       children: [
-                        // 1. Glass Status & OTA Live Banner Strip
-                        ValueListenableBuilder<String>(
-                          valueListenable: OtaUpdateEngine.otaStatusBanner,
-                          builder: (context, otaText, _) {
-                            return Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                              decoration: const BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [Color(0xFF0A1224), Color(0xFF132242)],
+                        // 1. Glass Status & Quick Pro Tool Strip (EQ, Live SFX Bar, Phone MP3)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: const BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [Color(0xFF0A1224), Color(0xFF132242)],
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  _statusBadge,
+                                  style: const TextStyle(
+                                    fontSize: 10.5,
+                                    color: Color(0xFF00E676),
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      _statusBadge,
-                                      style: const TextStyle(
-                                        fontSize: 10.5,
-                                        color: Color(0xFF00E676),
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
+                              const SizedBox(width: 5),
+                              GestureDetector(
+                                onTap: () => setState(() => _showQuickDjPads = !_showQuickDjPads),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: _showQuickDjPads
+                                        ? const Color(0xFF00E676).withOpacity(0.28)
+                                        : Colors.pinkAccent.withOpacity(0.18),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: _showQuickDjPads ? const Color(0xFF00E676) : Colors.pinkAccent,
                                     ),
                                   ),
-                                  const SizedBox(width: 6),
-                                  GestureDetector(
-                                    onTap: _openEqualizerAndSleepConsole,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: Colors.amberAccent.withOpacity(0.16),
-                                        borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(color: Colors.amberAccent.withOpacity(0.6)),
-                                      ),
-                                      child: const Text(
-                                        '🎚 EQ & Sleep',
-                                        style: TextStyle(
-                                          fontSize: 9.5,
-                                          color: Colors.amberAccent,
-                                          fontWeight: FontWeight.w900,
-                                        ),
-                                      ),
+                                  child: const Text(
+                                    '🎛 DJ FX',
+                                    style: TextStyle(
+                                      fontSize: 9.2,
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w900,
                                     ),
                                   ),
-                                  const SizedBox(width: 6),
-                                  GestureDetector(
-                                    onTap: _pickLocalSongFromPhone,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFF00E5FF).withOpacity(0.16),
-                                        borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.6)),
-                                      ),
-                                      child: const Text(
-                                        '📱 Phone MP3',
-                                        style: TextStyle(
-                                          fontSize: 9.5,
-                                          color: Color(0xFF00E5FF),
-                                          fontWeight: FontWeight.w900,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                                ),
                               ),
-                            );
-                          },
+                              const SizedBox(width: 5),
+                              GestureDetector(
+                                onTap: _openEqualizerAndSleepConsole,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.amberAccent.withOpacity(0.16),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: Colors.amberAccent.withOpacity(0.6)),
+                                  ),
+                                  child: const Text(
+                                    '🎚 EQ & Sleep',
+                                    style: TextStyle(
+                                      fontSize: 9.2,
+                                      color: Colors.amberAccent,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 5),
+                              GestureDetector(
+                                onTap: _pickLocalSongFromPhone,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF00E5FF).withOpacity(0.16),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.6)),
+                                  ),
+                                  child: const Text(
+                                    '📱 Phone MP3',
+                                    style: TextStyle(
+                                      fontSize: 9.2,
+                                      color: Color(0xFF00E5FF),
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
+
+                        // Optional Instant Live DJ Stinger Pads Strip right inside Tab 1!
+                        if (_showQuickDjPads)
+                          Container(
+                            height: 36,
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            color: const Color(0xFF0B152A),
+                            child: ListView(
+                              scrollDirection: Axis.horizontal,
+                              children: [
+                                _quickSfxBtn('📢 Airhorn', 'AIRHORN', Colors.amberAccent),
+                                _quickSfxBtn('🔊 Sub Drop', 'SUB_DROP', const Color(0xFF00E5FF)),
+                                _quickSfxBtn('🥁 Dhol Beat', 'DHOL', const Color(0xFF00E676)),
+                                _quickSfxBtn('🎺 Trumpet', 'TRUMPET', Colors.orangeAccent),
+                                _quickSfxBtn('⚡ Laser', 'LASER', Colors.pinkAccent),
+                                _quickSfxBtn('🏟 Crowd Roar', 'CROWD', Colors.cyanAccent),
+                                _quickSfxBtn('🌪 Bass Riser', 'RISER', Colors.purpleAccent),
+                              ],
+                            ),
+                          ),
 
                         // 2. Glassmorphic Search Bar + 3 Main Mode Tabs (Online / Favs / Offline Categories)
                         Padding(
@@ -1613,9 +1997,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
                           ),
                         ),
 
-                        // 3. Dynamic Sub-Navigation Bar:
-                        //    - In ONLINE mode: Category & Language Discovery Chips (Kannada, Hindi, Marriage, Fashion Show, Devotional, etc.)
-                        //    - In OFFLINE mode: Strict Category Folder Selector (Marriage, Fashion Show, Devotional, Kannada, Hindi, + Add Folder)
+                        // 3. Dynamic Sub-Navigation Bar
                         if (_viewMode == 'OFFLINE')
                           _buildOfflineCategoryFolderBar(categoriesList, visibleList)
                         else if (_viewMode == 'SONGS')
@@ -1646,7 +2028,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
                             ),
                           ),
 
-                        // 4. Glassmorphic Master Mini-Deck (Tap to Expand to Full-Screen Console & Lyrics)
+                        // 4. Glassmorphic Master Mini-Deck
                         if (playingTrack != null)
                           GestureDetector(
                             onTap: _openFullScreenGlassConsole,
@@ -1683,7 +2065,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
                                             Text(
-                                              playingTrack['title'].toString(),
+                                              '#${_queueIndex + 1} • ${playingTrack['title']}',
                                               style: const TextStyle(
                                                 fontWeight: FontWeight.w900,
                                                 fontSize: 13,
@@ -1859,7 +2241,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
                             ),
                           ),
 
-                        // 5. Ultra-Premium Glassmorphic Song Cards List + Load More Button
+                        // 5. Ultra-Premium Glassmorphic Song Cards List + Interactive Song Number Sequencer
                         Expanded(
                           child: _isLoading
                               ? const Center(child: CircularProgressIndicator(color: Color(0xFF00E5FF)))
@@ -1931,6 +2313,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
                                           isActivelyPlaying: _isPlaying,
                                           isFavorite: isFav,
                                           isOffline: isOff,
+                                          allowSongNumberEdit: (_viewMode == 'OFFLINE' || _viewMode == 'FAVORITES'),
                                           offlineCategory: offCat,
                                           downloadProgressPct: activeDlPct,
                                           onPlayTap: () {
@@ -1950,6 +2333,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
                                           onFavoriteTap: () => _onTapFavorite(trk),
                                           onDownloadOrCategoryTap: () => _promptCategoryAndSaveDownload(trk),
                                           onMoreOptionsTap: () => _showSongOptionsModal(trk, idx),
+                                          onSongNumberTap: () => _promptChangeSongNumberDialog(trk, idx),
                                         );
                                       },
                                     ),
@@ -1966,7 +2350,22 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
     );
   }
 
-  /// Builds the Offline Category Folder Selector + Section-Isolated Playback Header
+  Widget _quickSfxBtn(String label, String sfxKey, Color color) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: OutlinedButton(
+        style: OutlinedButton.styleFrom(
+          backgroundColor: color.withOpacity(0.14),
+          side: BorderSide(color: color.withOpacity(0.65)),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+          visualDensity: VisualDensity.compact,
+        ),
+        onPressed: () => AppSoundEngine.playSynthesizedSfx(sfxKey),
+        child: Text(label, style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.w900)),
+      ),
+    );
+  }
+
   Widget _buildOfflineCategoryFolderBar(
     List<String> categoriesList,
     List<Map<String, dynamic>> currentCategorySongs,
@@ -2034,7 +2433,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
                       ),
                     ),
                     const Text(
-                      '🔒 Section-Only Lock: Plays ONLY inside this category folder!',
+                      '🔢 Tap any #Number badge on a song card to change its Song Number (#1, #2, #3...)!',
                       style: TextStyle(fontSize: 9.5, color: Color(0xFF00E676), fontWeight: FontWeight.bold),
                     ),
                   ],
@@ -2049,7 +2448,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
                     visualDensity: VisualDensity.compact,
                   ),
                   icon: const Icon(Icons.play_arrow_rounded, size: 16),
-                  label: const Text('Play Folder', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900)),
+                  label: const Text('Play #1..N', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900)),
                   onPressed: () => _startPlaybackFromVisibleList(0, enableShuffle: false),
                 ),
                 const SizedBox(width: 6),

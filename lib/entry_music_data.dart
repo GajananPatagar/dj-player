@@ -96,7 +96,7 @@ class VaultManager {
     if (lower.contains('marriage') || lower.contains('wedding') || lower.contains('haldi')) return '💍';
     if (lower.contains('fashion') || lower.contains('ramp')) return '👗';
     if (lower.contains('devotional') || lower.contains('bhakti') || lower.contains('pooja')) return '🪔';
-    if (lower.contains('kannada')) return '💛❤️';
+    if (lower.contains('kannada')) return '👑';
     if (lower.contains('hindi')) return '🇮🇳';
     if (lower.contains('dj') || lower.contains('bass') || lower.contains('party')) return '🔥';
     if (lower.contains('entry') || lower.contains('mass')) return '⚡';
@@ -104,7 +104,7 @@ class VaultManager {
     return '📂';
   }
 
-  /// Returns ONLY the offline songs inside [category] so offline playback stays strictly inside that section!
+  /// Returns ONLY the offline songs inside [category] in their exact custom Song Number sequence!
   static List<Map<String, dynamic>> getOfflineSongsByCategory(String category) {
     if (category == 'ALL_OFFLINE') {
       return offlineSongs.value;
@@ -113,6 +113,80 @@ class VaultManager {
       final String trkCat = (trk['category'] ?? 'Kannada').toString().trim();
       return trkCat.toLowerCase() == category.trim().toLowerCase();
     }).toList();
+  }
+
+  /// Changes the Song Number (1-based position) of [trackId] inside [category] and saves permanently!
+  static Future<void> changeSongNumberInCategory(
+    String category,
+    String trackId,
+    int targetOneBasedNumber,
+  ) async {
+    final List<Map<String, dynamic>> all = List<Map<String, dynamic>>.from(offlineSongs.value);
+    final List<Map<String, dynamic>> inCat = [];
+    final List<int> originalSlotIndices = [];
+
+    for (int i = 0; i < all.length; i++) {
+      final String trkCat = (all[i]['category'] ?? 'Kannada').toString().trim();
+      if (category == 'ALL_OFFLINE' || trkCat.toLowerCase() == category.trim().toLowerCase()) {
+        inCat.add(all[i]);
+        originalSlotIndices.add(i);
+      }
+    }
+
+    if (inCat.length < 2) return;
+    final int currentIdx = inCat.indexWhere((e) => e['id'].toString() == trackId);
+    if (currentIdx < 0) return;
+
+    final int targetIdx = (targetOneBasedNumber - 1).clamp(0, inCat.length - 1);
+    if (currentIdx == targetIdx) return;
+
+    final Map<String, dynamic> moved = inCat.removeAt(currentIdx);
+    inCat.insert(targetIdx, moved);
+
+    for (int k = 0; k < originalSlotIndices.length; k++) {
+      final Map<String, dynamic> updatedItem = Map<String, dynamic>.from(inCat[k]);
+      updatedItem['customOrder'] = k + 1;
+      all[originalSlotIndices[k]] = updatedItem;
+    }
+
+    offlineSongs.value = all;
+    await _saveList('v51_off_songs', all);
+  }
+
+  /// Changes Song Number inside Favorites list
+  static Future<void> changeSongNumberInFavorites(
+    String trackId,
+    int targetOneBasedNumber,
+  ) async {
+    final List<Map<String, dynamic>> favs = List<Map<String, dynamic>>.from(favSongs.value);
+    if (favs.length < 2) return;
+    final int currentIdx = favs.indexWhere((e) => e['id'].toString() == trackId);
+    if (currentIdx < 0) return;
+    final int targetIdx = (targetOneBasedNumber - 1).clamp(0, favs.length - 1);
+    if (currentIdx == targetIdx) return;
+
+    final Map<String, dynamic> moved = favs.removeAt(currentIdx);
+    favs.insert(targetIdx, moved);
+    favSongs.value = favs;
+    await _saveList('v51_fav_songs', favs);
+  }
+
+  /// Saves a Custom Start Cue Second for any song (e.g. skip slow intro on Marriage / Fashion Show track)
+  static Future<void> setTrackCustomStartCue(String id, int startSec) async {
+    final List<Map<String, dynamic>> current = List<Map<String, dynamic>>.from(offlineSongs.value);
+    bool changed = false;
+    for (int i = 0; i < current.length; i++) {
+      if (current[i]['id'].toString() == id) {
+        final updated = Map<String, dynamic>.from(current[i]);
+        updated['customStartSec'] = startSec;
+        current[i] = updated;
+        changed = true;
+      }
+    }
+    if (changed) {
+      offlineSongs.value = current;
+      await _saveList('v51_off_songs', current);
+    }
   }
 
   static String? getTrackOfflineCategory(String id) {
@@ -204,6 +278,7 @@ class VaultManager {
       'durationStr': (t['durationStr'] ?? 'Full').toString(),
       'durationSec': int.tryParse((t['durationSec'] ?? '180').toString()) ?? 180,
       'smartDropSec': int.tryParse((t['smartDropSec'] ?? '12').toString()) ?? 12,
+      'customStartSec': int.tryParse((t['customStartSec'] ?? '0').toString()) ?? 0,
       'year': int.tryParse((t['year'] ?? '2026').toString()) ?? 2026,
       'quality': (t['quality'] ?? '320kbps MASTER').toString(),
       'localPath': t['localPath']?.toString(),
@@ -252,14 +327,13 @@ class VaultManager {
     clean['category'] = category;
     final String id = clean['id'].toString();
 
-    // If track already has a valid localPath (e.g., imported from phone or already downloaded), just save category!
     if (clean['localPath'] != null && File(clean['localPath'].toString()).existsSync()) {
       clean['isOffline'] = true;
       final notifier = isEntry ? offlineEntries : offlineSongs;
       final String storageKey = isEntry ? 'v51_off_entries' : 'v51_off_songs';
       final List<Map<String, dynamic>> current = List<Map<String, dynamic>>.from(notifier.value);
       current.removeWhere((e) => e['id'].toString() == id);
-      current.insert(0, clean);
+      current.add(clean); // Append at end of category so song numbers #1, #2, #3 stay in order!
       notifier.value = current;
       await _saveList(storageKey, current);
       return true;
@@ -297,7 +371,7 @@ class VaultManager {
           final String storageKey = isEntry ? 'v51_off_entries' : 'v51_off_songs';
           final List<Map<String, dynamic>> current = List<Map<String, dynamic>>.from(notifier.value);
           current.removeWhere((e) => e['id'].toString() == id);
-          current.insert(0, clean);
+          current.add(clean);
           notifier.value = current;
           await _saveList(storageKey, current);
 

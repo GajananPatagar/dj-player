@@ -54,8 +54,8 @@ class GlassBox extends StatelessWidget {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  tintColor.withOpacity(0.82),
-                  tintColor.withOpacity(0.56),
+                  tintColor.withOpacity(0.84),
+                  tintColor.withOpacity(0.58),
                 ],
               ),
               border: Border.all(color: borderColor, width: borderWidth),
@@ -68,15 +68,17 @@ class GlassBox extends StatelessWidget {
   }
 }
 
-/// Animated 4-Bar Neon Equalizer Indicator for Currently Playing Song Card
+/// Animated Neon Equalizer Indicator for Currently Playing Song Card & Mini-Deck
 class AnimatedEqualizerBars extends StatefulWidget {
   final bool isPlaying;
   final Color color;
+  final int barCount;
 
   const AnimatedEqualizerBars({
     super.key,
     required this.isPlaying,
     this.color = const Color(0xFF00E5FF),
+    this.barCount = 4,
   });
 
   @override
@@ -92,7 +94,7 @@ class _AnimatedEqualizerBarsState extends State<AnimatedEqualizerBars>
     super.initState();
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 520),
+      duration: const Duration(milliseconds: 480),
     )..repeat(reverse: true);
   }
 
@@ -105,7 +107,7 @@ class _AnimatedEqualizerBarsState extends State<AnimatedEqualizerBars>
   @override
   Widget build(BuildContext context) {
     if (!widget.isPlaying) {
-      return Icon(Icons.equalizer, color: widget.color, size: 18);
+      return Icon(Icons.equalizer_rounded, color: widget.color, size: 18);
     }
     return AnimatedBuilder(
       animation: _ctrl,
@@ -114,11 +116,11 @@ class _AnimatedEqualizerBarsState extends State<AnimatedEqualizerBars>
         return Row(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.end,
-          children: List.generate(4, (i) {
-            final double phase = (v + i * 0.27) % 1.0;
-            final double h = 5.0 + 13.0 * (0.5 + 0.5 * sin(phase * 2 * pi));
+          children: List.generate(widget.barCount, (i) {
+            final double phase = (v + i * 0.23) % 1.0;
+            final double h = 4.0 + 13.0 * (0.5 + 0.5 * sin(phase * 2 * pi));
             return Container(
-              width: 3.0,
+              width: 2.8,
               height: h,
               margin: const EdgeInsets.symmetric(horizontal: 1.0),
               decoration: BoxDecoration(
@@ -133,7 +135,8 @@ class _AnimatedEqualizerBarsState extends State<AnimatedEqualizerBars>
   }
 }
 
-/// Ultra-Premium Glassmorphic Song Card with Category Pill, Bitrate Master Badge, BPM & Glow Controls
+/// Ultra-Premium Glassmorphic Song Card with Interactive Song Number Sequencer (#1, #2, #3...),
+/// Category Pill, Bitrate Master Badge, Custom Start Cue Badge & Glow Controls
 class PremiumGlassSongCard extends StatelessWidget {
   final int index;
   final Map<String, dynamic> track;
@@ -141,12 +144,14 @@ class PremiumGlassSongCard extends StatelessWidget {
   final bool isActivelyPlaying;
   final bool isFavorite;
   final bool isOffline;
+  final bool allowSongNumberEdit;
   final String? offlineCategory;
   final int? downloadProgressPct;
   final VoidCallback onPlayTap;
   final VoidCallback onFavoriteTap;
   final VoidCallback onDownloadOrCategoryTap;
   final VoidCallback onMoreOptionsTap;
+  final VoidCallback? onSongNumberTap;
 
   const PremiumGlassSongCard({
     super.key,
@@ -156,12 +161,14 @@ class PremiumGlassSongCard extends StatelessWidget {
     required this.isActivelyPlaying,
     required this.isFavorite,
     required this.isOffline,
+    this.allowSongNumberEdit = false,
     this.offlineCategory,
     this.downloadProgressPct,
     required this.onPlayTap,
     required this.onFavoriteTap,
     required this.onDownloadOrCategoryTap,
     required this.onMoreOptionsTap,
+    this.onSongNumberTap,
   });
 
   int _estimateBpm(String id, String title) {
@@ -180,6 +187,7 @@ class PremiumGlassSongCard extends StatelessWidget {
     final String cover = (track['cover'] ?? '').toString();
     final String durationStr = (track['durationStr'] ?? 'Full').toString();
     final String id = (track['id'] ?? '').toString();
+    final int customStartSec = int.tryParse((track['customStartSec'] ?? '0').toString()) ?? 0;
     final int bpm = _estimateBpm(id, title);
 
     return GestureDetector(
@@ -206,7 +214,7 @@ class PremiumGlassSongCard extends StatelessWidget {
             : null,
         child: Row(
           children: [
-            // 1. High-Res Album Art + Rank Badge + Duration Overlay
+            // 1. High-Res Album Art + Interactive Song Number Badge (#1, #2...) + Duration Overlay
             Stack(
               alignment: Alignment.bottomRight,
               children: [
@@ -266,23 +274,37 @@ class PremiumGlassSongCard extends StatelessWidget {
                 Positioned(
                   top: 0,
                   left: 0,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 4.5, vertical: 1.5),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFFFFAB00), Color(0xFFFF6D00)],
+                  child: GestureDetector(
+                    onTap: onSongNumberTap,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5.5, vertical: 2),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: allowSongNumberEdit
+                              ? [const Color(0xFF00E676), const Color(0xFF00BFA5)]
+                              : [const Color(0xFFFFAB00), const Color(0xFFFF6D00)],
+                        ),
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(10),
+                          bottomRight: Radius.circular(7),
+                        ),
                       ),
-                      borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(10),
-                        bottomRight: Radius.circular(6),
-                      ),
-                    ),
-                    child: Text(
-                      '#${index + 1}',
-                      style: const TextStyle(
-                        fontSize: 8.5,
-                        color: Colors.black,
-                        fontWeight: FontWeight.w900,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '#${index + 1}',
+                            style: const TextStyle(
+                              fontSize: 9,
+                              color: Colors.black,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          if (allowSongNumberEdit) ...[
+                            const SizedBox(width: 2),
+                            const Icon(Icons.swap_vert_rounded, size: 10, color: Colors.black),
+                          ],
+                        ],
                       ),
                     ),
                   ),
@@ -291,7 +313,7 @@ class PremiumGlassSongCard extends StatelessWidget {
             ),
             const SizedBox(width: 11),
 
-            // 2. Song Details + Pro Micro-Badges (320kbps, BPM, Offline Category Pill)
+            // 2. Song Details + Pro Micro-Badges (320kbps, BPM, Editable Song Number Pill, Offline Category Pill)
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -324,11 +346,33 @@ class PremiumGlassSongCard extends StatelessWidget {
                     runSpacing: 3,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
+                      if (allowSongNumberEdit && onSongNumberTap != null)
+                        GestureDetector(
+                          onTap: onSongNumberTap,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: Colors.amberAccent.withOpacity(0.22),
+                              borderRadius: BorderRadius.circular(5),
+                              border: Border.all(color: Colors.amberAccent, width: 0.8),
+                            ),
+                            child: Text(
+                              '🔢 Song #${index + 1} (Change)',
+                              style: const TextStyle(
+                                fontSize: 8.5,
+                                color: Colors.amberAccent,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ),
                       _microPill(
                         isOffline ? '⚡ OFFLINE 320K' : '320K MASTER',
                         isOffline ? const Color(0xFF00E676) : const Color(0xFF00E5FF),
                       ),
                       _microPill('$bpm BPM', Colors.amberAccent),
+                      if (customStartSec > 0)
+                        _microPill('⏱ Start @ ${customStartSec}s', Colors.pinkAccent),
                       if (offlineCategory != null && offlineCategory!.isNotEmpty)
                         GestureDetector(
                           onTap: onDownloadOrCategoryTap,
@@ -364,7 +408,7 @@ class PremiumGlassSongCard extends StatelessWidget {
                 IconButton(
                   visualDensity: VisualDensity.compact,
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  constraints: const BoxConstraints(minWidth: 30, minHeight: 32),
                   tooltip: 'Favorite',
                   icon: Icon(
                     isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
@@ -375,15 +419,15 @@ class PremiumGlassSongCard extends StatelessWidget {
                 ),
                 if (downloadProgressPct != null)
                   Container(
-                    width: 34,
-                    height: 34,
+                    width: 32,
+                    height: 32,
                     alignment: Alignment.center,
                     child: Stack(
                       alignment: Alignment.center,
                       children: [
                         SizedBox(
-                          width: 26,
-                          height: 26,
+                          width: 24,
+                          height: 24,
                           child: CircularProgressIndicator(
                             value: (downloadProgressPct! / 100.0).clamp(0.05, 1.0),
                             strokeWidth: 2.5,
@@ -405,20 +449,20 @@ class PremiumGlassSongCard extends StatelessWidget {
                   IconButton(
                     visualDensity: VisualDensity.compact,
                     padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    constraints: const BoxConstraints(minWidth: 30, minHeight: 32),
                     tooltip: isOffline ? 'Change Offline Category' : 'Download to Category Folder',
                     icon: Icon(
                       isOffline ? Icons.folder_special_rounded : Icons.download_for_offline_rounded,
                       color: isOffline ? Colors.amberAccent : const Color(0xFF00E676),
-                      size: 22,
+                      size: 21,
                     ),
                     onPressed: onDownloadOrCategoryTap,
                   ),
                 IconButton(
                   visualDensity: VisualDensity.compact,
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 28, minHeight: 32),
-                  tooltip: 'Song Options & Lyrics',
+                  constraints: const BoxConstraints(minWidth: 26, minHeight: 32),
+                  tooltip: 'Song Options, Song Number & Lyrics',
                   icon: const Icon(Icons.more_vert_rounded, color: Colors.white60, size: 19),
                   onPressed: onMoreOptionsTap,
                 ),

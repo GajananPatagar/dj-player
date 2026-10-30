@@ -1,4 +1,4 @@
-name: Build DJ Play and Commentry App APK
+name: Build IMS Pro Studio APK
 
 on:
   push:
@@ -33,7 +33,7 @@ jobs:
           flutter create --platforms=android --org com.gajanan.djplaycommentry --project-name dj_player .
           grep -n "void main()" lib/main.dart
 
-      - name: Inject Zero-Popup Background WakeLock Service, OTA Installer, Hardware DSP EQ, Recorder & TTS Into MainActivity.kt
+      - name: Inject Glassmorphic MediaSession Lockscreen Service, Zero-Popup WakeLock, Hardware DSP & TTS
         run: |
           MAIN_KT=$(find android/app/src/main -name "MainActivity.kt" | head -n 1)
           PKG_DIR=$(dirname "$MAIN_KT")
@@ -49,36 +49,63 @@ jobs:
           import android.content.Context
           import android.content.Intent
           import android.content.pm.ServiceInfo
+          import android.graphics.Bitmap
+          import android.graphics.BitmapFactory
+          import android.graphics.Canvas
+          import android.graphics.Color
+          import android.graphics.LinearGradient
+          import android.graphics.Paint
+          import android.graphics.RectF
+          import android.graphics.Shader
+          import android.graphics.Typeface
+          import android.media.MediaMetadata
+          import android.media.session.MediaSession
+          import android.media.session.PlaybackState
           import android.net.wifi.WifiManager
           import android.os.Build
+          import android.os.Handler
           import android.os.IBinder
+          import android.os.Looper
           import android.os.PowerManager
+          import java.net.HttpURLConnection
+          import java.net.URL
 
           class DjMediaForegroundService : Service() {
               private var wakeLock: PowerManager.WakeLock? = null
               private var wifiLock: WifiManager.WifiLock? = null
+              private var mediaSession: MediaSession? = null
+
+              private var currentTitle: String = "IMS Pro Studio"
+              private var currentArtist: String = "320kbps Master Engine • Auto-Next Active"
+              private var currentCoverUrl: String = ""
+              private var currentIsPlaying: Boolean = true
+              private var currentPosMs: Long = 0L
+              private var currentDurMs: Long = 210000L
+              private var cachedArtUrl: String = ""
+              private var cachedArtBitmap: Bitmap? = null
 
               override fun onCreate() {
                   super.onCreate()
                   acquireLocks()
+                  initMediaSession()
               }
 
               private fun acquireLocks() {
                   try {
                       val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
                       if (wakeLock == null) {
-                          wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DJPlayer::MediaWakeLock")
+                          wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "IMS::MediaWakeLock")
                           wakeLock?.setReferenceCounted(false)
                       }
                       if (wakeLock?.isHeld == false) {
-                          wakeLock?.acquire(10 * 60 * 60 * 1000L)
+                          wakeLock?.acquire(12 * 60 * 60 * 1000L)
                       }
                   } catch (_: Exception) {}
 
                   try {
                       val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
                       if (wifiLock == null) {
-                          wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "DJPlayer::MediaWifiLock")
+                          wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "IMS::MediaWifiLock")
                           wifiLock?.setReferenceCounted(false)
                       }
                       if (wifiLock?.isHeld == false) {
@@ -87,12 +114,196 @@ jobs:
                   } catch (_: Exception) {}
               }
 
+              private fun initMediaSession() {
+                  try {
+                      val session = MediaSession(this, "IMSProMediaSession")
+                      session.setCallback(object : MediaSession.Callback() {
+                          override fun onPlay() {
+                              currentIsPlaying = true
+                              MainActivity.dispatchMediaCommandToFlutter("PLAY")
+                              refreshNotificationAndSession()
+                          }
+
+                          override fun onPause() {
+                              currentIsPlaying = false
+                              MainActivity.dispatchMediaCommandToFlutter("PAUSE")
+                              refreshNotificationAndSession()
+                          }
+
+                          override fun onSkipToNext() {
+                              MainActivity.dispatchMediaCommandToFlutter("NEXT")
+                          }
+
+                          override fun onSkipToPrevious() {
+                              MainActivity.dispatchMediaCommandToFlutter("PREV")
+                          }
+
+                          override fun onSeekTo(pos: Long) {
+                              currentPosMs = pos
+                              MainActivity.dispatchMediaCommandToFlutter("SEEK:$pos")
+                              refreshNotificationAndSession()
+                          }
+                      })
+                      session.isActive = true
+                      mediaSession = session
+                  } catch (_: Exception) {}
+              }
+
               override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                   acquireLocks()
-                  val title = intent?.getStringExtra("title") ?: "IMS Pro Studio"
-                  val artist = intent?.getStringExtra("artist") ?: "Background Auto-Next Active"
-                  val isPlaying = intent?.getBooleanExtra("isPlaying", true) ?: true
-                  val notif = buildMediaNotification(title, artist, isPlaying)
+                  if (mediaSession == null) {
+                      initMediaSession()
+                  }
+
+                  val action = intent?.action ?: ""
+                  if (action == "ACTION_PREV") {
+                      MainActivity.dispatchMediaCommandToFlutter("PREV")
+                      return START_STICKY
+                  } else if (action == "ACTION_TOGGLE") {
+                      currentIsPlaying = !currentIsPlaying
+                      MainActivity.dispatchMediaCommandToFlutter("TOGGLE")
+                      refreshNotificationAndSession()
+                      return START_STICKY
+                  } else if (action == "ACTION_NEXT") {
+                      MainActivity.dispatchMediaCommandToFlutter("NEXT")
+                      return START_STICKY
+                  } else if (action == "ACTION_AIRHORN") {
+                      MainActivity.dispatchMediaCommandToFlutter("AIRHORN")
+                      return START_STICKY
+                  }
+
+                  if (intent?.hasExtra("title") == true) {
+                      currentTitle = intent.getStringExtra("title") ?: currentTitle
+                      currentArtist = intent.getStringExtra("artist") ?: currentArtist
+                      val newCover = intent.getStringExtra("cover") ?: ""
+                      currentIsPlaying = intent.getBooleanExtra("isPlaying", true)
+                      currentPosMs = intent.getLongExtra("positionMs", 0L)
+                      currentDurMs = intent.getLongExtra("durationMs", 210000L).coerceAtLeast(1000L)
+
+                      if (newCover.isNotEmpty() && newCover != cachedArtUrl) {
+                          currentCoverUrl = newCover
+                          fetchAndStylizeCoverArtAsync(newCover)
+                      }
+                  }
+
+                  refreshNotificationAndSession()
+                  return START_STICKY
+              }
+
+              private fun fetchAndStylizeCoverArtAsync(urlStr: String) {
+                  Thread {
+                      try {
+                          val conn = URL(urlStr).openConnection() as HttpURLConnection
+                          conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Android 14)")
+                          conn.connectTimeout = 5000
+                          conn.readTimeout = 5000
+                          conn.instanceFollowRedirects = true
+                          val rawBmp = conn.inputStream.use { BitmapFactory.decodeStream(it) }
+                          if (rawBmp != null) {
+                              val stylized = renderGlassmorphicAlbumArt(rawBmp, currentTitle)
+                              cachedArtUrl = urlStr
+                              cachedArtBitmap = stylized
+                              Handler(Looper.getMainLooper()).post {
+                                  refreshNotificationAndSession()
+                              }
+                          }
+                      } catch (_: Exception) {}
+                  }.start()
+              }
+
+              private fun renderGlassmorphicAlbumArt(source: Bitmap?, title: String): Bitmap {
+                  val size = 512
+                  val out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+                  val canvas = Canvas(out)
+                  val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+                  if (source != null) {
+                      val scaled = Bitmap.createScaledBitmap(source, size, size, true)
+                      canvas.drawBitmap(scaled, 0f, 0f, paint)
+                  } else {
+                      paint.shader = LinearGradient(
+                          0f, 0f, size.toFloat(), size.toFloat(),
+                          intArrayOf(Color.parseColor("#071024"), Color.parseColor("#132854"), Color.parseColor("#09152E")),
+                          null, Shader.TileMode.CLAMP
+                      )
+                      canvas.drawRect(0f, 0f, size.toFloat(), size.toFloat(), paint)
+                      paint.shader = null
+
+                      paint.style = Paint.Style.STROKE
+                      paint.strokeWidth = 6f
+                      paint.color = Color.parseColor("#00E5FF")
+                      canvas.drawCircle(size / 2f, size / 2f - 20f, 130f, paint)
+
+                      paint.style = Paint.Style.FILL
+                      paint.color = Color.parseColor("#FFD740")
+                      paint.textSize = 86f
+                      paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                      paint.textAlign = Paint.Align.CENTER
+                      canvas.drawText("IMS", size / 2f, size / 2f + 10f, paint)
+                  }
+
+                  // Draw Frosted Glassmorphic Top & Bottom Overlay Strip + Neon Cyan/Gold Frame
+                  val glassPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+                  glassPaint.shader = LinearGradient(
+                      0f, size - 110f, 0f, size.toFloat(),
+                      intArrayOf(Color.argb(175, 8, 16, 36), Color.argb(235, 5, 10, 24)),
+                      null, Shader.TileMode.CLAMP
+                  )
+                  canvas.drawRoundRect(RectF(16f, size - 96f, size - 16f, size - 16f), 22f, 22f, glassPaint)
+
+                  val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                      style = Paint.Style.STROKE
+                      strokeWidth = 3.5f
+                      color = Color.parseColor("#00E5FF")
+                  }
+                  canvas.drawRoundRect(RectF(16f, size - 96f, size - 16f, size - 16f), 22f, 22f, borderPaint)
+
+                  val outerFrame = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                      style = Paint.Style.STROKE
+                      strokeWidth = 8f
+                      color = Color.parseColor("#FFD740")
+                  }
+                  canvas.drawRoundRect(RectF(4f, 4f, size - 4f, size - 4f), 28f, 28f, outerFrame)
+
+                  val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                      color = Color.parseColor("#FFD740")
+                      textSize = 26f
+                      typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                      textAlign = Paint.Align.CENTER
+                  }
+                  canvas.drawText("✨ IMS PRO STUDIO • 320K MASTER", size / 2f, size - 46f, textPaint)
+
+                  return out
+              }
+
+              private fun refreshNotificationAndSession() {
+                  val artBmp = cachedArtBitmap ?: renderGlassmorphicAlbumArt(null, currentTitle)
+                  try {
+                      val metaBuilder = MediaMetadata.Builder()
+                          .putString(MediaMetadata.METADATA_KEY_TITLE, currentTitle)
+                          .putString(MediaMetadata.METADATA_KEY_ARTIST, currentArtist)
+                          .putString(MediaMetadata.METADATA_KEY_ALBUM, "IMS Pro Studio • Glass Audio Engine")
+                          .putLong(MediaMetadata.METADATA_KEY_DURATION, currentDurMs)
+                          .putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, artBmp)
+                          .putBitmap(MediaMetadata.METADATA_KEY_ART, artBmp)
+                      mediaSession?.setMetadata(metaBuilder.build())
+
+                      val stateInt = if (currentIsPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED
+                      val actions = PlaybackState.ACTION_PLAY or
+                          PlaybackState.ACTION_PAUSE or
+                          PlaybackState.ACTION_PLAY_PAUSE or
+                          PlaybackState.ACTION_SKIP_TO_NEXT or
+                          PlaybackState.ACTION_SKIP_TO_PREVIOUS or
+                          PlaybackState.ACTION_SEEK_TO
+
+                      val pbState = PlaybackState.Builder()
+                          .setActions(actions)
+                          .setState(stateInt, currentPosMs, if (currentIsPlaying) 1.0f else 0.0f)
+                          .build()
+                      mediaSession?.setPlaybackState(pbState)
+                  } catch (_: Exception) {}
+
+                  val notif = buildMediaNotification(currentTitle, currentArtist, currentIsPlaying, artBmp)
                   try {
                       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                           startForeground(1001, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
@@ -100,20 +311,37 @@ jobs:
                           startForeground(1001, notif)
                       }
                   } catch (_: Exception) {}
-                  return START_STICKY
               }
 
-              private fun buildMediaNotification(title: String, artist: String, isPlaying: Boolean): Notification {
-                  val channelId = "dj_pro_bg_playback_v610"
+              private fun serviceActionPendingIntent(reqCode: Int, actionStr: String): PendingIntent {
+                  val svcIntent = Intent(this, DjMediaForegroundService::class.java).apply {
+                      action = actionStr
+                  }
+                  val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                  return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      PendingIntent.getForegroundService(this, reqCode, svcIntent, flags)
+                  } else {
+                      PendingIntent.getService(this, reqCode, svcIntent, flags)
+                  }
+              }
+
+              private fun buildMediaNotification(
+                  title: String,
+                  artist: String,
+                  isPlaying: Boolean,
+                  artBmp: Bitmap
+              ): Notification {
+                  val channelId = "ims_pro_glass_media_v620"
                   val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                       val ch = NotificationChannel(
                           channelId,
-                          "DJ Pro Background Playback",
+                          "IMS Pro Lockscreen & Media Controls",
                           NotificationManager.IMPORTANCE_LOW
                       ).apply {
-                          description = "Keeps DJ Music playing and auto-advancing when screen is off"
-                          setShowBadge(false)
+                          description = "Luxury Glassmorphic Lockscreen & Notification Media Player"
+                          setShowBadge(true)
+                          lockscreenVisibility = Notification.VISIBILITY_PUBLIC
                       }
                       nm.createNotificationChannel(ch)
                   }
@@ -126,18 +354,10 @@ jobs:
                       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                   )
 
-                  val prevPi = PendingIntent.getBroadcast(
-                      this, 11, Intent("com.gajanan.djplaycommentry.MEDIA_CMD").putExtra("cmd", "PREV"),
-                      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                  )
-                  val togglePi = PendingIntent.getBroadcast(
-                      this, 12, Intent("com.gajanan.djplaycommentry.MEDIA_CMD").putExtra("cmd", "TOGGLE"),
-                      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                  )
-                  val nextPi = PendingIntent.getBroadcast(
-                      this, 13, Intent("com.gajanan.djplaycommentry.MEDIA_CMD").putExtra("cmd", "NEXT"),
-                      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                  )
+                  val prevPi = serviceActionPendingIntent(21, "ACTION_PREV")
+                  val togglePi = serviceActionPendingIntent(22, "ACTION_TOGGLE")
+                  val nextPi = serviceActionPendingIntent(23, "ACTION_NEXT")
+                  val hornPi = serviceActionPendingIntent(24, "ACTION_AIRHORN")
 
                   val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                       Notification.Builder(this, channelId)
@@ -145,23 +365,39 @@ jobs:
                       Notification.Builder(this)
                   }
 
+                  val mediaStyle = Notification.MediaStyle()
+                      .setShowActionsInCompactView(0, 1, 2)
+                  if (mediaSession != null) {
+                      mediaStyle.setMediaSession(mediaSession!!.sessionToken)
+                  }
+
                   builder.setSmallIcon(android.R.drawable.ic_media_play)
+                      .setLargeIcon(artBmp)
                       .setContentTitle(title)
                       .setContentText(artist)
+                      .setSubText("IMS Pro Studio • 320kbps")
                       .setContentIntent(contentPi)
+                      .setVisibility(Notification.VISIBILITY_PUBLIC)
+                      .setColor(Color.parseColor("#0A1630"))
+                      .setColorized(true)
                       .setOngoing(isPlaying)
-                      .addAction(android.R.drawable.ic_media_previous, "Prev", prevPi)
+                      .setStyle(mediaStyle)
+                      .addAction(android.R.drawable.ic_media_previous, "Previous", prevPi)
                       .addAction(
                           if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
                           if (isPlaying) "Pause" else "Play",
                           togglePi
                       )
                       .addAction(android.R.drawable.ic_media_next, "Next", nextPi)
+                      .addAction(android.R.drawable.ic_lock_silent_mode_off, "DJ Horn", hornPi)
 
                   return builder.build()
               }
 
               override fun onDestroy() {
+                  try {
+                      mediaSession?.release()
+                  } catch (_: Exception) {}
                   try {
                       if (wakeLock?.isHeld == true) wakeLock?.release()
                   } catch (_: Exception) {}
@@ -180,10 +416,8 @@ jobs:
           $PKG_LINE
           import android.Manifest
           import android.app.Activity
-          import android.content.BroadcastReceiver
           import android.content.Context
           import android.content.Intent
-          import android.content.IntentFilter
           import android.content.pm.PackageManager
           import android.media.MediaCodec
           import android.media.MediaExtractor
@@ -204,7 +438,6 @@ jobs:
           import android.os.Looper
           import android.os.PowerManager
           import android.os.StrictMode
-          import android.provider.Settings
           import android.speech.tts.TextToSpeech
           import android.speech.tts.Voice
           import android.view.KeyEvent
@@ -223,6 +456,16 @@ jobs:
           import java.util.Locale
 
           class MainActivity: FlutterActivity(), TextToSpeech.OnInitListener {
+              companion object {
+                  var sharedMethodChannel: MethodChannel? = null
+
+                  fun dispatchMediaCommandToFlutter(cmd: String) {
+                      Handler(Looper.getMainLooper()).post {
+                          sharedMethodChannel?.invokeMethod("onMediaNotificationAction", cmd)
+                      }
+                  }
+              }
+
               private var tts: TextToSpeech? = null
               private var ttsReady: Boolean = false
               private var recorder: MediaRecorder? = null
@@ -247,22 +490,14 @@ jobs:
                   }
               }
 
-              private val mediaCmdReceiver = object : BroadcastReceiver() {
-                  override fun onReceive(context: Context?, intent: Intent?) {
-                      val cmd = intent?.getStringExtra("cmd") ?: return
-                      methodChannel?.invokeMethod("onMediaNotificationAction", cmd)
-                  }
-              }
-
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
                   tts = TextToSpeech(this, this)
                   handleIncomingShareIntent(intent)
 
-                  // Silently acquire CPU WakeLock & High-Perf WifiLock using manifest-granted permissions (0 popups!)
                   try {
                       val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-                      directWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DJPlayer::DirectCpuLock").apply {
+                      directWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "IMS::DirectCpuLock").apply {
                           setReferenceCounted(false)
                           acquire(12 * 60 * 60 * 1000L)
                       }
@@ -270,18 +505,9 @@ jobs:
 
                   try {
                       val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-                      directWifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "DJPlayer::DirectWifiLock").apply {
+                      directWifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "IMS::DirectWifiLock").apply {
                           setReferenceCounted(false)
                           acquire()
-                      }
-                  } catch (_: Exception) {}
-
-                  try {
-                      val filter = IntentFilter("com.gajanan.djplaycommentry.MEDIA_CMD")
-                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                          registerReceiver(mediaCmdReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-                      } else {
-                          registerReceiver(mediaCmdReceiver, filter)
                       }
                   } catch (_: Exception) {}
 
@@ -574,9 +800,8 @@ jobs:
                   try {
                       val srcFile = File(rawPath)
                       if (!srcFile.exists()) return
-// No Settings redirect popup
                       val pubDir = externalCacheDir ?: cacheDir
-                      val pubApk = File(pubDir, "dj_player_ota_install.apk")
+                      val pubApk = File(pubDir, "ims_pro_ota_install.apk")
                       srcFile.copyTo(pubApk, overwrite = true)
                       pubApk.setReadable(true, false)
 
@@ -642,17 +867,24 @@ jobs:
                   super.configureFlutterEngine(flutterEngine)
                   val ch = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dj_native_tts")
                   methodChannel = ch
+                  sharedMethodChannel = ch
                   ch.setMethodCallHandler { call, result ->
                       when (call.method) {
                           "updateMediaNotification" -> {
                               val title = call.argument<String>("title") ?: "IMS Pro Studio"
                               val artist = call.argument<String>("artist") ?: "Playing in Background"
+                              val cover = call.argument<String>("cover") ?: ""
                               val isPlaying = call.argument<Boolean>("isPlaying") ?: true
+                              val posMs = (call.argument<Number>("positionMs")?.toLong()) ?: 0L
+                              val durMs = (call.argument<Number>("durationMs")?.toLong()) ?: 210000L
                               try {
                                   val svcIntent = Intent(this, DjMediaForegroundService::class.java).apply {
                                       putExtra("title", title)
                                       putExtra("artist", artist)
+                                      putExtra("cover", cover)
                                       putExtra("isPlaying", isPlaying)
+                                      putExtra("positionMs", posMs)
+                                      putExtra("durationMs", durMs)
                                   }
                                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                                       startForegroundService(svcIntent)
@@ -728,8 +960,6 @@ jobs:
                                   if (eq != null) {
                                       val numBands = eq.numberOfBands.toInt()
                                       if (enabled && strength > 0.05f) {
-                                          // Carve out human lead vocal frequencies (230Hz, 910Hz, 3.6kHz) by up to -1500mB (-15dB)
-                                          // while boosting 60Hz Sub-Bass rhythm and 14kHz Stereo Air!
                                           val targetLevels = listOf(
                                               750,
                                               (-1200 * strength).toInt(),
@@ -774,7 +1004,7 @@ jobs:
                                   if (src != null && src.exists() && src.length() > 500) {
                                       val dlDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
                                       dlDir.mkdirs()
-                                      val publicFile = File(dlDir, "DJ_Karaoke_" + src.name)
+                                      val publicFile = File(dlDir, "IMS_Karaoke_" + src.name)
                                       src.copyTo(publicFile, overwrite = true)
                                       MediaScannerConnection.scanFile(this, arrayOf(publicFile.absolutePath), arrayOf("audio/mp4"), null)
                                   }
@@ -837,9 +1067,6 @@ jobs:
                   try {
                       if (directWifiLock?.isHeld == true) directWifiLock?.release()
                   } catch (_: Exception) {}
-                  try {
-                      unregisterReceiver(mediaCmdReceiver)
-                  } catch (_: Exception) {}
                   tts?.stop()
                   tts?.shutdown()
                   recorder?.release()
@@ -853,7 +1080,7 @@ jobs:
           KTEOF
           sed -i "s|\$PKG_LINE|$PKG_LINE|g" "$MAIN_KT"
 
-      - name: Configure AndroidManifest Permissions, Foreground Media Service, Share Intent & App Icon
+      - name: Configure AndroidManifest Permissions, IMS App Label, Foreground Media Service & Custom IMS Icon
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST" ]; then
@@ -883,36 +1110,36 @@ jobs:
 
       - name: Stamp Exact Build Number Into Dart & Build Release APK
         run: |
-          NEW_BUILD=$((610 + ${{ github.run_number }}))
+          NEW_BUILD=$((620 + ${{ github.run_number }}))
           sed -i "s/static const int currentBuildNumber = [0-9]*;/static const int currentBuildNumber = $NEW_BUILD;/g" lib/ota_update_engine.dart
-          sed -i "s/static const String currentVersionName = '[^']*';/static const String currentVersionName = '610.0.${{ github.run_number }}';/g" lib/ota_update_engine.dart
-          sed -i "s/^version: .*/version: 610.0.${{ github.run_number }}+$NEW_BUILD/g" pubspec.yaml
+          sed -i "s/static const String currentVersionName = '[^']*';/static const String currentVersionName = '620.0.${{ github.run_number }}';/g" lib/ota_update_engine.dart
+          sed -i "s/^version: .*/version: 620.0.${{ github.run_number }}+$NEW_BUILD/g" pubspec.yaml
           flutter pub get
           flutter build apk --release --no-tree-shake-icons
 
-      - name: Publish APK to GitHub Releases Automatically (For OTA Auto-Updater)
+      - name: Publish APK to GitHub Releases Automatically
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v610.${{ github.run_number }}
-          name: "DJ Play & Commentary Pro v610.${{ github.run_number }} (Auto-OTA Release)"
+          tag_name: v620.${{ github.run_number }}
+          name: "IMS Pro Studio v620.${{ github.run_number }}"
           make_latest: true
           files: build/app/outputs/flutter-apk/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Auto-Bump ota_version.json After Release APK Is Live (Triggers Instant In-App OTA!)
+      - name: Auto-Bump ota_version.json After Release APK Is Live
         run: |
-          NEW_BUILD=$((610 + ${{ github.run_number }}))
+          NEW_BUILD=$((620 + ${{ github.run_number }}))
           cat << JSONEOF > ota_version.json
           {
             "buildNumber": $NEW_BUILD,
-            "versionName": "610.0.${{ github.run_number }}",
+            "versionName": "620.0.${{ github.run_number }}",
             "apkUrl": "https://github.com/GajananPatagar/dj-player/releases/latest/download/app-release.apk",
-            "notes": "v610.0.${{ github.run_number }} Auto-OTA: Zero Startup Popups, Offline Song Number Changer (#1..#N), Custom Start Cue & Pro DJ FX"
+            "notes": "IMS Pro Studio v620.0.${{ github.run_number }}: Glassmorphic Lockscreen & Notification MediaSession Player, 1st-Time PIN Lock (1681), Zero-Prompt In-App OTA & Pro Karaoke"
           }
           JSONEOF
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add ota_version.json
-          git commit -m "⚡ Auto-OTA Release v610.0.${{ github.run_number }} (Build $NEW_BUILD) [skip ci]" || true
+          git commit -m "⚡ IMS Release v620.0.${{ github.run_number }} (Build $NEW_BUILD) [skip ci]" || true
           git push origin HEAD:main || true

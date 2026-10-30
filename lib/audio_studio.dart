@@ -144,6 +144,14 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
           _playNext();
         } else if (action == 'PREV') {
           _playPrev();
+        } else if (action == 'PLAY') {
+          _shouldBePlayingInBg = true;
+          await _player.resume();
+          _syncForegroundNotification();
+        } else if (action == 'PAUSE') {
+          _shouldBePlayingInBg = false;
+          await _player.pause();
+          _syncForegroundNotification();
         } else if (action == 'TOGGLE') {
           if (_isPlaying) {
             _shouldBePlayingInBg = false;
@@ -154,6 +162,12 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
             await _player.resume();
             _syncForegroundNotification();
           }
+        } else if (action == 'AIRHORN') {
+          AppSoundEngine.playSynthesizedSfx('AIRHORN');
+        } else if (action.startsWith('SEEK:')) {
+          final int seekMs = int.tryParse(action.substring(5)) ?? 0;
+          await _player.seek(Duration(milliseconds: seekMs));
+          _syncForegroundNotification();
         } else if (action == 'HEARTBEAT') {
           if (_shouldBePlayingInBg && !_isBusySwitching && _nowPlayingTrack != null) {
             if (_duration.inMilliseconds > 4000 &&
@@ -208,10 +222,14 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
 
     _player.onPlayerStateChanged.listen((state) {
       final bool playingNow = (state == PlayerState.playing);
+      final bool changed = (_isPlaying != playingNow);
       if (mounted) {
         setState(() => _isPlaying = playingNow);
       } else {
         _isPlaying = playingNow;
+      }
+      if (changed) {
+        _syncForegroundNotification();
       }
       if (state == PlayerState.completed) {
         _handleTrackCompleted();
@@ -231,10 +249,16 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
   Future<void> _syncForegroundNotification() async {
     if (_nowPlayingTrack == null) return;
     try {
+      final int durMs = _duration.inMilliseconds > 0
+          ? _duration.inMilliseconds
+          : (((_nowPlayingTrack!['durationSec'] as int?) ?? 210) * 1000);
       await _nativeChannel.invokeMethod('updateMediaNotification', {
-        'title': (_nowPlayingTrack!['title'] ?? 'DJ Pro Track').toString(),
-        'artist': '${_nowPlayingTrack!['artist'] ?? 'DJ Player'} • $_activeQueueScopeBanner',
-        'isPlaying': _isPlaying || _shouldBePlayingInBg,
+        'title': (_nowPlayingTrack!['title'] ?? 'IMS Pro Track').toString(),
+        'artist': '${_nowPlayingTrack!['artist'] ?? 'IMS Studio'} • $_activeQueueScopeBanner',
+        'cover': (_nowPlayingTrack!['cover'] ?? '').toString(),
+        'isPlaying': _isPlaying,
+        'positionMs': _position.inMilliseconds,
+        'durationMs': durMs,
       });
     } catch (_) {}
   }

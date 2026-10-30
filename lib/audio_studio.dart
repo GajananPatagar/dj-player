@@ -45,7 +45,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
   String _selectedOfflineCategory = 'Marriage';
   String _viewMode = 'SONGS'; // SONGS, FAVORITES, OFFLINE
   String _activeQueueScopeBanner = '🌐 Online Queue Active';
-  String _statusBadge = '🟢 v510.0 Ultra Pro • Any-Song Engine & Screen-Off Lock Ready';
+  String _statusBadge = '🟢 v610.0 Ultra Pro • Any-Song Engine & Screen-Off Lock Ready';
 
   bool _isLoading = false;
   bool _isLoadingMore = false;

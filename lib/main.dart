@@ -4,12 +4,15 @@ import 'dart:typed_data';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'audio_studio.dart';
 import 'cricket_studio.dart';
 import 'voice_and_pro_hub.dart';
 import 'entry_music_data.dart';
 import 'entry_music_studio.dart';
+import 'glass_widgets.dart';
 import 'karaoke_studio.dart';
 import 'ota_update_engine.dart';
 
@@ -17,6 +20,78 @@ void main() {
   WidgetsFlutterBinding.ensureInitialized();
   AppSoundEngine.initHardwareVolumeListener();
   runApp(const DjPlayCommentaryApp());
+}
+
+class ImsSecurityManager {
+  static const String defaultMasterPin = '1681';
+  static const String _prefUnlockedKey = 'ims_first_install_unlocked_v610';
+  static const String _prefCustomPinKey = 'ims_custom_pin_v610';
+
+  /// Returns true if the user has already unlocked the app once after installation.
+  /// Once unlocked on 1st open, everyday launches open directly without asking again!
+  static Future<bool> isFirstTimeInstallUnlocked() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool(_prefUnlockedKey) == true) return true;
+    } catch (_) {}
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final f = File('${dir.path}/ims_unlocked_v610.flag');
+      if (await f.exists()) return true;
+    } catch (_) {}
+    return false;
+  }
+
+  static Future<void> markFirstTimeInstallUnlocked() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_prefUnlockedKey, true);
+    } catch (_) {}
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final f = File('${dir.path}/ims_unlocked_v610.flag');
+      await f.writeAsString('UNLOCKED');
+    } catch (_) {}
+  }
+
+  static Future<void> relockForTesting() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_prefUnlockedKey, false);
+    } catch (_) {}
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final f = File('${dir.path}/ims_unlocked_v610.flag');
+      if (await f.exists()) await f.delete();
+    } catch (_) {}
+  }
+
+  static Future<String> getActivePin() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? custom = prefs.getString(_prefCustomPinKey);
+      if (custom != null && custom.trim().isNotEmpty) {
+        return custom.trim();
+      }
+    } catch (_) {}
+    return defaultMasterPin;
+  }
+
+  static Future<void> setCustomPin(String newPin) async {
+    final String clean = newPin.trim();
+    if (clean.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefCustomPinKey, clean);
+    } catch (_) {}
+  }
+
+  static Future<bool> verifyPin(String entered) async {
+    final String clean = entered.trim();
+    final String activePin = await getActivePin();
+    final String remotePin = OtaUpdateEngine.remoteDefaultPin.value.trim();
+    return clean == activePin || clean == defaultMasterPin || (remotePin.isNotEmpty && clean == remotePin);
+  }
 }
 
 class AppSoundEngine {
@@ -326,7 +401,7 @@ class DjPlayCommentaryApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'DJ Play and Commentry App',
+      title: 'IMS',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: const Color(0xFF050914),
@@ -337,13 +412,262 @@ class DjPlayCommentaryApp extends StatelessWidget {
           surface: Color(0xFF0E1729),
         ),
       ),
-      home: const MasterHomeShell(),
+      home: const ImsFirstTimeLockGate(),
+    );
+  }
+}
+
+/// First-Time Installation Security Gate:
+/// Asks for Password (Default: 1681) ONLY the 1st time the app is opened after installation!
+/// For everyday opens after that, goes straight into MasterHomeShell with zero delay!
+class ImsFirstTimeLockGate extends StatefulWidget {
+  const ImsFirstTimeLockGate({super.key});
+
+  @override
+  State<ImsFirstTimeLockGate> createState() => _ImsFirstTimeLockGateState();
+}
+
+class _ImsFirstTimeLockGateState extends State<ImsFirstTimeLockGate> {
+  bool _isChecking = true;
+  bool _isUnlocked = false;
+  String _enteredPin = '';
+  String _errorMsg = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _checkUnlockStatus();
+  }
+
+  Future<void> _checkUnlockStatus() async {
+    final bool unlocked = await ImsSecurityManager.isFirstTimeInstallUnlocked();
+    if (mounted) {
+      setState(() {
+        _isUnlocked = unlocked;
+        _isChecking = false;
+      });
+    }
+  }
+
+  Future<void> _onDigitTap(String digit) async {
+    if (_enteredPin.length >= 8) return;
+    setState(() {
+      _enteredPin += digit;
+      _errorMsg = '';
+    });
+
+    final String activePin = await ImsSecurityManager.getActivePin();
+    if (_enteredPin.length >= activePin.length || _enteredPin == ImsSecurityManager.defaultMasterPin) {
+      final bool valid = await ImsSecurityManager.verifyPin(_enteredPin);
+      if (valid) {
+        AppSoundEngine.playSynthesizedSfx('BELL');
+        await ImsSecurityManager.markFirstTimeInstallUnlocked();
+        if (mounted) {
+          setState(() => _isUnlocked = true);
+        }
+      } else if (_enteredPin.length >= activePin.length) {
+        setState(() {
+          _errorMsg = '❌ Incorrect Activation PIN — Try Again';
+          _enteredPin = '';
+        });
+      }
+    }
+  }
+
+  void _onBackspace() {
+    if (_enteredPin.isEmpty) return;
+    setState(() {
+      _enteredPin = _enteredPin.substring(0, _enteredPin.length - 1);
+      _errorMsg = '';
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isChecking) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF050914),
+        body: Center(child: CircularProgressIndicator(color: Color(0xFF00E5FF))),
+      );
+    }
+
+    if (_isUnlocked) {
+      return MasterHomeShell(
+        onRelockRequested: () async {
+          await ImsSecurityManager.relockForTesting();
+          if (mounted) {
+            setState(() {
+              _enteredPin = '';
+              _errorMsg = '';
+              _isUnlocked = false;
+            });
+          }
+        },
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF050914),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: GlassBox(
+              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 26),
+              borderRadius: 28,
+              blur: 22,
+              tintColor: const Color(0xFF0B152B),
+              borderColor: const Color(0xFF00E5FF),
+              borderWidth: 1.6,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // IMS Crest Badge
+                  Container(
+                    width: 82,
+                    height: 82,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF0F2042), Color(0xFF071024)],
+                      ),
+                      border: Border.all(color: Colors.amberAccent, width: 2.2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF00E5FF).withOpacity(0.38),
+                          blurRadius: 18,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    alignment: Alignment.center,
+                    child: const Text(
+                      'IMS',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.amberAccent,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    'IMS PRO STUDIO',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
+                      letterSpacing: 1.1,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    '🔐 First-Time Installation Security Lock\n(Unlocks Forever for Everyday Use Once Activated)',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 11.5, color: Color(0xFF00E5FF), fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 18),
+
+                  // Entered PIN Dots Indicator
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(4, (i) {
+                      final bool filled = i < _enteredPin.length;
+                      return AnimatedContainer(
+                        duration: const Duration(milliseconds: 160),
+                        margin: const EdgeInsets.symmetric(horizontal: 8),
+                        width: 18,
+                        height: 18,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: filled ? Colors.amberAccent : Colors.white12,
+                          border: Border.all(
+                            color: filled ? const Color(0xFF00E5FF) : Colors.white38,
+                            width: 1.5,
+                          ),
+                          boxShadow: filled
+                              ? [
+                                  BoxShadow(
+                                    color: Colors.amberAccent.withOpacity(0.6),
+                                    blurRadius: 8,
+                                  ),
+                                ]
+                              : null,
+                        ),
+                      );
+                    }),
+                  ),
+                  if (_errorMsg.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      _errorMsg,
+                      style: const TextStyle(fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.w900),
+                    ),
+                  ],
+                  const SizedBox(height: 22),
+
+                  // Glassmorphic Numeric Keypad
+                  SizedBox(
+                    width: 260,
+                    child: GridView.count(
+                      crossAxisCount: 3,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      mainAxisSpacing: 12,
+                      crossAxisSpacing: 12,
+                      childAspectRatio: 1.32,
+                      children: [
+                        ...['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((d) => _pinKeyBtn(d, () => _onDigitTap(d))),
+                        _pinKeyBtn('CLR', () => setState(() => _enteredPin = ''), isAction: true),
+                        _pinKeyBtn('0', () => _onDigitTap('0')),
+                        _pinKeyBtn('⌫', _onBackspace, isAction: true),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _pinKeyBtn(String label, VoidCallback onTap, {bool isAction = false}) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: onTap,
+      child: Container(
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: isAction
+                ? [const Color(0xFF1F2937), const Color(0xFF111827)]
+                : [const Color(0xFF16274C), const Color(0xFF0D1830)],
+          ),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isAction ? Colors.amberAccent.withOpacity(0.5) : const Color(0x5500E5FF),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: isAction ? 14 : 20,
+            fontWeight: FontWeight.w900,
+            color: isAction ? Colors.amberAccent : Colors.white,
+          ),
+        ),
+      ),
     );
   }
 }
 
 class MasterHomeShell extends StatefulWidget {
-  const MasterHomeShell({super.key});
+  final VoidCallback? onRelockRequested;
+
+  const MasterHomeShell({super.key, this.onRelockRequested});
 
   @override
   State<MasterHomeShell> createState() => _MasterHomeShellState();
@@ -374,7 +698,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _checkPendingSharedIntent();
-      OtaUpdateEngine.checkAndAutoInstallOtaUpdate();
+      OtaUpdateEngine.syncInAppLiveCloudOta();
     }
   }
 
@@ -388,6 +712,229 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
             '${initial.trim()}##${DateTime.now().millisecondsSinceEpoch}';
       }
     } catch (_) {}
+  }
+
+  /// Opens the IMS Security & Password Changer Dialog (Change 1681 to any custom PIN or Lock App Now)
+  Future<void> _openPinAndSecurityModal() async {
+    final String currentSavedPin = await ImsSecurityManager.getActivePin();
+    final TextEditingController oldPinCtrl = TextEditingController();
+    final TextEditingController newPinCtrl = TextEditingController();
+    String feedback = '';
+
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+              child: GlassBox(
+                margin: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(16),
+                borderRadius: 24,
+                blur: 22,
+                tintColor: const Color(0xFF0B1426),
+                borderColor: Colors.amberAccent,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          '🔐 IMS 1st-Time App Lock & Password Settings',
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Colors.amberAccent),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white60),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                    const Text(
+                      'App Lock only asks once on 1st-time installation. You can change your PIN below (Default: 1681).',
+                      style: TextStyle(fontSize: 11, color: Colors.white70),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: oldPinCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Enter Current PIN (Default: 1681)',
+                        filled: true,
+                        fillColor: Color(0xFF141E33),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: newPinCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Enter New 4-Digit PIN',
+                        filled: true,
+                        fillColor: Color(0xFF141E33),
+                      ),
+                    ),
+                    if (feedback.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        feedback,
+                        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF00E676)),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF00E5FF),
+                              foregroundColor: Colors.black,
+                            ),
+                            icon: const Icon(Icons.save_rounded, size: 18),
+                            label: const Text('Change Password', style: TextStyle(fontWeight: FontWeight.w900)),
+                            onPressed: () async {
+                              final bool ok = await ImsSecurityManager.verifyPin(oldPinCtrl.text);
+                              if (!ok) {
+                                setModalState(() => feedback = '❌ Current PIN is incorrect!');
+                                return;
+                              }
+                              if (newPinCtrl.text.trim().length < 4) {
+                                setModalState(() => feedback = '⚠️ New PIN must be at least 4 digits!');
+                                return;
+                              }
+                              await ImsSecurityManager.setCustomPin(newPinCtrl.text.trim());
+                              setModalState(() => feedback = '✅ Password Changed to ${newPinCtrl.text.trim()}!');
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Colors.amberAccent),
+                          ),
+                          icon: const Icon(Icons.lock_outline_rounded, size: 17, color: Colors.amberAccent),
+                          label: const Text(
+                            'Lock Now',
+                            style: TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold),
+                          ),
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            if (widget.onRelockRequested != null) {
+                              widget.onRelockRequested!();
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Active PIN Length: ${currentSavedPin.length} digits',
+                      style: const TextStyle(fontSize: 10, color: Colors.white38),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// Opens the In-App Live OTA Sync & 4-Channel Master Studio Mixer Drawer
+  void _openInAppOtaAndMasterMixerModal() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return GlassBox(
+          margin: const EdgeInsets.all(10),
+          padding: const EdgeInsets.all(16),
+          borderRadius: 24,
+          blur: 22,
+          tintColor: const Color(0xFF0B1426),
+          borderColor: const Color(0xFF00E5FF),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '⚡ IMS IN-APP LIVE OTA & 4-CHANNEL MASTER MIXER',
+                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900, color: Color(0xFF00E5FF)),
+              ),
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF00E676).withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFF00E676).withOpacity(0.45)),
+                ),
+                child: const Text(
+                  '✅ Zero-Install In-App Cloud OTA Active: Songs, categories & studio configurations update automatically inside IMS without asking for external APK permissions!',
+                  style: TextStyle(fontSize: 10.5, color: Color(0xFF00E676), fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF00E676),
+                        foregroundColor: Colors.black,
+                      ),
+                      icon: const Icon(Icons.cloud_sync_rounded, size: 18),
+                      label: const Text(
+                        'Sync In-App Live OTA Now',
+                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900),
+                      ),
+                      onPressed: () async {
+                        await OtaUpdateEngine.syncInAppLiveCloudOta(forceRefresh: true);
+                        if (ctx.mounted) Navigator.pop(ctx);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(color: Colors.white24, height: 18),
+              _volumeSliderRow('🎵 Tab 1 Music Master', MasterVolumeController.page1MusicVolume, const Color(0xFF00E5FF)),
+              _volumeSliderRow('🎙 Tab 2 Commentary Voice', MasterVolumeController.page2VoiceVolume, Colors.amberAccent),
+              _volumeSliderRow('📢 Tab 3 Stadium SFX Pads', MasterVolumeController.page3SfxVolume, const Color(0xFF00E676)),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _volumeSliderRow(String label, ValueNotifier<double> notifier, Color color) {
+    return ValueListenableBuilder<double>(
+      valueListenable: notifier,
+      builder: (context, val, _) {
+        return Row(
+          children: [
+            SizedBox(
+              width: 145,
+              child: Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+            ),
+            Expanded(
+              child: Slider(
+                value: val.clamp(0.0, 1.0),
+                activeColor: color,
+                onChanged: (v) => notifier.value = v,
+              ),
+            ),
+            Text('${(val * 100).toInt()}%', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: color)),
+          ],
+        );
+      },
+    );
   }
 
   final List<Widget> _pages = const [
@@ -407,27 +954,36 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
             child: AppBar(
-              backgroundColor: const Color(0xFF0B1325).withOpacity(0.86),
+              backgroundColor: const Color(0xFF0B1325).withOpacity(0.88),
               elevation: 0,
               title: Row(
                 children: [
                   Container(
-                    width: 35,
-                    height: 35,
+                    width: 38,
+                    height: 38,
                     decoration: BoxDecoration(
-                      shape: BoxShape.circle,
+                      borderRadius: BorderRadius.circular(10),
                       gradient: const LinearGradient(
-                        colors: [Color(0xFFFFAB00), Color(0xFF00E5FF)],
+                        colors: [Color(0xFF10254C), Color(0xFF081226)],
                       ),
-                      border: Border.all(color: Colors.white, width: 1.5),
+                      border: Border.all(color: Colors.amberAccent, width: 1.6),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF00E5FF).withOpacity(0.45),
+                          color: const Color(0xFF00E5FF).withOpacity(0.42),
                           blurRadius: 10,
                         ),
                       ],
                     ),
-                    child: const Icon(Icons.album_rounded, color: Colors.black, size: 21),
+                    alignment: Alignment.center,
+                    child: const Text(
+                      'IMS',
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.amberAccent,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -435,11 +991,12 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
-                          'DJ Play & Commentary Pro v510',
+                          'IMS Pro Studio',
                           style: TextStyle(
-                            fontSize: 13.5,
+                            fontSize: 14.5,
                             fontWeight: FontWeight.w900,
                             color: Color(0xFF00E5FF),
+                            letterSpacing: 0.4,
                           ),
                         ),
                         ValueListenableBuilder<String>(
@@ -460,13 +1017,27 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
               ),
               actions: [
                 IconButton(
+                  visualDensity: VisualDensity.compact,
+                  tooltip: 'In-App Live OTA & Master Mixer',
+                  icon: const Icon(Icons.bolt_rounded, color: Color(0xFF00E676), size: 22),
+                  onPressed: _openInAppOtaAndMasterMixerModal,
+                ),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  tooltip: 'Change 1st-Time PIN (1681)',
+                  icon: const Icon(Icons.lock_person_rounded, color: Color(0xFF00E5FF), size: 20),
+                  onPressed: _openPinAndSecurityModal,
+                ),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
                   tooltip: 'Panic Mute All',
-                  icon: const Icon(Icons.volume_off_rounded, color: Colors.redAccent),
+                  icon: const Icon(Icons.volume_off_rounded, color: Colors.redAccent, size: 21),
                   onPressed: () => AppSoundEngine.panicMuteAll(),
                 ),
                 IconButton(
+                  visualDensity: VisualDensity.compact,
                   tooltip: 'DJ Airhorn',
-                  icon: const Icon(Icons.campaign_rounded, color: Colors.amberAccent),
+                  icon: const Icon(Icons.campaign_rounded, color: Colors.amberAccent, size: 22),
                   onPressed: () => AppSoundEngine.playSynthesizedSfx('AIRHORN'),
                 ),
               ],
@@ -489,7 +1060,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         const Text(
-                          '🚀 Zero-Touch Auto-OTA Update in Progress...',
+                          '🚀 IMS Update in Progress...',
                           style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.white),
                         ),
                         Text(

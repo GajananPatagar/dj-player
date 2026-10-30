@@ -89,7 +89,7 @@ jobs:
 
               override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                   acquireLocks()
-                  val title = intent?.getStringExtra("title") ?: "DJ Play & Commentary Pro"
+                  val title = intent?.getStringExtra("title") ?: "IMS Pro Studio"
                   val artist = intent?.getStringExtra("artist") ?: "Background Auto-Next Active"
                   val isPlaying = intent?.getBooleanExtra("isPlaying", true) ?: true
                   val notif = buildMediaNotification(title, artist, isPlaying)
@@ -104,7 +104,7 @@ jobs:
               }
 
               private fun buildMediaNotification(title: String, artist: String, isPlaying: Boolean): Notification {
-                  val channelId = "dj_pro_bg_playback_v510"
+                  val channelId = "dj_pro_bg_playback_v610"
                   val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                       val ch = NotificationChannel(
@@ -574,15 +574,7 @@ jobs:
                   try {
                       val srcFile = File(rawPath)
                       if (!srcFile.exists()) return
-                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                          if (!packageManager.canRequestPackageInstalls()) {
-                              val permIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
-                                  data = Uri.parse("package:$packageName")
-                                  addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                              }
-                              startActivity(permIntent)
-                          }
-                      }
+// No Settings redirect popup
                       val pubDir = externalCacheDir ?: cacheDir
                       val pubApk = File(pubDir, "dj_player_ota_install.apk")
                       srcFile.copyTo(pubApk, overwrite = true)
@@ -653,7 +645,7 @@ jobs:
                   ch.setMethodCallHandler { call, result ->
                       when (call.method) {
                           "updateMediaNotification" -> {
-                              val title = call.argument<String>("title") ?: "DJ Play & Commentary Pro"
+                              val title = call.argument<String>("title") ?: "IMS Pro Studio"
                               val artist = call.argument<String>("artist") ?: "Playing in Background"
                               val isPlaying = call.argument<Boolean>("isPlaying") ?: true
                               try {
@@ -865,7 +857,7 @@ jobs:
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST" ]; then
-            sed -i 's/android:label="[^"]*"/android:label="DJ Play and Commentry App"/g' "$MANIFEST"
+            sed -i 's/android:label="[^"]*"/android:label="IMS"/g' "$MANIFEST"
             if ! grep -q "usesCleartextTraffic" "$MANIFEST"; then
               sed -i 's/<application/<application android:usesCleartextTraffic="true"/' "$MANIFEST"
             fi
@@ -891,18 +883,18 @@ jobs:
 
       - name: Stamp Exact Build Number Into Dart & Build Release APK
         run: |
-          NEW_BUILD=$((510 + ${{ github.run_number }}))
+          NEW_BUILD=$((610 + ${{ github.run_number }}))
           sed -i "s/static const int currentBuildNumber = [0-9]*;/static const int currentBuildNumber = $NEW_BUILD;/g" lib/ota_update_engine.dart
-          sed -i "s/static const String currentVersionName = '[^']*';/static const String currentVersionName = '510.0.${{ github.run_number }}';/g" lib/ota_update_engine.dart
-          sed -i "s/^version: .*/version: 510.0.${{ github.run_number }}+$NEW_BUILD/g" pubspec.yaml
+          sed -i "s/static const String currentVersionName = '[^']*';/static const String currentVersionName = '610.0.${{ github.run_number }}';/g" lib/ota_update_engine.dart
+          sed -i "s/^version: .*/version: 610.0.${{ github.run_number }}+$NEW_BUILD/g" pubspec.yaml
           flutter pub get
           flutter build apk --release --no-tree-shake-icons
 
       - name: Publish APK to GitHub Releases Automatically (For OTA Auto-Updater)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v510.${{ github.run_number }}
-          name: "DJ Play & Commentary Pro v510.${{ github.run_number }} (Auto-OTA Release)"
+          tag_name: v610.${{ github.run_number }}
+          name: "DJ Play & Commentary Pro v610.${{ github.run_number }} (Auto-OTA Release)"
           make_latest: true
           files: build/app/outputs/flutter-apk/app-release.apk
         env:
@@ -910,17 +902,17 @@ jobs:
 
       - name: Auto-Bump ota_version.json After Release APK Is Live (Triggers Instant In-App OTA!)
         run: |
-          NEW_BUILD=$((510 + ${{ github.run_number }}))
+          NEW_BUILD=$((610 + ${{ github.run_number }}))
           cat << JSONEOF > ota_version.json
           {
             "buildNumber": $NEW_BUILD,
-            "versionName": "510.0.${{ github.run_number }}",
+            "versionName": "610.0.${{ github.run_number }}",
             "apkUrl": "https://github.com/GajananPatagar/dj-player/releases/latest/download/app-release.apk",
-            "notes": "v510.0.${{ github.run_number }} Auto-OTA: Zero Startup Popups, Offline Song Number Changer (#1..#N), Custom Start Cue & Pro DJ FX"
+            "notes": "v610.0.${{ github.run_number }} Auto-OTA: Zero Startup Popups, Offline Song Number Changer (#1..#N), Custom Start Cue & Pro DJ FX"
           }
           JSONEOF
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add ota_version.json
-          git commit -m "⚡ Auto-OTA Release v510.0.${{ github.run_number }} (Build $NEW_BUILD) [skip ci]" || true
+          git commit -m "⚡ Auto-OTA Release v610.0.${{ github.run_number }} (Build $NEW_BUILD) [skip ci]" || true
           git push origin HEAD:main || true

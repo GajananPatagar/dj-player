@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:audioplayers/audioplayers.dart';
@@ -10,6 +11,7 @@ import 'voice_and_pro_hub.dart';
 import 'entry_music_data.dart';
 import 'entry_music_studio.dart';
 import 'karaoke_studio.dart';
+import 'ota_update_engine.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,10 +29,12 @@ class AppSoundEngine {
       await p.setVolume(1.0);
     } catch (_) {}
   }
+
   static bool _isSpeakingLock = false;
   static bool hardwareVolumeEntryMode = false;
   static final ValueNotifier<int> activeTabIndexNotifier = ValueNotifier<int>(0);
   static final ValueNotifier<String?> incomingSharedMediaNotifier = ValueNotifier<String?>(null);
+  static final ValueNotifier<String?> mediaNotificationActionNotifier = ValueNotifier<String?>(null);
 
   static const Map<String, String> _knPhonetics = {
     'gajanan': 'ಗಜಾನನ',
@@ -86,9 +90,17 @@ class AppSoundEngine {
       if (call.method == 'onSharedMedia' && call.arguments != null) {
         final String shared = call.arguments.toString().trim();
         if (shared.isNotEmpty) {
-          // Automatically switch to Cricket Commentary Page (Tab Index 1) immediately!
           activeTabIndexNotifier.value = 1;
-          incomingSharedMediaNotifier.value = shared + '##' + DateTime.now().millisecondsSinceEpoch.toString();
+          incomingSharedMediaNotifier.value =
+              '$shared##${DateTime.now().millisecondsSinceEpoch}';
+        }
+        return;
+      }
+      if (call.method == 'onMediaNotificationAction' && call.arguments != null) {
+        final String act = call.arguments.toString().trim();
+        if (act.isNotEmpty) {
+          mediaNotificationActionNotifier.value =
+              '$act##${DateTime.now().microsecondsSinceEpoch}';
         }
         return;
       }
@@ -126,7 +138,7 @@ class AppSoundEngine {
     if (voiceVol <= 0.01) return;
 
     final String fullText = (coCommentatorText != null && coCommentatorText.isNotEmpty)
-        ? (rawText + ' ... ' + coCommentatorText)
+        ? ('$rawText ... $coCommentatorText')
         : rawText;
     final String phoneticText = applyPhonetics(fullText, langMode);
 
@@ -178,10 +190,7 @@ class AppSoundEngine {
       final String cleanText =
           phoneticText.length > 185 ? phoneticText.substring(0, 185) : phoneticText;
       final String url =
-          'https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=' +
-              tl +
-              '&q=' +
-              Uri.encodeComponent(cleanText);
+          'https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=$tl&q=${Uri.encodeComponent(cleanText)}';
       await _voicePlayer.stop();
       await _voicePlayer.setVolume(voiceVol);
       await _voicePlayer.play(UrlSource(url));
@@ -320,12 +329,12 @@ class DjPlayCommentaryApp extends StatelessWidget {
       title: 'DJ Play and Commentry App',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF070B14),
+        scaffoldBackgroundColor: const Color(0xFF050914),
         primaryColor: const Color(0xFF00E5FF),
         colorScheme: const ColorScheme.dark(
           primary: Color(0xFF00E5FF),
           secondary: Color(0xFFFFAB00),
-          surface: Color(0xFF11192B),
+          surface: Color(0xFF0E1729),
         ),
       ),
       home: const MasterHomeShell(),
@@ -365,16 +374,18 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _checkPendingSharedIntent();
+      OtaUpdateEngine.checkAndAutoInstallOtaUpdate();
     }
   }
 
   Future<void> _checkPendingSharedIntent() async {
     try {
-      final String? initial = await AppSoundEngine._nativeChannel.invokeMethod<String>('getInitialSharedMedia');
+      final String? initial =
+          await AppSoundEngine._nativeChannel.invokeMethod<String>('getInitialSharedMedia');
       if (initial != null && initial.trim().isNotEmpty) {
         AppSoundEngine.activeTabIndexNotifier.value = 1;
         AppSoundEngine.incomingSharedMediaNotifier.value =
-            initial.trim() + '##' + DateTime.now().millisecondsSinceEpoch.toString();
+            '${initial.trim()}##${DateTime.now().millisecondsSinceEpoch}';
       }
     } catch (_) {}
   }
@@ -390,72 +401,151 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF0D1526),
-        elevation: 4,
-        title: Row(
-          children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: const LinearGradient(colors: [Color(0xFFFFAB00), Color(0xFF00E5FF)]),
-                border: Border.all(color: Colors.white, width: 1.5),
-              ),
-              child: const Icon(Icons.album, color: Colors.black, size: 20),
-            ),
-            const SizedBox(width: 10),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(56),
+        child: ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+            child: AppBar(
+              backgroundColor: const Color(0xFF0B1325).withOpacity(0.86),
+              elevation: 0,
+              title: Row(
                 children: [
-                  Text(
-                    'DJ Play and Commentry App v300',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Color(0xFF00E5FF)),
+                  Container(
+                    width: 35,
+                    height: 35,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFFFAB00), Color(0xFF00E5FF)],
+                      ),
+                      border: Border.all(color: Colors.white, width: 1.5),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF00E5FF).withOpacity(0.45),
+                          blurRadius: 10,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(Icons.album_rounded, color: Colors.black, size: 21),
                   ),
-                  Text(
-                    'Daily Top 50 • Cricket • PA DSP • Entry • AI Karaoke',
-                    style: TextStyle(fontSize: 10, color: Colors.amberAccent),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'DJ Play & Commentary Pro v500',
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFF00E5FF),
+                          ),
+                        ),
+                        ValueListenableBuilder<String>(
+                          valueListenable: OtaUpdateEngine.otaStatusBanner,
+                          builder: (context, banner, _) {
+                            return Text(
+                              banner,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 9.5, color: Colors.amberAccent),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
+              actions: [
+                IconButton(
+                  tooltip: 'Panic Mute All',
+                  icon: const Icon(Icons.volume_off_rounded, color: Colors.redAccent),
+                  onPressed: () => AppSoundEngine.panicMuteAll(),
+                ),
+                IconButton(
+                  tooltip: 'DJ Airhorn',
+                  icon: const Icon(Icons.campaign_rounded, color: Colors.amberAccent),
+                  onPressed: () => AppSoundEngine.playSynthesizedSfx('AIRHORN'),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
-        actions: [
-          IconButton(
-            tooltip: 'Panic Mute All',
-            icon: const Icon(Icons.volume_off, color: Colors.redAccent),
-            onPressed: () => AppSoundEngine.panicMuteAll(),
+      ),
+      body: Column(
+        children: [
+          // Zero-Touch Automatic OTA Progress Indicator (Only visible while an OTA APK is downloading)
+          ValueListenableBuilder<double?>(
+            valueListenable: OtaUpdateEngine.otaDownloadProgress,
+            builder: (context, progress, _) {
+              if (progress == null) return const SizedBox.shrink();
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                color: const Color(0xFF1E3A8A),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          '🚀 Zero-Touch Auto-OTA Update in Progress...',
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.white),
+                        ),
+                        Text(
+                          '${(progress * 100).toInt()}%',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.amberAccent,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    LinearProgressIndicator(
+                      value: progress,
+                      backgroundColor: Colors.white24,
+                      color: const Color(0xFF00E676),
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
-          IconButton(
-            tooltip: 'DJ Airhorn',
-            icon: const Icon(Icons.campaign, color: Colors.amberAccent),
-            onPressed: () => AppSoundEngine.playSynthesizedSfx('AIRHORN'),
+          Expanded(
+            child: IndexedStack(
+              index: _selectedIndex,
+              children: _pages,
+            ),
           ),
         ],
       ),
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: _pages,
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: (idx) { AppSoundEngine.activeTabIndexNotifier.value = idx; setState(() => _selectedIndex = idx); },
-        backgroundColor: const Color(0xFF0B1120),
-        selectedItemColor: const Color(0xFF00E5FF),
-        unselectedItemColor: Colors.white54,
-        type: BottomNavigationBarType.fixed,
-        selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 10),
-        unselectedLabelStyle: const TextStyle(fontSize: 10),
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.library_music), label: '1. Top 50'),
-          BottomNavigationBarItem(icon: Icon(Icons.sports_cricket), label: '2. Cricket'),
-          BottomNavigationBarItem(icon: Icon(Icons.tune), label: '3. PA & Pads'),
-          BottomNavigationBarItem(icon: Icon(Icons.bolt), label: '4. Entry BGM'),
-          BottomNavigationBarItem(icon: Icon(Icons.mic_external_on), label: '5. Karaoke'),
-        ],
+      bottomNavigationBar: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          child: BottomNavigationBar(
+            currentIndex: _selectedIndex,
+            onTap: (idx) {
+              AppSoundEngine.activeTabIndexNotifier.value = idx;
+              setState(() => _selectedIndex = idx);
+            },
+            backgroundColor: const Color(0xFF080E1E).withOpacity(0.92),
+            selectedItemColor: const Color(0xFF00E5FF),
+            unselectedItemColor: Colors.white54,
+            type: BottomNavigationBarType.fixed,
+            selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w900, fontSize: 10),
+            unselectedLabelStyle: const TextStyle(fontSize: 9.5),
+            items: const [
+              BottomNavigationBarItem(icon: Icon(Icons.library_music_rounded), label: '1. Pro Music'),
+              BottomNavigationBarItem(icon: Icon(Icons.sports_cricket_rounded), label: '2. Cricket'),
+              BottomNavigationBarItem(icon: Icon(Icons.tune_rounded), label: '3. PA & Pads'),
+              BottomNavigationBarItem(icon: Icon(Icons.bolt_rounded), label: '4. Entry BGM'),
+              BottomNavigationBarItem(icon: Icon(Icons.mic_external_on_rounded), label: '5. Karaoke'),
+            ],
+          ),
+        ),
       ),
     );
   }

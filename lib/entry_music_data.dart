@@ -23,6 +23,22 @@ class VaultManager {
   static final ValueNotifier<List<Map<String, dynamic>>> offlineEntries = ValueNotifier([]);
   static final ValueNotifier<Map<String, int>> downloadProgressMap = ValueNotifier({});
 
+  /// Built-in + User-Created Offline Category Folders
+  static const List<String> defaultOfflineCategories = [
+    'Marriage',
+    'Fashion Show',
+    'Devotional',
+    'Kannada',
+    'Hindi',
+    'DJ Bass & Party',
+    'Mass Entry',
+    'Janapada & Folk',
+  ];
+
+  static final ValueNotifier<List<String>> offlineCategories = ValueNotifier<List<String>>([
+    ...defaultOfflineCategories,
+  ]);
+
   static bool _initialized = false;
 
   static Future<Directory> _safeStorageDir() async {
@@ -36,10 +52,102 @@ class VaultManager {
   static Future<void> initVaults() async {
     if (_initialized) return;
     _initialized = true;
+    await _loadCustomCategories();
     favSongs.value = await _loadList('v51_fav_songs');
     offlineSongs.value = await _loadList('v51_off_songs');
     favEntries.value = await _loadList('v51_fav_entries');
     offlineEntries.value = await _loadList('v51_off_entries');
+  }
+
+  static Future<void> _loadCustomCategories() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final List<String> saved = prefs.getStringList('v500_offline_categories') ?? [];
+      final List<String> merged = [...defaultOfflineCategories];
+      for (final c in saved) {
+        final clean = c.trim();
+        if (clean.isNotEmpty && !merged.any((m) => m.toLowerCase() == clean.toLowerCase())) {
+          merged.add(clean);
+        }
+      }
+      offlineCategories.value = merged;
+    } catch (_) {}
+  }
+
+  static Future<String> addCustomCategory(String rawName) async {
+    final String clean = rawName.trim();
+    if (clean.isEmpty) return defaultOfflineCategories.first;
+    final List<String> current = List<String>.from(offlineCategories.value);
+    final int existingIdx = current.indexWhere((c) => c.toLowerCase() == clean.toLowerCase());
+    if (existingIdx >= 0) {
+      return current[existingIdx];
+    }
+    current.add(clean);
+    offlineCategories.value = current;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList('v500_offline_categories', current);
+    } catch (_) {}
+    return clean;
+  }
+
+  static String categoryIcon(String cat) {
+    final String lower = cat.toLowerCase();
+    if (lower.contains('marriage') || lower.contains('wedding') || lower.contains('haldi')) return '💍';
+    if (lower.contains('fashion') || lower.contains('ramp')) return '👗';
+    if (lower.contains('devotional') || lower.contains('bhakti') || lower.contains('pooja')) return '🪔';
+    if (lower.contains('kannada')) return '💛❤️';
+    if (lower.contains('hindi')) return '🇮🇳';
+    if (lower.contains('dj') || lower.contains('bass') || lower.contains('party')) return '🔥';
+    if (lower.contains('entry') || lower.contains('mass')) return '⚡';
+    if (lower.contains('folk') || lower.contains('janapada')) return '🥁';
+    return '📂';
+  }
+
+  /// Returns ONLY the offline songs inside [category] so offline playback stays strictly inside that section!
+  static List<Map<String, dynamic>> getOfflineSongsByCategory(String category) {
+    if (category == 'ALL_OFFLINE') {
+      return offlineSongs.value;
+    }
+    return offlineSongs.value.where((trk) {
+      final String trkCat = (trk['category'] ?? 'Kannada').toString().trim();
+      return trkCat.toLowerCase() == category.trim().toLowerCase();
+    }).toList();
+  }
+
+  static String? getTrackOfflineCategory(String id) {
+    for (final e in offlineSongs.value) {
+      if (e['id'].toString() == id) {
+        return (e['category'] ?? 'Kannada').toString();
+      }
+    }
+    return null;
+  }
+
+  static Future<void> assignOfflineCategory(String id, String newCategory) async {
+    final List<Map<String, dynamic>> current = List<Map<String, dynamic>>.from(offlineSongs.value);
+    bool changed = false;
+    for (int i = 0; i < current.length; i++) {
+      if (current[i]['id'].toString() == id) {
+        final updated = Map<String, dynamic>.from(current[i]);
+        updated['category'] = newCategory;
+        current[i] = updated;
+        changed = true;
+      }
+    }
+    if (changed) {
+      offlineSongs.value = current;
+      await _saveList('v51_off_songs', current);
+    }
+  }
+
+  static Future<void> deleteOfflineSong(String id, {bool isEntry = false}) async {
+    final notifier = isEntry ? offlineEntries : offlineSongs;
+    final String storageKey = isEntry ? 'v51_off_entries' : 'v51_off_songs';
+    final List<Map<String, dynamic>> current = List<Map<String, dynamic>>.from(notifier.value);
+    current.removeWhere((e) => e['id'].toString() == id);
+    notifier.value = current;
+    await _saveList(storageKey, current);
   }
 
   static Future<List<Map<String, dynamic>>> _loadList(String key) async {
@@ -97,9 +205,10 @@ class VaultManager {
       'durationSec': int.tryParse((t['durationSec'] ?? '180').toString()) ?? 180,
       'smartDropSec': int.tryParse((t['smartDropSec'] ?? '12').toString()) ?? 12,
       'year': int.tryParse((t['year'] ?? '2026').toString()) ?? 2026,
-      'quality': (t['quality'] ?? '320kbps BASS').toString(),
+      'quality': (t['quality'] ?? '320kbps MASTER').toString(),
       'localPath': t['localPath']?.toString(),
       'isOffline': t['isOffline'] == true,
+      'category': (t['category'] ?? 'Kannada').toString(),
     };
   }
 
@@ -134,9 +243,28 @@ class VaultManager {
     return added;
   }
 
-  static Future<bool> downloadTrack(Map<String, dynamic> track, {required bool isEntry}) async {
+  static Future<bool> downloadTrack(
+    Map<String, dynamic> track, {
+    required bool isEntry,
+    String category = 'Kannada',
+  }) async {
     final clean = _sanitizeTrackMap(track);
+    clean['category'] = category;
     final String id = clean['id'].toString();
+
+    // If track already has a valid localPath (e.g., imported from phone or already downloaded), just save category!
+    if (clean['localPath'] != null && File(clean['localPath'].toString()).existsSync()) {
+      clean['isOffline'] = true;
+      final notifier = isEntry ? offlineEntries : offlineSongs;
+      final String storageKey = isEntry ? 'v51_off_entries' : 'v51_off_songs';
+      final List<Map<String, dynamic>> current = List<Map<String, dynamic>>.from(notifier.value);
+      current.removeWhere((e) => e['id'].toString() == id);
+      current.insert(0, clean);
+      notifier.value = current;
+      await _saveList(storageKey, current);
+      return true;
+    }
+
     final List<String> urls = List<String>.from(clean['urls'] as List);
     if (urls.isEmpty) return false;
 
@@ -150,8 +278,8 @@ class VaultManager {
     for (final rawUrl in urls) {
       try {
         downloadProgressMap.value = {...downloadProgressMap.value, id: 45};
-        final res = await http.get(Uri.parse(rawUrl), headers: headers).timeout(const Duration(seconds: 35));
-        if (res.statusCode == 200 && res.bodyBytes.length > 40000) {
+        final res = await http.get(Uri.parse(rawUrl), headers: headers).timeout(const Duration(seconds: 40));
+        if (res.statusCode == 200 && res.bodyBytes.length > 25000) {
           downloadProgressMap.value = {...downloadProgressMap.value, id: 85};
           final dir = await _safeStorageDir();
           final safeId = id.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
@@ -161,8 +289,9 @@ class VaultManager {
 
           clean['localPath'] = outFile.path;
           clean['isOffline'] = true;
+          clean['category'] = category;
           clean['quality'] =
-              'OFFLINE 320K (' + (res.bodyBytes.length / (1024 * 1024)).toStringAsFixed(1) + ' MB)';
+              'OFFLINE 320K (${(res.bodyBytes.length / (1024 * 1024)).toStringAsFixed(1)} MB)';
 
           final notifier = isEntry ? offlineEntries : offlineSongs;
           final String storageKey = isEntry ? 'v51_off_entries' : 'v51_off_songs';
@@ -191,8 +320,6 @@ class EntryMusicHarvester {
   static final Map<String, int> customSavedCueSeconds = {};
   static final Random _rng = Random();
 
-  /// ONE Unified Master Pool of Heavy-Bass Funk ("Funk Criminal", Ultrafunk, Montagem, Tuca Donka)
-  /// + High-Bass Stadium Walkout & Mass Entry BGMs
   static const List<String> masterFunkAndMassPool = [
     'Funk Criminal',
     'Funk Criminal Slowed Bass',
@@ -231,7 +358,7 @@ class EntryMusicHarvester {
   ];
 
   static final RegExp _rejectSlowOrLoveRegex = RegExp(
-    r'\b(masstaani|eradu|jadeyannu|love|romantic|romance|melody|sad|lullaby|unplugged|acoustic|preethi|prema|pyaar|ishq|mohabbat|sanam|bhajan|devotional|aarti|chalisa|karaoke)\b',
+    r'\b(masstaani|eradu|jadeyannu|lullaby|unplugged|acoustic|karaoke)\b',
     caseSensitive: false,
   );
 
@@ -263,7 +390,6 @@ class EntryMusicHarvester {
         .trim();
   }
 
-  /// Pinpoints the exact Heavy Bass Drop second so the 10-second window hits maximum bass immediately!
   static int computeSmartEntryDropSecond(String id, String title, int durationSec) {
     if (customSavedCueSeconds.containsKey(id)) {
       return customSavedCueSeconds[id]!;
@@ -294,16 +420,12 @@ class EntryMusicHarvester {
     if (lower.contains('fear song')) return 18;
     if (lower.contains('tagaru')) return 15;
 
-    // Brazilian Funk / Phonk tracks (35s - 125s) always drop their heavy bass beat at 11-14 seconds!
     if (durationSec >= 35 && durationSec <= 125) {
       return 12;
     }
-
-    // Full movie mass songs (> 125s) drop their main hook at ~22 seconds
     return 22;
   }
 
-  /// Parallel High-Speed Harvester: Fetches 12 queries simultaneously in < 1.2 seconds!
   static Future<List<Map<String, dynamic>>> fetchEntryTracks({
     String categoryKey = 'ALL',
     String? customQuery,
@@ -333,7 +455,6 @@ class EntryMusicHarvester {
         pool.shuffle(_rng);
         selectedQueries = pool.take(12).toList();
       } else {
-        // Always include Funk Criminal, Masha Ultrafunk, Tuca Donka, Montagem & KGF/Rolex/Hukum at the top + daily rotation!
         final int offset = daySeed % (pool.length - 6);
         selectedQueries = [
           'Funk Criminal',
@@ -357,15 +478,11 @@ class EntryMusicHarvester {
 
     final int pageNum = loadNextBatch ? (1 + _rng.nextInt(3)) : 1;
 
-    // Fetch ALL queries in PARALLEL so list loads in 1 second!
     final List<Future<http.Response?>> futures = selectedQueries.map((q) async {
       try {
         final String url =
-            'https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&api_version=4&ctx=web6dot0&n=12&p=' +
-                pageNum.toString() +
-                '&q=' +
-                Uri.encodeComponent(q);
-        return await http.get(Uri.parse(url), headers: headers).timeout(const Duration(seconds: 5));
+            'https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&api_version=4&ctx=web6dot0&n=16&p=$pageNum&q=${Uri.encodeComponent(q)}';
+        return await http.get(Uri.parse(url), headers: headers).timeout(const Duration(seconds: 6));
       } catch (_) {
         return null;
       }
@@ -387,21 +504,22 @@ class EntryMusicHarvester {
           final String subtitle = _cleanTitle((item['subtitle'] ?? moreInfo['music'] ?? 'Heavy Bass').toString());
           final int durSec = int.tryParse((moreInfo['duration'] ?? item['duration'] ?? '0').toString()) ?? 0;
 
-          if (durSec < 32) continue;
+          if (durSec < 25) continue;
           if (_rejectSlowOrLoveRegex.hasMatch('$title $subtitle')) continue;
 
-          final String fp = SaavnDesDecryptor.canonicalFingerprint(title);
+          final String fp = SaavnDesDecryptor.canonicalFingerprint(title, subtitle);
           if (seenFingerprints.contains(fp)) continue;
 
           final String? encUrl = (moreInfo['encrypted_media_url'] ?? item['encrypted_media_url'])?.toString();
-          final bool has320 = (moreInfo['320kbps']?.toString() == 'true');
-          final List<String> urls = SaavnDesDecryptor.decryptToFullUrls(encUrl, null, has320: has320);
+          final String? prevUrl = (moreInfo['vlink'] ?? item['media_preview_url'])?.toString();
+          final bool has320 = (moreInfo['320kbps']?.toString() != 'false');
+          final List<String> urls = SaavnDesDecryptor.decryptToFullUrls(encUrl, prevUrl, has320: has320);
           if (urls.isEmpty) continue;
 
           seenIds.add(id);
           seenFingerprints.add(fp);
 
-          final String cover = (item['image'] ?? 'https://via.placeholder.com/150')
+          final String cover = (item['image'] ?? 'https://via.placeholder.com/300')
               .toString()
               .replaceAll('150x150', '500x500');
 
@@ -421,6 +539,7 @@ class EntryMusicHarvester {
             'smartDropSec': smartDropSec,
             'quality': has320 ? '320kbps HEAVY BASS' : '160kbps HEAVY BASS',
             'isOffline': false,
+            'category': 'Mass Entry',
           });
         }
       } catch (_) {}

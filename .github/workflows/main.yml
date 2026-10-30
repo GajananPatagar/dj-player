@@ -27,55 +27,197 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Safely Generate Android Folder Without Touching lib/
+      - name: Generate Fresh Android V2 Scaffold First
         run: |
-          if [ ! -d "android" ]; then
-            flutter create --platforms=android --org com.gajanan.djplaycommentry --project-name dj_player /tmp/shell
-            cp -r /tmp/shell/android ./android
-          fi
+          rm -rf android
+          flutter create --platforms=android --org com.gajanan.djplaycommentry --project-name dj_player .
           grep -n "void main()" lib/main.dart
 
-      - name: Inject Hardware Noise-Canceled Karaoke Recorder, Vocal-Cut EQ & HD TTS Into MainActivity.kt
+      - name: Inject Background WakeLock Service, OTA Installer, Hardware DSP EQ, Recorder & TTS Into MainActivity.kt
         run: |
           MAIN_KT=$(find android/app/src/main -name "MainActivity.kt" | head -n 1)
-          if [ -n "$MAIN_KT" ]; then
-            PKG_LINE=$(head -n 1 "$MAIN_KT")
-            cat << 'KTEOF' > "$MAIN_KT"
+          PKG_DIR=$(dirname "$MAIN_KT")
+          PKG_LINE=$(head -n 1 "$MAIN_KT")
+
+          cat << 'SVCEOF' > "$PKG_DIR/DjMediaForegroundService.kt"
+          $PKG_LINE
+          import android.app.Notification
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.app.PendingIntent
+          import android.app.Service
+          import android.content.Context
+          import android.content.Intent
+          import android.content.pm.ServiceInfo
+          import android.net.wifi.WifiManager
+          import android.os.Build
+          import android.os.IBinder
+          import android.os.PowerManager
+
+          class DjMediaForegroundService : Service() {
+              private var wakeLock: PowerManager.WakeLock? = null
+              private var wifiLock: WifiManager.WifiLock? = null
+
+              override fun onCreate() {
+                  super.onCreate()
+                  acquireLocks()
+              }
+
+              private fun acquireLocks() {
+                  try {
+                      val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                      if (wakeLock == null) {
+                          wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DJPlayer::MediaWakeLock")
+                          wakeLock?.setReferenceCounted(false)
+                      }
+                      if (wakeLock?.isHeld == false) {
+                          wakeLock?.acquire(10 * 60 * 60 * 1000L)
+                      }
+                  } catch (_: Exception) {}
+
+                  try {
+                      val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                      if (wifiLock == null) {
+                          wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "DJPlayer::MediaWifiLock")
+                          wifiLock?.setReferenceCounted(false)
+                      }
+                      if (wifiLock?.isHeld == false) {
+                          wifiLock?.acquire()
+                      }
+                  } catch (_: Exception) {}
+              }
+
+              override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+                  acquireLocks()
+                  val title = intent?.getStringExtra("title") ?: "DJ Play & Commentary Pro"
+                  val artist = intent?.getStringExtra("artist") ?: "Background Auto-Next Active"
+                  val isPlaying = intent?.getBooleanExtra("isPlaying", true) ?: true
+                  val notif = buildMediaNotification(title, artist, isPlaying)
+                  try {
+                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                          startForeground(1001, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+                      } else {
+                          startForeground(1001, notif)
+                      }
+                  } catch (_: Exception) {}
+                  return START_STICKY
+              }
+
+              private fun buildMediaNotification(title: String, artist: String, isPlaying: Boolean): Notification {
+                  val channelId = "dj_pro_bg_playback_v500"
+                  val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      val ch = NotificationChannel(
+                          channelId,
+                          "DJ Pro Background Playback",
+                          NotificationManager.IMPORTANCE_LOW
+                      ).apply {
+                          description = "Keeps DJ Music playing and auto-advancing when screen is off"
+                          setShowBadge(false)
+                      }
+                      nm.createNotificationChannel(ch)
+                  }
+
+                  val openIntent = Intent(this, MainActivity::class.java).apply {
+                      flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+                  }
+                  val contentPi = PendingIntent.getActivity(
+                      this, 10, openIntent,
+                      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                  )
+
+                  val prevPi = PendingIntent.getBroadcast(
+                      this, 11, Intent("com.gajanan.djplaycommentry.MEDIA_CMD").putExtra("cmd", "PREV"),
+                      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                  )
+                  val togglePi = PendingIntent.getBroadcast(
+                      this, 12, Intent("com.gajanan.djplaycommentry.MEDIA_CMD").putExtra("cmd", "TOGGLE"),
+                      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                  )
+                  val nextPi = PendingIntent.getBroadcast(
+                      this, 13, Intent("com.gajanan.djplaycommentry.MEDIA_CMD").putExtra("cmd", "NEXT"),
+                      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                  )
+
+                  val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      Notification.Builder(this, channelId)
+                  } else {
+                      Notification.Builder(this)
+                  }
+
+                  builder.setSmallIcon(android.R.drawable.ic_media_play)
+                      .setContentTitle(title)
+                      .setContentText(artist)
+                      .setContentIntent(contentPi)
+                      .setOngoing(isPlaying)
+                      .addAction(android.R.drawable.ic_media_previous, "Prev", prevPi)
+                      .addAction(
+                          if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
+                          if (isPlaying) "Pause" else "Play",
+                          togglePi
+                      )
+                      .addAction(android.R.drawable.ic_media_next, "Next", nextPi)
+
+                  return builder.build()
+              }
+
+              override fun onDestroy() {
+                  try {
+                      if (wakeLock?.isHeld == true) wakeLock?.release()
+                  } catch (_: Exception) {}
+                  try {
+                      if (wifiLock?.isHeld == true) wifiLock?.release()
+                  } catch (_: Exception) {}
+                  super.onDestroy()
+              }
+
+              override fun onBind(intent: Intent?): IBinder? = null
+          }
+          SVCEOF
+          sed -i "s|\$PKG_LINE|$PKG_LINE|g" "$PKG_DIR/DjMediaForegroundService.kt"
+
+          cat << 'KTEOF' > "$MAIN_KT"
           $PKG_LINE
           import android.Manifest
           import android.app.Activity
+          import android.content.BroadcastReceiver
+          import android.content.Context
           import android.content.Intent
+          import android.content.IntentFilter
           import android.content.pm.PackageManager
           import android.media.MediaCodec
           import android.media.MediaExtractor
           import android.media.MediaFormat
           import android.media.MediaMuxer
           import android.media.MediaRecorder
+          import android.media.MediaScannerConnection
+          import android.media.audiofx.BassBoost
+          import android.media.audiofx.Equalizer
+          import android.media.audiofx.LoudnessEnhancer
           import android.net.Uri
+          import android.os.Build
+          import android.os.Bundle
+          import android.os.Environment
           import android.os.Handler
           import android.os.Looper
+          import android.os.PowerManager
+          import android.os.StrictMode
+          import android.provider.Settings
+          import android.speech.tts.TextToSpeech
+          import android.speech.tts.Voice
+          import android.view.KeyEvent
           import android.webkit.WebResourceRequest
           import android.webkit.WebResourceResponse
           import android.webkit.WebView
           import android.webkit.WebViewClient
-          import java.net.HttpURLConnection
-          import java.net.URL
-          import java.io.FileOutputStream
-          import java.nio.ByteBuffer
-          import android.media.MediaScannerConnection
-          import android.media.audiofx.Equalizer
-          import android.media.audiofx.LoudnessEnhancer
-          import android.media.audiofx.Virtualizer
-          import android.os.Build
-          import android.os.Bundle
-          import android.os.Environment
-          import android.speech.tts.TextToSpeech
-          import android.speech.tts.Voice
-          import android.view.KeyEvent
           import io.flutter.embedding.android.FlutterActivity
           import io.flutter.embedding.engine.FlutterEngine
           import io.flutter.plugin.common.MethodChannel
           import java.io.File
+          import java.io.FileOutputStream
+          import java.net.HttpURLConnection
+          import java.net.URL
+          import java.nio.ByteBuffer
           import java.util.Locale
 
           class MainActivity: FlutterActivity(), TextToSpeech.OnInitListener {
@@ -83,25 +225,69 @@ jobs:
               private var ttsReady: Boolean = false
               private var recorder: MediaRecorder? = null
               private var currentRecordPath: String? = null
-              private var karaokeEq: Equalizer? = null
               private var methodChannel: MethodChannel? = null
               private var pendingFileResult: MethodChannel.Result? = null
               private var pendingIsVideo: Boolean = false
               private var initialSharedMedia: String? = null
 
-              private var virtualizer: Virtualizer? = null
+              private var masterEq: Equalizer? = null
+              private var masterBass: BassBoost? = null
+              private var masterLoudness: LoudnessEnhancer? = null
+
+              private val bgHeartbeatHandler = Handler(Looper.getMainLooper())
+              private val bgHeartbeatRunnable = object : Runnable {
+                  override fun run() {
+                      methodChannel?.invokeMethod("onMediaNotificationAction", "HEARTBEAT")
+                      bgHeartbeatHandler.postDelayed(this, 2500)
+                  }
+              }
+
+              private val mediaCmdReceiver = object : BroadcastReceiver() {
+                  override fun onReceive(context: Context?, intent: Intent?) {
+                      val cmd = intent?.getStringExtra("cmd") ?: return
+                      methodChannel?.invokeMethod("onMediaNotificationAction", cmd)
+                  }
+              }
 
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
                   tts = TextToSpeech(this, this)
                   handleIncomingShareIntent(intent)
-                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                      if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                          requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.WRITE_EXTERNAL_STORAGE), 200)
+
+                  try {
+                      val filter = IntentFilter("com.gajanan.djplaycommentry.MEDIA_CMD")
+                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                          registerReceiver(mediaCmdReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+                      } else {
+                          registerReceiver(mediaCmdReceiver, filter)
                       }
+                  } catch (_: Exception) {}
+
+                  bgHeartbeatHandler.postDelayed(bgHeartbeatRunnable, 3000)
+
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                      val perms = mutableListOf(
+                          Manifest.permission.RECORD_AUDIO,
+                          Manifest.permission.READ_EXTERNAL_STORAGE,
+                          Manifest.permission.WRITE_EXTERNAL_STORAGE
+                      )
+                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                          perms.add(Manifest.permission.POST_NOTIFICATIONS)
+                          perms.add(Manifest.permission.READ_MEDIA_AUDIO)
+                      }
+                      requestPermissions(perms.toTypedArray(), 200)
+
+                      try {
+                          val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                          if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                              val wlIntent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                  data = Uri.parse("package:$packageName")
+                              }
+                              startActivity(wlIntent)
+                          }
+                      } catch (_: Exception) {}
                   }
               }
-
 
               override fun onNewIntent(intent: Intent) {
                   super.onNewIntent(intent)
@@ -206,7 +392,6 @@ jobs:
                   }
               }
 
-
               private fun resolveAndExtractUrlNative(rawShareText: String, result: MethodChannel.Result) {
                   val urlRegex = Regex("https?://[^\\s\"<>]+")
                   val match = urlRegex.find(rawShareText)
@@ -271,9 +456,9 @@ jobs:
                               override fun onPageFinished(view: WebView?, url: String?) {
                                   super.onPageFinished(view, url)
                                   view?.evaluateJavascript(
-                                      "(function(){ var v = document.querySelector('video'); if(v && v.src) return v.src; var m = document.querySelector('meta[property="og:video"]'); if(m) return m.content; return ''; })()"
+                                      "(function(){ var v = document.querySelector('video'); if(v && v.src) return v.src; var m = document.querySelector('meta[property=\"og:video\"]'); if(m) return m.content; return ''; })()"
                                   ) { resStr ->
-                                      val clean = resStr?.replace(""", "")?.trim() ?: ""
+                                      val clean = resStr?.replace("\"", "")?.trim() ?: ""
                                       if (!completed && clean.startsWith("http")) {
                                           try { wv.destroy() } catch (_: Exception) {}
                                           finishWithUrl(clean)
@@ -311,11 +496,17 @@ jobs:
                       methodChannel?.invokeMethod("onVolumeKey", "UP")
                   } else if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
                       methodChannel?.invokeMethod("onVolumeKey", "DOWN")
+                  } else if (keyCode == KeyEvent.KEYCODE_MEDIA_NEXT) {
+                      methodChannel?.invokeMethod("onMediaNotificationAction", "NEXT")
+                  } else if (keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
+                      methodChannel?.invokeMethod("onMediaNotificationAction", "PREV")
+                  } else if (keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) {
+                      methodChannel?.invokeMethod("onMediaNotificationAction", "TOGGLE")
                   }
                   return super.onKeyDown(keyCode, event)
               }
 
-                            private fun selectBestNaturalVoice(locale: Locale) {
+              private fun selectBestNaturalVoice(locale: Locale) {
                   try {
                       val voices = tts?.voices ?: return
                       var bestVoice: Voice? = null
@@ -324,13 +515,11 @@ jobs:
                           if (v.locale.language == locale.language) {
                               val n = v.name.lowercase()
                               var score = v.quality
-                              // Strictly prioritize MALE commentator voices (knm, knd, him, hid, enm, end, gbm, aub, male)
                               if (n.contains("knm") || n.contains("knd") || n.contains("him") || n.contains("hid") ||
                                   n.contains("enm") || n.contains("end") || n.contains("gbm") || n.contains("aub") ||
                                   n.contains("male") || n.contains("-b") || n.contains("-d")) {
                                   score += 600
                               }
-                              // Reject female voices (knf, hif, enf, female)
                               if (n.contains("knf") || n.contains("hif") || n.contains("enf") || n.contains("female") || n.contains("-a") || n.contains("-c")) {
                                   score -= 500
                               }
@@ -353,10 +542,61 @@ jobs:
                   }
               }
 
-              private var loudnessEnhancer: LoudnessEnhancer? = null
+              private fun applyHardwareDsp(bassStrength: Int, loudnessMb: Int, bands: List<Int>) {
+                  try {
+                      if (masterEq == null) {
+                          masterEq = Equalizer(0, 0).apply { enabled = true }
+                      }
+                      val eq = masterEq
+                      if (eq != null) {
+                          val numBands = eq.numberOfBands.toInt()
+                          for (i in 0 until minOf(numBands, bands.size)) {
+                              eq.setBandLevel(i.toShort(), bands[i].toShort())
+                          }
+                      }
+                  } catch (_: Exception) {}
 
-              private fun applyKaraokeVocalCutEq(enabled: Boolean) {
-                  // Pure untouched native media sound (No EQ distortion)
+                  try {
+                      if (masterBass == null) {
+                          masterBass = BassBoost(0, 0).apply { enabled = true }
+                      }
+                      masterBass?.setStrength(bassStrength.coerceIn(0, 1000).toShort())
+                  } catch (_: Exception) {}
+
+                  try {
+                      if (masterLoudness == null) {
+                          masterLoudness = LoudnessEnhancer(0).apply { enabled = true }
+                      }
+                      masterLoudness?.setTargetGain(loudnessMb.coerceIn(0, 1500))
+                  } catch (_: Exception) {}
+              }
+
+              private fun installOtaApkFile(rawPath: String) {
+                  try {
+                      val srcFile = File(rawPath)
+                      if (!srcFile.exists()) return
+                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                          if (!packageManager.canRequestPackageInstalls()) {
+                              val permIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                                  data = Uri.parse("package:$packageName")
+                                  addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                              }
+                              startActivity(permIntent)
+                          }
+                      }
+                      val pubDir = externalCacheDir ?: cacheDir
+                      val pubApk = File(pubDir, "dj_player_ota_install.apk")
+                      srcFile.copyTo(pubApk, overwrite = true)
+                      pubApk.setReadable(true, false)
+
+                      StrictMode.setVmPolicy(StrictMode.VmPolicy.Builder().build())
+                      val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                          setDataAndType(Uri.fromFile(pubApk), "application/vnd.android.package-archive")
+                          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                          addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                      }
+                      startActivity(installIntent)
+                  } catch (_: Exception) {}
               }
 
               private fun startIsolatedVoiceRecorder(fileName: String, useEchoCancelledSource: Boolean): String? {
@@ -365,8 +605,6 @@ jobs:
                       val outFile = File(filesDir, fileName + ".m4a")
                       currentRecordPath = outFile.absolutePath
                       recorder = MediaRecorder().apply {
-                          // VOICE_COMMUNICATION activates Android Hardware AcousticEchoCanceler & NoiseSuppressor
-                          // so playing Karaoke backing music is subtracted from the mic and ONLY user singing is recorded!
                           if (useEchoCancelledSource) {
                               setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION)
                           } else {
@@ -409,7 +647,37 @@ jobs:
                   methodChannel = ch
                   ch.setMethodCallHandler { call, result ->
                       when (call.method) {
-                                                    "speak" -> {
+                          "updateMediaNotification" -> {
+                              val title = call.argument<String>("title") ?: "DJ Play & Commentary Pro"
+                              val artist = call.argument<String>("artist") ?: "Playing in Background"
+                              val isPlaying = call.argument<Boolean>("isPlaying") ?: true
+                              try {
+                                  val svcIntent = Intent(this, DjMediaForegroundService::class.java).apply {
+                                      putExtra("title", title)
+                                      putExtra("artist", artist)
+                                      putExtra("isPlaying", isPlaying)
+                                  }
+                                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                      startForegroundService(svcIntent)
+                                  } else {
+                                      startService(svcIntent)
+                                  }
+                              } catch (_: Exception) {}
+                              result.success(true)
+                          }
+                          "setHardwareDsp" -> {
+                              val bass = call.argument<Int>("bass") ?: 800
+                              val loudness = call.argument<Int>("loudness") ?: 600
+                              val bands = call.argument<List<Int>>("bands") ?: listOf(400, 200, 0, 200, 450)
+                              applyHardwareDsp(bass, loudness, bands)
+                              result.success(true)
+                          }
+                          "installApkOta" -> {
+                              val path = call.argument<String>("path") ?: ""
+                              installOtaApkFile(path)
+                              result.success(true)
+                          }
+                          "speak" -> {
                               if (!ttsReady || tts == null) {
                                   result.success(false)
                                   return@setMethodCallHandler
@@ -429,17 +697,14 @@ jobs:
 
                               val parts = text.split(" | ")
                               if (parts.size >= 3) {
-                                  // Wave 1: High-Adrenaline Attack Hook (Jani Murthy / Shastri Punch!)
                                   tts?.setPitch((basePitch * 1.10f).coerceIn(0.75f, 1.35f))
                                   tts?.setSpeechRate((baseRate * 1.06f).coerceIn(0.95f, 1.45f))
                                   tts?.speak(parts[0], TextToSpeech.QUEUE_FLUSH, null, "utt_w1")
 
-                                  // Wave 2: Rapid Baritone Play-by-Play Flow
                                   tts?.setPitch((basePitch * 0.94f).coerceIn(0.72f, 1.25f))
                                   tts?.setSpeechRate((baseRate * 1.03f).coerceIn(0.95f, 1.40f))
                                   tts?.speak(parts[1], TextToSpeech.QUEUE_ADD, null, "utt_w2")
 
-                                  // Wave 3: Emphatic Stadium Closer
                                   tts?.setPitch((basePitch * 1.03f).coerceIn(0.75f, 1.30f))
                                   tts?.setSpeechRate((baseRate * 0.98f).coerceIn(0.90f, 1.35f))
                                   val speakRes = tts?.speak(parts.subList(2, parts.size).joinToString(" "), TextToSpeech.QUEUE_ADD, null, "utt_w3")
@@ -456,8 +721,6 @@ jobs:
                               result.success(true)
                           }
                           "setKaraokeVocalCut" -> {
-                              val enabled = call.argument<Boolean>("enabled") ?: false
-                              applyKaraokeVocalCutEq(enabled)
                               result.success(true)
                           }
                           "startCleanVocalRecord" -> {
@@ -532,18 +795,23 @@ jobs:
               }
 
               override fun onDestroy() {
+                  bgHeartbeatHandler.removeCallbacks(bgHeartbeatRunnable)
+                  try {
+                      unregisterReceiver(mediaCmdReceiver)
+                  } catch (_: Exception) {}
                   tts?.stop()
                   tts?.shutdown()
                   recorder?.release()
-                  
+                  masterEq?.release()
+                  masterBass?.release()
+                  masterLoudness?.release()
                   super.onDestroy()
               }
           }
           KTEOF
-            sed -i "s|\$PKG_LINE|$PKG_LINE|g" "$MAIN_KT"
-          fi
+          sed -i "s|\$PKG_LINE|$PKG_LINE|g" "$MAIN_KT"
 
-      - name: Set App Name, Cleartext Traffic, Audio/DSP Permissions & High-Class Icon
+      - name: Configure AndroidManifest Permissions, Foreground Media Service, Share Intent & App Icon
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST" ]; then
@@ -552,7 +820,10 @@ jobs:
               sed -i 's/<application/<application android:usesCleartextTraffic="true"/' "$MANIFEST"
             fi
             if ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
-              sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <uses-permission android:name="android.permission.RECORD_AUDIO"\/>\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"\/>\n    <application/' "$MANIFEST"
+              sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <uses-permission android:name="android.permission.WAKE_LOCK"\/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"\/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"\/>\n    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"\/>\n    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"\/>\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"\/>\n    <uses-permission android:name="android.permission.RECORD_AUDIO"\/>\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"\/>\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"\/>\n    <application/' "$MANIFEST"
+            fi
+            if ! grep -q "DjMediaForegroundService" "$MANIFEST"; then
+              sed -i 's|</application>|    <service android:name=".DjMediaForegroundService" android:enabled="true" android:exported="false" android:foregroundServiceType="mediaPlayback" />\n    </application>|g' "$MANIFEST"
             fi
             if ! grep -q "android.intent.action.SEND" "$MANIFEST"; then
               sed -i 's|<category android:name="android.intent.category.LAUNCHER"/>|<category android:name="android.intent.category.LAUNCHER"/></intent-filter><intent-filter><action android:name="android.intent.action.SEND"/><category android:name="android.intent.category.DEFAULT"/><data android:mimeType="text/plain"/><data android:mimeType="video/*"/><data android:mimeType="audio/*"/>|g' "$MANIFEST"
@@ -568,17 +839,17 @@ jobs:
             rm -rf android/app/src/main/res/mipmap-anydpi-v26
           fi
 
-      - name: Regenerate Fresh Android V2 Scaffold & Build
+      - name: Build Release APK (Preserving Injected Android Native Services!)
         run: |
-          rm -rf android
-          flutter create --platforms=android --org com.gajanan.djplaycommentry --project-name dj_player .
           flutter pub get
           flutter build apk --release --no-tree-shake-icons
 
-      - name: Publish APK to GitHub Releases
+      - name: Publish APK to GitHub Releases Automatically (For OTA Auto-Updater)
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
         with:
+          tag_name: v500.${{ github.run_number }}
+          name: "DJ Play & Commentary Pro v500.${{ github.run_number }} (Auto-OTA Release)"
+          make_latest: true
           files: build/app/outputs/flutter-apk/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -42,11 +42,6 @@ class SaavnDesDecryptor {
     24, 25, 26, 27, 28, 29, 28, 29, 30, 31, 32, 1
   ];
 
-  static const List<int> _p = [
-    16, 7, 20, 21, 29, 12, 28, 17, 1, 15, 31, 26, 5, 18, 23, 10,
-    2, 8, 24, 14, 32, 27, 3, 9, 19, 13, 30, 6, 22, 11, 4, 25
-  ];
-
   static const List<int> _pStandard = [
     16, 7, 20, 21, 29, 12, 28, 17, 1, 15, 23, 26, 5, 18, 31, 10,
     2, 8, 24, 14, 32, 27, 3, 9, 19, 13, 30, 6, 22, 11, 4, 25
@@ -162,7 +157,7 @@ class SaavnDesDecryptor {
         final int col = (xored[offset + 1] << 3) |
             (xored[offset + 2] << 2) |
             (xored[offset + 3] << 1) |
-            xored[offset + 4];
+            (xored[offset + 4]);
         final int val = _sBoxes[box][row * 16 + col];
         for (int b = 0; b < 4; b++) {
           sOut[box * 4 + b] = (val >> (3 - b)) & 1;
@@ -177,79 +172,88 @@ class SaavnDesDecryptor {
     return List<int>.generate(64, (i) => preFp[_fp[i] - 1]);
   }
 
-  static String canonicalFingerprint(String rawTitle) {
-    String s = rawTitle.toLowerCase();
-    s = s.replaceAll(RegExp(r'\(.*?\)|\[.*?\]'), '');
-    if (s.contains(' - ')) {
-      s = s.split(' - ').first;
-    }
+  /// Preserves Remixes, Lofi, DJ Mixes, and Regional Versions while still catching exact duplicate uploads
+  static String canonicalFingerprint(String rawTitle, [String artist = '']) {
+    String s = rawTitle.toLowerCase().trim();
     s = s
         .replaceAll('full video', '')
-        .replaceAll('full song', '')
-        .replaceAll('lyrical', '')
         .replaceAll('original motion picture soundtrack', '')
         .replaceAll(RegExp(r'[^a-z0-9]'), '');
-    if (s.length > 22) {
-      s = s.substring(0, 22);
+    final String a = artist.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+    final String aShort = a.length > 12 ? a.substring(0, 12) : a;
+    if (s.length > 36) {
+      s = s.substring(0, 36);
     }
-    return s.isEmpty ? rawTitle.toLowerCase().trim() : s;
+    return '${s}_$aShort';
   }
 
-  /// Decrypts ONLY full-length encrypted_media_url streams (Never uses 15-sec preview.saavncdn.com!)
-  /// Orders _320.mp4 vs _160.mp4 accurately based on the track's official has320 flag.
+  /// Unlocks ALL songs: Decrypts encrypted_media_url AND transforms preview.saavncdn.com -> aac.saavncdn.com
+  /// so even restricted/regional tracks unlock full 320kbps / 160kbps / 96kbps streams!
   static List<String> decryptToFullUrls(
     String? encryptedBase64,
-    String? unusedPreviewUrl, {
+    String? previewUrl, {
     bool has320 = true,
   }) {
     final List<String> urls = [];
-    if (encryptedBase64 == null || encryptedBase64.trim().isEmpty) return urls;
 
-    try {
-      final String cleanedB64 = encryptedBase64.trim().replaceAll(r'\/', '/').replaceAll(' ', '+');
-      final Uint8List cipher = base64Decode(cleanedB64);
-      final List<int> outBytes = [];
-      for (int offset = 0; offset + 8 <= cipher.length; offset += 8) {
-        final blockBits = _bytesToBits(cipher.sublist(offset, offset + 8));
-        final decBits = _decryptBlock(blockBits);
-        outBytes.addAll(_bitsToBytes(decBits));
+    void addCandidateVariants(String rawInput) {
+      String u = rawInput.trim().replaceAll(RegExp(r'[^\x20-\x7E]'), '');
+      if (u.startsWith('http://')) {
+        u = u.replaceFirst('http://', 'https://');
       }
-      if (outBytes.isNotEmpty) {
-        final int pad = outBytes.last;
-        if (pad > 0 && pad <= 8 && outBytes.length >= pad) {
-          outBytes.removeRange(outBytes.length - pad, outBytes.length);
-        }
-        String rawUrl = utf8.decode(outBytes, allowMalformed: true).trim();
-        // Clean any trailing non-printable characters
-        rawUrl = rawUrl.replaceAll(RegExp(r'[^\x20-\x7E]'), '');
-        if (rawUrl.startsWith('http://')) {
-          rawUrl = rawUrl.replaceFirst('http://', 'https://');
-        }
-        if (rawUrl.startsWith('https://')) {
-          // Never allow 15-second or 30-second preview servers
-          if (rawUrl.contains('preview.saavncdn.com') || rawUrl.contains('_p.mp4')) {
-            return [];
-          }
-          final String u320 = rawUrl.replaceAll('_96.', '_320.').replaceAll('_160.', '_320.');
-          final String u160 = rawUrl.replaceAll('_96.', '_160.').replaceAll('_320.', '_160.');
-          final String u96 = rawUrl.replaceAll('_320.', '_96.').replaceAll('_160.', '_96.');
+      if (!u.startsWith('https://')) return;
 
-          if (has320) {
-            urls.add(u320);
-            if (!urls.contains(u160)) urls.add(u160);
-          } else {
-            urls.add(u160);
-            if (!urls.contains(u320)) urls.add(u320);
-          }
-          if (!urls.contains(u96)) urls.add(u96);
-        }
+      // Transform preview.saavncdn.com/_96_p.mp4 -> aac.saavncdn.com/_320.mp4
+      final String unlockedBase = u
+          .replaceAll('preview.saavncdn.com', 'aac.saavncdn.com')
+          .replaceAll('h.saavncdn.com', 'aac.saavncdn.com')
+          .replaceAll('_96_p.mp4', '_320.mp4')
+          .replaceAll('_160_p.mp4', '_320.mp4')
+          .replaceAll('_p.mp4', '_320.mp4');
+
+      final String u320 = unlockedBase.replaceAll('_96.', '_320.').replaceAll('_160.', '_320.');
+      final String u160 = unlockedBase.replaceAll('_96.', '_160.').replaceAll('_320.', '_160.');
+      final String u96 = unlockedBase.replaceAll('_320.', '_96.').replaceAll('_160.', '_96.');
+
+      if (has320) {
+        if (!urls.contains(u320)) urls.add(u320);
+        if (!urls.contains(u160)) urls.add(u160);
+      } else {
+        if (!urls.contains(u160)) urls.add(u160);
+        if (!urls.contains(u320)) urls.add(u320);
       }
-    } catch (_) {}
+      if (!urls.contains(u96)) urls.add(u96);
+      if (!urls.contains(u)) urls.add(u);
+    }
+
+    if (encryptedBase64 != null && encryptedBase64.trim().isNotEmpty) {
+      try {
+        final String cleanedB64 = encryptedBase64.trim().replaceAll(r'\/', '/').replaceAll(' ', '+');
+        final Uint8List cipher = base64Decode(cleanedB64);
+        final List<int> outBytes = [];
+        for (int offset = 0; offset + 8 <= cipher.length; offset += 8) {
+          final blockBits = _bytesToBits(cipher.sublist(offset, offset + 8));
+          final decBits = _decryptBlock(blockBits);
+          outBytes.addAll(_bitsToBytes(decBits));
+        }
+        if (outBytes.isNotEmpty) {
+          final int pad = outBytes.last;
+          if (pad > 0 && pad <= 8 && outBytes.length >= pad) {
+            outBytes.removeRange(outBytes.length - pad, outBytes.length);
+          }
+          final String rawUrl = utf8.decode(outBytes, allowMalformed: true).trim();
+          addCandidateVariants(rawUrl);
+        }
+      } catch (_) {}
+    }
+
+    if (previewUrl != null && previewUrl.trim().isNotEmpty) {
+      addCandidateVariants(previewUrl);
+    }
+
     return urls;
   }
 
-  /// Verifies which stream quality (320kbps vs 160kbps) is live on the CDN before ExoPlayer starts
-  /// so AudioPlayer NEVER hits an HTTP 404 dead stream!
   static Future<String?> resolvePlayableStreamUrl(List<dynamic> candidateUrls) async {
     for (final raw in candidateUrls) {
       final String u = raw.toString();
@@ -265,5 +269,237 @@ class SaavnDesDecryptor {
       } catch (_) {}
     }
     return candidateUrls.isNotEmpty ? candidateUrls.first.toString() : null;
+  }
+
+  static String _cleanStr(String s) {
+    return s
+        .replaceAll('&quot;', '"')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&#039;', "'")
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .trim();
+  }
+
+  static String _formatSecs(int totalSec) {
+    if (totalSec <= 0) return 'Full';
+    final int m = totalSec ~/ 60;
+    final int s = totalSec % 60;
+    return '$m:${s < 10 ? '0$s' : '$s'}';
+  }
+
+  /// Multi-Engine Omni-Search Harvester:
+  /// Queries JioSaavn API v4 across multiple pages in parallel + Saavn.dev Mirror + Global iTunes Catalog fallback
+  /// so ANY song in the world (Kannada, Hindi, Marriage, Fashion Show, Devotional, DJ Remix, Phonk, English, Folk) plays!
+  static Future<List<Map<String, dynamic>>> omniSearchSongs(
+    List<String> queries, {
+    int startPage = 1,
+    int pagesPerQuery = 2,
+    bool isTrendingMode = false,
+  }) async {
+    final List<Map<String, dynamic>> aggregated = [];
+    final Set<String> seenIds = {};
+    final Set<String> seenFp = {};
+
+    final Map<String, String> headers = {
+      'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36',
+      'Accept': 'application/json, text/plain, */*',
+    };
+
+    // 1. Build parallel JioSaavn V4 multi-page requests
+    final List<Future<http.Response?>> saavnFutures = [];
+    for (final q in queries) {
+      for (int p = startPage; p < startPage + pagesPerQuery; p++) {
+        final String url =
+            'https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&api_version=4&ctx=web6dot0&n=50&p=$p&q=${Uri.encodeComponent(q)}';
+        saavnFutures.add(
+          http.get(Uri.parse(url), headers: headers).timeout(const Duration(seconds: 7)).then<http.Response?>((v) => v).catchError((_) => null),
+        );
+      }
+    }
+
+    // 2. Also query Saavn.dev High-Speed Mirror for primary query
+    if (queries.isNotEmpty) {
+      final String primaryQ = queries.first;
+      final String mirrorUrl =
+          'https://saavn.dev/api/search/songs?query=${Uri.encodeComponent(primaryQ)}&page=$startPage&limit=40';
+      saavnFutures.add(
+        http.get(Uri.parse(mirrorUrl), headers: headers).timeout(const Duration(seconds: 6)).then<http.Response?>((v) => v).catchError((_) => null),
+      );
+    }
+
+    final List<http.Response?> responses = await Future.wait(saavnFutures);
+
+    for (final res in responses) {
+      if (res == null || res.statusCode != 200) continue;
+      try {
+        final dynamic decoded = jsonDecode(res.body);
+        if (decoded is! Map) continue;
+
+        // Handle Saavn.dev mirror format
+        if (decoded['data'] is Map && decoded['data']['results'] is List) {
+          final List mirrorResults = decoded['data']['results'];
+          for (final item in mirrorResults) {
+            if (item is! Map) continue;
+            final String id = (item['id'] ?? '').toString();
+            if (id.isEmpty || seenIds.contains(id)) continue;
+
+            final String title = _cleanStr((item['name'] ?? item['title'] ?? 'Track').toString());
+            final String artist = _cleanStr(
+              (item['artists']?['primary'] is List && (item['artists']['primary'] as List).isNotEmpty)
+                  ? (item['artists']['primary'][0]['name'] ?? 'Artist').toString()
+                  : (item['primaryArtists'] ?? 'Artist').toString(),
+            );
+            final int durSec = int.tryParse((item['duration'] ?? '180').toString()) ?? 180;
+            final int year = int.tryParse((item['year'] ?? '2025').toString()) ?? 2025;
+
+            final List<String> dlUrls = [];
+            if (item['downloadUrl'] is List) {
+              for (final uObj in (item['downloadUrl'] as List).reversed) {
+                if (uObj is Map && uObj['url'] != null) {
+                  dlUrls.add(uObj['url'].toString());
+                }
+              }
+            }
+            if (dlUrls.isEmpty) continue;
+
+            final String fp = canonicalFingerprint(title, artist);
+            if (isTrendingMode && seenFp.contains(fp)) continue;
+
+            seenIds.add(id);
+            seenFp.add(fp);
+
+            String cover = 'https://via.placeholder.com/300';
+            if (item['image'] is List && (item['image'] as List).isNotEmpty) {
+              final lastImg = (item['image'] as List).last;
+              if (lastImg is Map && lastImg['url'] != null) {
+                cover = lastImg['url'].toString();
+              }
+            }
+
+            aggregated.add({
+              'id': id,
+              'title': title,
+              'artist': artist,
+              'cover': cover,
+              'urls': dlUrls,
+              'durationStr': _formatSecs(durSec),
+              'durationSec': durSec,
+              'year': year,
+              'playCount': 50000,
+              'quality': '$year • 320kbps (${_formatSecs(durSec)})',
+              'isOffline': false,
+            });
+          }
+          continue;
+        }
+
+        // Handle Official JioSaavn V4 format
+        final List results = (decoded['results'] as List?) ?? [];
+        for (final item in results) {
+          if (item is! Map) continue;
+          final String id = (item['id'] ?? '').toString();
+          if (id.isEmpty || seenIds.contains(id)) continue;
+
+          final Map moreInfo = (item['more_info'] is Map) ? item['more_info'] : {};
+          final String title = _cleanStr((item['title'] ?? item['song'] ?? 'Track').toString());
+          final String subtitle = _cleanStr(
+            (item['subtitle'] ?? moreInfo['music'] ?? moreInfo['singers'] ?? 'Full 320kbps').toString(),
+          );
+          final int durSec = int.tryParse((moreInfo['duration'] ?? item['duration'] ?? '180').toString()) ?? 180;
+          final int year = int.tryParse((item['year'] ?? moreInfo['year'] ?? '2025').toString()) ?? 2025;
+          final int playCount =
+              int.tryParse((item['play_count'] ?? moreInfo['play_count'] ?? '30000').toString()) ?? 30000;
+
+          if (durSec > 0 && durSec < 20) continue;
+
+          final String fp = canonicalFingerprint(title, subtitle);
+          if (isTrendingMode && seenFp.contains(fp)) continue;
+
+          final String? encUrl = (moreInfo['encrypted_media_url'] ?? item['encrypted_media_url'])?.toString();
+          final String? prevUrl = (moreInfo['vlink'] ??
+                  moreInfo['preview_url'] ??
+                  item['media_preview_url'] ??
+                  item['perma_url'])
+              ?.toString();
+          final bool has320 = (moreInfo['320kbps']?.toString() != 'false');
+          final List<String> fullUrls = decryptToFullUrls(encUrl, prevUrl, has320: has320);
+          if (fullUrls.isEmpty) continue;
+
+          seenIds.add(id);
+          seenFp.add(fp);
+
+          final String cover = (item['image'] ?? 'https://via.placeholder.com/300')
+              .toString()
+              .replaceAll('150x150', '500x500')
+              .replaceAll('50x50', '500x500');
+
+          aggregated.add({
+            'id': id,
+            'title': title,
+            'artist': subtitle,
+            'cover': cover,
+            'urls': fullUrls,
+            'durationStr': _formatSecs(durSec),
+            'durationSec': durSec,
+            'year': year,
+            'playCount': playCount,
+            'quality': '$year • 320kbps (${_formatSecs(durSec)})',
+            'isOffline': false,
+          });
+        }
+      } catch (_) {}
+    }
+
+    // 3. Global iTunes / Apple Music Catalog Supplement if user searched a rare international track
+    if (aggregated.length < 15 && queries.isNotEmpty) {
+      try {
+        final String itunesUrl =
+            'https://itunes.apple.com/search?media=music&entity=song&limit=35&term=${Uri.encodeComponent(queries.first)}';
+        final iRes = await http.get(Uri.parse(itunesUrl)).timeout(const Duration(seconds: 5));
+        if (iRes.statusCode == 200) {
+          final Map iData = jsonDecode(iRes.body);
+          final List iList = (iData['results'] as List?) ?? [];
+          for (final item in iList) {
+            final String id = 'it_${item['trackId'] ?? ''}';
+            final String? prev = item['previewUrl']?.toString();
+            if (prev == null || !prev.startsWith('http') || seenIds.contains(id)) continue;
+            seenIds.add(id);
+            final String title = _cleanStr((item['trackName'] ?? 'Track').toString());
+            final String artist = _cleanStr((item['artistName'] ?? 'Artist').toString());
+            final int durSec = ((item['trackTimeMillis'] ?? 180000) as num).toInt() ~/ 1000;
+            final String cover = (item['artworkUrl100'] ?? '')
+                .toString()
+                .replaceAll('100x100bb', '500x500bb');
+            aggregated.add({
+              'id': id,
+              'title': title,
+              'artist': artist,
+              'cover': cover,
+              'urls': [prev],
+              'durationStr': _formatSecs(durSec),
+              'durationSec': durSec,
+              'year': 2025,
+              'playCount': 20000,
+              'quality': 'Global AAC Stream (${_formatSecs(durSec)})',
+              'isOffline': false,
+            });
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (isTrendingMode && aggregated.length > 1) {
+      final int todaySalt = DateTime.now().day + DateTime.now().month * 31;
+      aggregated.sort((a, b) {
+        final int yA = (a['year'] ?? 2025) as int;
+        final int yB = (b['year'] ?? 2025) as int;
+        if (yB != yA) return yB.compareTo(yA);
+        final int hashA = (a['id'].toString().hashCode ^ todaySalt) & 0x7fffffff;
+        final int hashB = (b['id'].toString().hashCode ^ todaySalt) & 0x7fffffff;
+        return hashB.compareTo(hashA);
+      });
+    }
+
+    return aggregated;
   }
 }

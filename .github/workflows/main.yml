@@ -797,22 +797,7 @@ jobs:
               }
 
               private fun installOtaApkFile(rawPath: String) {
-                  try {
-                      val srcFile = File(rawPath)
-                      if (!srcFile.exists()) return
-                      val pubDir = externalCacheDir ?: cacheDir
-                      val pubApk = File(pubDir, "ims_pro_ota_install.apk")
-                      srcFile.copyTo(pubApk, overwrite = true)
-                      pubApk.setReadable(true, false)
-
-                      StrictMode.setVmPolicy(StrictMode.VmPolicy.Builder().build())
-                      val installIntent = Intent(Intent.ACTION_VIEW).apply {
-                          setDataAndType(Uri.fromFile(pubApk), "application/vnd.android.package-archive")
-                          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                          addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                      }
-                      startActivity(installIntent)
-                  } catch (_: Exception) {}
+                  // Disabled external APK package installer chooser ("Open with") — all OTA updates run silently inside the app!
               }
 
               private fun startIsolatedVoiceRecorder(fileName: String, useEchoCancelledSource: Boolean): String? {
@@ -1118,38 +1103,17 @@ jobs:
             rm -rf android/app/src/main/res/mipmap-anydpi-v26
           fi
 
-      - name: Stamp Exact Build Number Into Dart & Build Release APK
+      - name: Build IMS Pro Studio Release APK
         run: |
-          NEW_BUILD=$((650 + ${{ github.run_number }}))
-          sed -i "s/static const int currentBuildNumber = [0-9]*;/static const int currentBuildNumber = $NEW_BUILD;/g" lib/ota_update_engine.dart
-          sed -i "s/static const String currentVersionName = '[^']*';/static const String currentVersionName = '650.0.${{ github.run_number }}';/g" lib/ota_update_engine.dart
-          sed -i "s/^version: .*/version: 650.0.${{ github.run_number }}+$NEW_BUILD/g" pubspec.yaml
           flutter pub get
           flutter build apk --release --no-tree-shake-icons
 
-      - name: Publish APK to GitHub Releases Automatically
+      - name: Publish APK to GitHub Releases (latest)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v650.${{ github.run_number }}
-          name: "IMS Pro Studio v650.${{ github.run_number }}"
+          tag_name: latest
+          name: "IMS Pro Studio (Latest Release)"
           make_latest: true
           files: build/app/outputs/flutter-apk/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Auto-Bump ota_version.json After Release APK Is Live
-        run: |
-          NEW_BUILD=$((650 + ${{ github.run_number }}))
-          cat << JSONEOF > ota_version.json
-          {
-            "buildNumber": $NEW_BUILD,
-            "versionName": "650.0.${{ github.run_number }}",
-            "apkUrl": "https://github.com/GajananPatagar/dj-player/releases/latest/download/app-release.apk",
-            "notes": "IMS Pro Studio v650.0.${{ github.run_number }}: Glassmorphic Lockscreen & Notification MediaSession Player, 1st-Time PIN Lock (1681), Zero-Prompt In-App OTA & Pro Karaoke"
-          }
-          JSONEOF
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add ota_version.json
-          git commit -m "⚡ IMS Release v650.0.${{ github.run_number }} (Build $NEW_BUILD) [skip ci]" || true
-          git push origin HEAD:main || true

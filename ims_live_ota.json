@@ -1,12 +1,26 @@
 {
   "otaChannel": "IMS_LIVE_IN_APP_OTA",
   "versionLabel": "IMS v650.0 Pro",
-  "activationPin": "9999",
+  "activationPin": "1681",
   "forceRelockToken": 1,
   "defaultEqMode": "NORMAL_FLAT_0DB",
   "liveAnnouncement": "✨ IMS Pro v650 • Pure Original 320K Master & Auto-OTA Active",
   "extraOfflineCategories": [
-    "Marriage", "Fashion Show", "Devotional", "Kannada", "Hindi",
-    "DJ Bass & Party", "Mass Entry", "Janapada & Folk", "Haldi & Sangeet", "Reception & Party"
+    "Marriage",
+    "Fashion Show",
+    "Devotional",
+    "Kannada",
+    "Hindi",
+    "DJ Bass & Party",
+    "Mass Entry",
+    "Janapada & Folk",
+    "Haldi & Sangeet",
+    "Reception & Party"
+  ],
+  "dailyTrendingBoostQueries": [
+    "Kannada 2026 Superhit Songs",
+    "Hindi 2026 Chartbusters",
+    "Indian Wedding Marriage Dance Hits",
+    "Fashion Show Ramp Walk Bass Music"
   ]
 }

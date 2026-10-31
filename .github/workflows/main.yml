@@ -75,6 +75,7 @@ jobs:
               private var wifiLock: WifiManager.WifiLock? = null
               private var mediaSession: MediaSession? = null
 
+              private var currentSeqId: Int = 0
               private var currentTitle: String = "IMS Pro Studio"
               private var currentArtist: String = "320kbps Master Engine • Auto-Next Active"
               private var currentCoverUrl: String = ""
@@ -173,19 +174,28 @@ jobs:
                   }
 
                   if (intent?.hasExtra("title") == true) {
-                      currentTitle = intent.getStringExtra("title") ?: currentTitle
+                      val incomingSeq = intent.getIntExtra("seqId", 0)
+                      if (incomingSeq > 0 && incomingSeq < currentSeqId) {
+                          return START_STICKY
+                      }
+                      if (incomingSeq > 0) {
+                          currentSeqId = incomingSeq
+                      }
+                      val newTitle = intent.getStringExtra("title") ?: currentTitle
+                      val titleChanged = (newTitle != currentTitle)
+                      currentTitle = newTitle
                       currentArtist = intent.getStringExtra("artist") ?: currentArtist
                       val newCover = intent.getStringExtra("cover") ?: ""
                       currentIsPlaying = intent.getBooleanExtra("isPlaying", true)
                       currentPosMs = intent.getLongExtra("positionMs", 0L)
                       currentDurMs = intent.getLongExtra("durationMs", 210000L).coerceAtLeast(1000L)
 
-                      if (newCover != currentCoverUrl) {
+                      if (newCover != currentCoverUrl || titleChanged) {
                           currentCoverUrl = newCover
                           cachedArtUrl = ""
                           cachedArtBitmap = null
                           if (newCover.isNotEmpty()) {
-                              fetchAndStylizeCoverArtAsync(newCover, currentTitle)
+                              fetchAndStylizeCoverArtAsync(newCover, currentTitle, currentSeqId)
                           }
                       }
                   }
@@ -194,7 +204,7 @@ jobs:
                   return START_STICKY
               }
 
-              private fun fetchAndStylizeCoverArtAsync(urlStr: String, expectedTitle: String) {
+              private fun fetchAndStylizeCoverArtAsync(urlStr: String, expectedTitle: String, expectedSeq: Int) {
                   Thread {
                       try {
                           val conn = URL(urlStr).openConnection() as HttpURLConnection
@@ -203,10 +213,10 @@ jobs:
                           conn.readTimeout = 5000
                           conn.instanceFollowRedirects = true
                           val rawBmp = conn.inputStream.use { BitmapFactory.decodeStream(it) }
-                          if (rawBmp != null && urlStr == currentCoverUrl) {
+                          if (rawBmp != null && urlStr == currentCoverUrl && expectedSeq == currentSeqId) {
                               val stylized = renderGlassmorphicAlbumArt(rawBmp, expectedTitle)
                               Handler(Looper.getMainLooper()).post {
-                                  if (urlStr == currentCoverUrl) {
+                                  if (urlStr == currentCoverUrl && expectedSeq == currentSeqId) {
                                       cachedArtUrl = urlStr
                                       cachedArtBitmap = stylized
                                       refreshNotificationAndSession()
@@ -807,7 +817,7 @@ jobs:
                       val srcFile = File(rawPath)
                       if (!srcFile.exists()) return
                       val pubDir = externalCacheDir ?: cacheDir
-                      val pubApk = File(pubDir, "ims_pro_ota_800.apk")
+                      val pubApk = File(pubDir, "ims_pro_ota_1000.apk")
                       srcFile.copyTo(pubApk, overwrite = true)
                       pubApk.setReadable(true, false)
 
@@ -887,6 +897,7 @@ jobs:
                   ch.setMethodCallHandler { call, result ->
                       when (call.method) {
                           "updateMediaNotification" -> {
+                              val seqId = (call.argument<Number>("seqId")?.toInt()) ?: 0
                               val title = call.argument<String>("title") ?: "IMS Pro Studio"
                               val artist = call.argument<String>("artist") ?: "Playing in Background"
                               val cover = call.argument<String>("cover") ?: ""
@@ -895,6 +906,7 @@ jobs:
                               val durMs = (call.argument<Number>("durationMs")?.toLong()) ?: 210000L
                               try {
                                   val svcIntent = Intent(this, DjMediaForegroundService::class.java).apply {
+                                      putExtra("seqId", seqId)
                                       putExtra("title", title)
                                       putExtra("artist", artist)
                                       putExtra("cover", cover)
@@ -1134,33 +1146,33 @@ jobs:
             rm -rf android/app/src/main/res/mipmap-anydpi-v26
           fi
 
-      - name: Build IMS Pro Studio v800.0 Release APK
+      - name: Build IMS Pro Studio v1000.0 Release APK
         run: |
           flutter pub get
           flutter build apk --release --no-tree-shake-icons
 
-      - name: Publish APK to GitHub Releases (v800.0)
+      - name: Publish APK to GitHub Releases (v1000.0)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v800.0
-          name: "IMS Pro Studio v800.0 (Exact-Match Audio & Anti-Mute Release)"
+          tag_name: v1000.0
+          name: "IMS Pro Studio v1000.0 (Exact-Match Audio & Anti-Mute Release)"
           make_latest: true
           files: build/app/outputs/flutter-apk/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Update ota_version.json to Build 800 After APK Is Live
+      - name: Update ota_version.json to Build 1000 After APK Is Live
         run: |
           cat << JSONEOF > ota_version.json
           {
-            "buildNumber": 800,
-            "versionName": "800.0",
+            "buildNumber": 1000,
+            "versionName": "1000.0",
             "apkUrl": "https://github.com/GajananPatagar/dj-player/releases/latest/download/app-release.apk",
-            "notes": "IMS Pro v800.0: Exact Song/Notification Sync & Anti-Mute Audio Lock"
+            "notes": "IMS Pro v1000.0: Exact Song/Notification Sync & Anti-Mute Audio Lock"
           }
           JSONEOF
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add ota_version.json
-          git commit -m "⚡ IMS OTA v800.0 Live [skip ci]" || true
+          git commit -m "⚡ IMS OTA v1000.0 Live [skip ci]" || true
           git push origin HEAD:main || true

@@ -8,20 +8,20 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'entry_music_data.dart';
 
-/// Loop-Free Smart OTA Engine (v800.0):
-/// 1) Uses a fixed deterministic build number (800) in both APK and ota_version.json so once installed, 800 == 800 (NEVER loops!).
-/// 2) Records `ims_ota_attempted_build_v800` BEFORE launching the system package installer so it never re-triggers in a loop.
+/// Loop-Free Smart OTA Engine (v1000.0):
+/// 1) Uses a fixed deterministic build number (1000) in both APK and ota_version.json so once installed, 1000 == 1000 (NEVER loops!).
+/// 2) Records `ims_ota_attempted_build_v1000` BEFORE launching the system package installer so it never re-triggers in a loop.
 /// 3) Directly targets Android's native `packageinstaller` (bypasses Termux & ES File Explorer "Open with" sheet).
 class OtaUpdateEngine {
-  static const int currentBuildNumber = 800;
-  static const String currentVersionName = '800.0';
+  static const int currentBuildNumber = 1000;
+  static const String currentVersionName = '1000.0';
   static const String githubRepoOwner = 'GajananPatagar';
   static const String githubRepoName = 'dj-player';
 
   static const MethodChannel _nativeChannel = MethodChannel('dj_native_tts');
 
   static final ValueNotifier<String> otaStatusBanner = ValueNotifier<String>(
-    '✨ IMS v800.0 Pro • Exact-Match Audio & Anti-Mute Lock Active',
+    '✨ IMS v1000.0 Pro • Exact-Match Audio & Anti-Mute Lock Active',
   );
   static final ValueNotifier<double?> otaDownloadProgress = ValueNotifier<double?>(null);
   static final ValueNotifier<String> dailyRefreshStamp = ValueNotifier<String>('');
@@ -63,7 +63,7 @@ class OtaUpdateEngine {
   }) async {
     try {
       final Map<String, String> headers = {
-        'User-Agent': 'IMS-InApp-OTA/800.0 (Android)',
+        'User-Agent': 'IMS-InApp-OTA/1000.0 (Android)',
         'Accept': 'application/json',
         'Cache-Control': 'no-cache',
       };
@@ -113,7 +113,7 @@ class OtaUpdateEngine {
           if (onContentRefresh != null) {
             await onContentRefresh();
           }
-          otaStatusBanner.value = '✅ IMS Cloud Synced Live (${data['versionLabel'] ?? 'IMS v800 Pro'})';
+          otaStatusBanner.value = '✅ IMS Cloud Synced Live (${data['versionLabel'] ?? 'IMS v1000 Pro'})';
         } else if (oldHash.isEmpty) {
           await prefs.setString('ims_live_ota_hash', newHash);
         }
@@ -129,12 +129,12 @@ class OtaUpdateEngine {
     try {
       final prefs = await SharedPreferences.getInstance();
       final String today = _todayDateKey();
-      final String lastUpdatedDay = prefs.getString('v800_last_daily_self_update') ?? '';
+      final String lastUpdatedDay = prefs.getString('v1000_last_daily_self_update') ?? '';
       dailyRefreshStamp.value = 'Synced $today';
 
       if (lastUpdatedDay != today) {
         await onDailyContentRefresh();
-        await prefs.setString('v800_last_daily_self_update', today);
+        await prefs.setString('v1000_last_daily_self_update', today);
         otaStatusBanner.value = '🟢 Auto-Updated for $today • IMS v$currentVersionName Pro';
       }
     } catch (_) {}
@@ -153,14 +153,14 @@ class OtaUpdateEngine {
       await syncInAppLiveCloudOta(forceRefresh: forceManualCheck);
 
       final prefs = await SharedPreferences.getInstance();
-      final int alreadyAttemptedBuild = prefs.getInt('ims_ota_attempted_build_v800') ?? currentBuildNumber;
+      final int alreadyAttemptedBuild = prefs.getInt('ims_ota_attempted_build_v1000') ?? currentBuildNumber;
 
       int remoteBuild = currentBuildNumber;
       String remoteVersion = currentVersionName;
       String? apkDownloadUrl;
 
       final Map<String, String> headers = {
-        'User-Agent': 'IMS-OTA-Updater/800.0 (Android)',
+        'User-Agent': 'IMS-OTA-Updater/1000.0 (Android)',
         'Accept': 'application/json',
         'Cache-Control': 'no-cache',
       };
@@ -184,7 +184,7 @@ class OtaUpdateEngine {
 
       if (shouldTriggerApk) {
         // Lock this build number immediately BEFORE downloading so it can NEVER loop even if dismissed!
-        await prefs.setInt('ims_ota_attempted_build_v800', remoteBuild);
+        await prefs.setInt('ims_ota_attempted_build_v1000', remoteBuild);
         otaStatusBanner.value = '⚡ Downloading IMS v$remoteVersion Update...';
         onProgressCallback?.call('⚡ Downloading IMS v$remoteVersion Update...', 0.05);
         await _downloadAndInstallApkOnce(
@@ -217,7 +217,7 @@ class OtaUpdateEngine {
       otaDownloadProgress.value = 0.02;
       final client = http.Client();
       final req = http.Request('GET', Uri.parse(apkUrl));
-      req.headers['User-Agent'] = 'Mozilla/5.0 (Linux; Android 14) IMS-OTA/800.0';
+      req.headers['User-Agent'] = 'Mozilla/5.0 (Linux; Android 14) IMS-OTA/1000.0';
       final http.StreamedResponse response = await client.send(req).timeout(const Duration(seconds: 30));
 
       if (response.statusCode != 200) {

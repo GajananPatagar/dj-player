@@ -51,6 +51,9 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
   bool _isLoadingMore = false;
   bool _isBusySwitching = false;
   int _playRequestToken = 0;
+  int _notifSeqId = 0;
+  int _lastCompletionEpochMs = 0;
+  int _trackStartedEpochMs = 0;
   int _lastVolGuardSec = -1;
   bool _showQuickDjPads = false;
   bool _autoDjCrossfade = true;
@@ -174,11 +177,9 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
           _syncForegroundNotification();
         } else if (action == 'HEARTBEAT') {
           if (_shouldBePlayingInBg && !_isBusySwitching && _nowPlayingTrack != null) {
-            if (_duration.inMilliseconds > 4000 &&
-                _position.inMilliseconds >= (_duration.inMilliseconds - 450)) {
-              _handleTrackCompleted();
-            } else if (!_isPlaying &&
-                _duration.inMilliseconds > 4000 &&
+            if (!_isPlaying &&
+                _position.inSeconds >= 12 &&
+                _duration.inMilliseconds > 15000 &&
                 _position.inMilliseconds >= (_duration.inMilliseconds - 1500)) {
               _handleTrackCompleted();
             }
@@ -212,21 +213,16 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
         _player.seek(Duration(seconds: _loopPointASec!));
         return;
       }
-
-      if (_shouldBePlayingInBg &&
-          !_isBusySwitching &&
-          _duration.inMilliseconds > 5000 &&
-          pos.inMilliseconds >= (_duration.inMilliseconds - 320)) {
-        _handleTrackCompleted();
-      }
     });
 
     _player.onDurationChanged.listen((dur) {
+      if (dur.inSeconds <= 1) return;
       if (mounted) {
         setState(() => _duration = dur);
       } else {
         _duration = dur;
       }
+      _syncForegroundNotification();
     });
 
     _player.onPlayerComplete.listen((_) {
@@ -244,14 +240,17 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
       if (changed) {
         _syncForegroundNotification();
       }
-      if (state == PlayerState.completed) {
-        _handleTrackCompleted();
-      }
     });
   }
 
   void _handleTrackCompleted() {
     if (_isBusySwitching || _playbackQueue.isEmpty) return;
+    final int nowMs = DateTime.now().millisecondsSinceEpoch;
+    // Debounce guard: never double-fire completion within 3 seconds of track start or last completion!
+    if (nowMs - _trackStartedEpochMs < 3000) return;
+    if (nowMs - _lastCompletionEpochMs < 2500) return;
+    _lastCompletionEpochMs = nowMs;
+
     if (_loopCurrent && _nowPlayingTrack != null) {
       _playFromQueueIndex(_queueIndex);
     } else {
@@ -262,12 +261,16 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
   Future<void> _syncForegroundNotification() async {
     if (_nowPlayingTrack == null) return;
     try {
-      final int durMs = _duration.inMilliseconds > 0
+      final int seq = ++_notifSeqId;
+      final int durMs = _duration.inMilliseconds > 1000
           ? _duration.inMilliseconds
           : (((_nowPlayingTrack!['durationSec'] as int?) ?? 210) * 1000);
+      final String rawTitle = (_nowPlayingTrack!['title'] ?? 'IMS Pro Track').toString();
+      final String cleanArtist = (_nowPlayingTrack!['artist'] ?? 'IMS Pro Studio').toString();
       await _nativeChannel.invokeMethod('updateMediaNotification', {
-        'title': (_nowPlayingTrack!['title'] ?? 'IMS Pro Track').toString(),
-        'artist': '${_nowPlayingTrack!['artist'] ?? 'IMS Studio'} • $_activeQueueScopeBanner',
+        'seqId': seq,
+        'title': '#${_queueIndex + 1} • $rawTitle',
+        'artist': cleanArtist,
         'cover': (_nowPlayingTrack!['cover'] ?? '').toString(),
         'isPlaying': _isPlaying,
         'positionMs': _position.inMilliseconds,
@@ -467,11 +470,11 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
     if (_playbackQueue.isEmpty || qIdx < 0 || qIdx >= _playbackQueue.length) return;
 
     final int myToken = ++_playRequestToken;
+    _trackStartedEpochMs = DateTime.now().millisecondsSinceEpoch;
     _isBusySwitching = true;
     _shouldBePlayingInBg = true;
     _loopPointASec = null;
     _loopPointBSec = null;
-    _position = Duration.zero;
 
     if (MasterVolumeController.page1MusicVolume.value <= 0.05) {
       MasterVolumeController.page1MusicVolume.value = 1.0;
@@ -479,13 +482,17 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
 
     final Map<String, dynamic> track = Map<String, dynamic>.from(_playbackQueue[qIdx]);
     final int customStartSec = int.tryParse((track['customStartSec'] ?? '0').toString()) ?? 0;
+    final int estDurSec = int.tryParse((track['durationSec'] ?? '210').toString()) ?? 210;
+
+    _position = Duration.zero;
+    _duration = Duration(seconds: estDurSec > 0 ? estDurSec : 210);
 
     if (mounted) {
       setState(() {
         _queueIndex = qIdx;
         _nowPlayingTrack = track;
         _isPlaying = true;
-        _statusBadge = '⚡ Playing #${qIdx + 1}: ${track['title']}';
+        _statusBadge = '⚡ Loading #${qIdx + 1}: ${track['title']}';
       });
     } else {
       _queueIndex = qIdx;
@@ -503,16 +510,25 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
           ? 0.15
           : MasterVolumeController.page1MusicVolume.value.clamp(0.25, 1.0);
 
+      await _player.stop();
+      if (myToken != _playRequestToken) return;
+
+      // 1. Offline local file playback
       if (track['localPath'] != null) {
         final File file = File(track['localPath'].toString());
         if (await file.exists()) {
           if (myToken != _playRequestToken) return;
-          await _player.stop();
           await _player.setVolume(targetVol);
           await _player.play(DeviceFileSource(file.path), volume: targetVol);
-          await _player.setPlaybackRate(_playbackSpeed);
-          if (customStartSec > 0 && myToken == _playRequestToken) {
-            await _player.seek(Duration(seconds: customStartSec));
+          if ((_playbackSpeed - 1.0).abs() > 0.01) {
+            Future.delayed(const Duration(milliseconds: 350), () {
+              if (myToken == _playRequestToken) _player.setPlaybackRate(_playbackSpeed);
+            });
+          }
+          if (customStartSec > 0) {
+            Future.delayed(const Duration(milliseconds: 300), () {
+              if (myToken == _playRequestToken) _player.seek(Duration(seconds: customStartSec));
+            });
           }
           if (mounted && myToken == _playRequestToken) {
             setState(() {
@@ -525,19 +541,33 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
         }
       }
 
+      // 2. Online stream playback: Verify live HTTP-200 stream URL first so ExoPlayer/MediaPlayer NEVER hits an HTTP 404 dead stream!
       final List urls = (track['urls'] as List?) ?? [];
-      bool started = false;
-      for (final rawUrl in urls) {
+      if (urls.isEmpty) return;
+
+      final String? verifiedUrl = await SaavnDesDecryptor.resolvePlayableStreamUrl(urls);
+      if (myToken != _playRequestToken) return;
+
+      final List<String> orderedTryList = [
+        if (verifiedUrl != null && verifiedUrl.isNotEmpty) verifiedUrl,
+        ...urls.map((e) => e.toString()).where((u) => u != verifiedUrl),
+      ];
+
+      for (final streamUrl in orderedTryList) {
         if (myToken != _playRequestToken) return;
         try {
-          await _player.stop();
           await _player.setVolume(targetVol);
-          await _player.play(UrlSource(rawUrl.toString()), volume: targetVol);
-          await _player.setPlaybackRate(_playbackSpeed);
-          if (customStartSec > 0 && myToken == _playRequestToken) {
-            await _player.seek(Duration(seconds: customStartSec));
+          await _player.play(UrlSource(streamUrl), volume: targetVol);
+          if ((_playbackSpeed - 1.0).abs() > 0.01) {
+            Future.delayed(const Duration(milliseconds: 450), () {
+              if (myToken == _playRequestToken) _player.setPlaybackRate(_playbackSpeed);
+            });
           }
-          started = true;
+          if (customStartSec > 0) {
+            Future.delayed(const Duration(milliseconds: 400), () {
+              if (myToken == _playRequestToken) _player.seek(Duration(seconds: customStartSec));
+            });
+          }
           if (mounted && myToken == _playRequestToken) {
             setState(() {
               _statusBadge = '🟢 Playing #${qIdx + 1}: ${track['title']}';
@@ -545,12 +575,6 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
           }
           break;
         } catch (_) {}
-      }
-
-      if (!started && myToken == _playRequestToken && _playbackQueue.length > 1) {
-        _isBusySwitching = false;
-        _playNext();
-        return;
       }
     } finally {
       if (myToken == _playRequestToken) {

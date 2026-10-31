@@ -255,20 +255,21 @@ class SaavnDesDecryptor {
   }
 
   static Future<String?> resolvePlayableStreamUrl(List<dynamic> candidateUrls) async {
+    if (candidateUrls.isEmpty) return null;
     for (final raw in candidateUrls) {
-      final String u = raw.toString();
+      final String u = raw.toString().trim();
       if (!u.startsWith('http')) continue;
       try {
         final res = await http.head(
           Uri.parse(u),
-          headers: {'User-Agent': 'Mozilla/5.0 (Android 14; Mobile)'},
-        ).timeout(const Duration(milliseconds: 1800));
+          headers: {'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Mobile)'},
+        ).timeout(const Duration(milliseconds: 1200));
         if (res.statusCode >= 200 && res.statusCode < 400) {
           return u;
         }
       } catch (_) {}
     }
-    return candidateUrls.isNotEmpty ? candidateUrls.first.toString() : null;
+    return candidateUrls.first.toString();
   }
 
   static String _cleanStr(String s) {
@@ -421,7 +422,7 @@ class SaavnDesDecryptor {
                   item['media_preview_url'] ??
                   item['perma_url'])
               ?.toString();
-          final bool has320 = (moreInfo['320kbps']?.toString() != 'false');
+          final bool has320 = (moreInfo['320kbps']?.toString() == 'true');
           final List<String> fullUrls = decryptToFullUrls(encUrl, prevUrl, has320: has320);
           if (fullUrls.isEmpty) continue;
 

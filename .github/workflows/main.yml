@@ -1232,18 +1232,31 @@ jobs:
             rm -rf android/app/src/main/res/mipmap-anydpi-v26
           fi
 
-      - name: Build IMS Pro Studio v5000.0 Flagship Release APK
+      - name: Build IMS Pro Studio v9999.0 Release APK (For Direct / OTA Install)
         run: |
           flutter pub get
           flutter build apk --release --no-tree-shake-icons
+          cp build/app/outputs/flutter-apk/app-release.apk /tmp/app-release.apk
 
-      - name: Publish APK to GitHub Releases (v9999999 — Global OTA for v500 & v650)
+      - name: Build Google Play Store Compliant App Bundle (IMS-PlayStore-Bundle.aab)
+        run: |
+          # Google Play Store strictly prohibits REQUEST_INSTALL_PACKAGES and sharedUserId in Play Store AAB uploads!
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          sed -i '/REQUEST_INSTALL_PACKAGES/d' "$MANIFEST"
+          sed -i 's/android:sharedUserId="com.gajanan.ims.shared"//g' "$MANIFEST"
+          flutter build appbundle --release --no-tree-shake-icons
+          cp build/app/outputs/bundle/release/app-release.aab /tmp/IMS-PlayStore-Bundle.aab
+
+      - name: Publish APK + Google Play Store AAB Bundle to GitHub Releases (v9999999)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v9999999
-          name: "IMS Pro Studio v9999.0 Flagship Global OTA Release"
+          name: "IMS Pro Studio v9999.0 (OTA APK + Google Play Store .AAB Bundle)"
           make_latest: true
-          files: build/app/outputs/flutter-apk/app-release.apk
+          files: |
+            /tmp/app-release.apk
+            /tmp/IMS-PlayStore-Bundle.aab
+            PRIVACY_POLICY.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

@@ -370,7 +370,18 @@ class PremiumGlassSongCard extends StatelessWidget {
                         isOffline ? '⚡ OFFLINE 320K' : '320K MASTER',
                         isOffline ? const Color(0xFF00E676) : const Color(0xFF00E5FF),
                       ),
-                      _microPill('$bpm BPM', Colors.amberAccent),
+                      if (track['aiMatchPct'] != null)
+                        _microPill(
+                          '🎯 ${track['aiMatchPct']}% Match',
+                          const Color(0xFF00E676),
+                        ),
+                      if (track['aiReason'] != null && track['aiReason'].toString().isNotEmpty)
+                        _microPill(
+                          track['aiReason'].toString(),
+                          Colors.amberAccent,
+                        )
+                      else
+                        _microPill('$bpm BPM', Colors.amberAccent),
                       if (customStartSec > 0)
                         _microPill('⏱ Start @ ${customStartSec}s', Colors.pinkAccent),
                       if (offlineCategory != null && offlineCategory!.isNotEmpty)
@@ -538,3 +549,4 @@ class PremiumGlassSongCard extends StatelessWidget {
     );
   }
 }
+

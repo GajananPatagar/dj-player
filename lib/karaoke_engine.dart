@@ -526,3 +526,4 @@ class KaraokeEngine {
     return out;
   }
 }
+

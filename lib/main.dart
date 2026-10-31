@@ -1228,3 +1228,4 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
     );
   }
 }
+

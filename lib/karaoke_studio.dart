@@ -1624,3 +1624,4 @@ class _KaraokeStudioScreenState extends State<KaraokeStudioScreen> {
     );
   }
 }
+

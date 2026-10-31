@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'ai_recommendation_engine.dart';
 import 'des_helper.dart';
 import 'entry_music_data.dart';
 import 'glass_widgets.dart';
@@ -26,6 +27,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
   final TextEditingController _searchCtrl = TextEditingController();
 
   final List<Map<String, String>> _onlineCategories = const [
+    {'label': '🎯 For You (AI Mix)', 'key': 'For You (AI Mix)', 'query': 'Kannada Hindi Superhit Songs'},
     {'label': '👑 Kannada', 'key': 'Kannada', 'query': 'Kannada Superhit Songs'},
     {'label': '🇮🇳 Hindi', 'key': 'Hindi', 'query': 'Hindi Bollywood Hit Songs'},
     {'label': '💍 Marriage', 'key': 'Marriage', 'query': 'Indian Wedding Marriage Dance Songs Kannada Hindi'},
@@ -101,6 +103,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
       }
       if (mounted) setState(() {});
     });
+    AiRecommendationEngine.instance.ensureInitialized();
     _purgeAllLegacyCacheFiles();
     _configureBackgroundAudioContext();
     _setupListeners();
@@ -265,6 +268,16 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
     if (nowMs - _lastCompletionEpochMs < 2500) return;
     _lastCompletionEpochMs = nowMs;
 
+    if (_nowPlayingTrack != null) {
+      AiRecommendationEngine.instance.recordListenRetention(
+        trackId: (_nowPlayingTrack!['id'] ?? '').toString(),
+        title: (_nowPlayingTrack!['title'] ?? '').toString(),
+        artist: (_nowPlayingTrack!['artist'] ?? '').toString(),
+        category: _selectedOnlineCat,
+        listenedSeconds: _duration.inSeconds > 0 ? _duration.inSeconds : 210,
+        completedFullSong: true,
+      );
+    }
     if (_loopCurrent && _nowPlayingTrack != null) {
       _playFromQueueIndex(_queueIndex);
     } else {
@@ -341,6 +354,14 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
     final DateTime now = DateTime.now();
     final int daySeed = now.year * 1000 + now.month * 35 + now.day;
 
+    await AiRecommendationEngine.instance.ensureInitialized();
+    if (catKey == 'For You (AI Mix)') {
+      final List<String> aiQueries = AiRecommendationEngine.instance.generatePersonalizedDailyQueries(maxQueries: 5);
+      _lastActiveQueries = aiQueries;
+      await _executeOmniSearch(aiQueries, isTrendingMode: true, append: !resetPage);
+      return;
+    }
+
     final Map<String, String> catObj = _onlineCategories.firstWhere(
       (c) => c['key'] == catKey,
       orElse: () => _onlineCategories.first,
@@ -374,6 +395,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
       await _fetchCategoryOrTrending(_selectedOnlineCat, resetPage: true);
       return;
     }
+    AiRecommendationEngine.instance.recordSearchQuery(q);
     setState(() {
       _viewMode = 'SONGS';
       _currentSearchPage = 1;
@@ -419,6 +441,39 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
       isTrendingMode: isTrendingMode,
     );
 
+    await AiRecommendationEngine.instance.ensureInitialized();
+    for (final item in fetched) {
+      final String tid = (item['id'] ?? '').toString();
+      final String tTitle = (item['title'] ?? '').toString();
+      final String tArtist = (item['artist'] ?? '').toString();
+      final bool isFav = VaultManager.isFavorite(tid, isEntry: false);
+      item['aiScore'] = AiRecommendationEngine.instance.computeTrackAffinityScore(
+        trackId: tid,
+        title: tTitle,
+        artist: tArtist,
+        category: _selectedOnlineCat,
+        isFavorited: isFav,
+      );
+      item['aiMatchPct'] = AiRecommendationEngine.instance.computeMatchPercentage(
+        trackId: tid,
+        title: tTitle,
+        artist: tArtist,
+        category: _selectedOnlineCat,
+        isFavorited: isFav,
+      );
+      item['aiReason'] = AiRecommendationEngine.instance.getRecommendationReason(
+        trackId: tid,
+        title: tTitle,
+        artist: tArtist,
+        category: _selectedOnlineCat,
+        isFavorited: isFav,
+      );
+    }
+
+    if (isTrendingMode) {
+      fetched.sort((a, b) => ((b['aiScore'] as double?) ?? 0.0).compareTo((a['aiScore'] as double?) ?? 0.0));
+    }
+
     if (mounted) {
       setState(() {
         if (append) {
@@ -433,7 +488,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
         }
         _isLoading = false;
         _isLoadingMore = false;
-        _statusBadge = '🟢 ${_tracks.length} Full Songs Ready • Screen-Off Auto-Next Active';
+        _statusBadge = '🟢 ${_tracks.length} AI-Ranked Songs Ready • Screen-Off Auto-Next Active';
       });
     }
   }
@@ -483,6 +538,17 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
   Future<void> _playFromQueueIndex(int qIdx) async {
     if (_playbackQueue.isEmpty || qIdx < 0 || qIdx >= _playbackQueue.length) return;
 
+    if (_nowPlayingTrack != null && _position.inSeconds > 2) {
+      AiRecommendationEngine.instance.recordListenRetention(
+        trackId: (_nowPlayingTrack!['id'] ?? '').toString(),
+        title: (_nowPlayingTrack!['title'] ?? '').toString(),
+        artist: (_nowPlayingTrack!['artist'] ?? '').toString(),
+        category: _selectedOnlineCat,
+        listenedSeconds: _position.inSeconds,
+        completedFullSong: false,
+      );
+    }
+
     final int myToken = ++_playRequestToken;
     _trackStartedEpochMs = DateTime.now().millisecondsSinceEpoch;
     _isBusySwitching = true;
@@ -514,6 +580,14 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
       _isPlaying = true;
     }
     _nowPlayingNotifier.value = track;
+
+    AiRecommendationEngine.instance.recordSongPlay(
+      trackId: (track['id'] ?? '').toString(),
+      title: (track['title'] ?? '').toString(),
+      artist: (track['artist'] ?? '').toString(),
+      category: (track['category'] ?? _selectedOnlineCat).toString(),
+      activeSearchQuery: _searchCtrl.text,
+    );
 
     _syncForegroundNotification();
     if (!_customEqEnabled) {
@@ -1391,6 +1465,267 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
     }
   }
 
+  Future<void> _openAiTasteAndDailyMixModal() async {
+    await AiRecommendationEngine.instance.ensureInitialized();
+    if (!mounted) return;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final topArtists = AiRecommendationEngine.instance.getTopArtists(limit: 8);
+        final topGenres = AiRecommendationEngine.instance.getTopGenres(limit: 6);
+        final recentSearches = AiRecommendationEngine.instance.getRecentSearches(limit: 8);
+        final dailyQueries = AiRecommendationEngine.instance.generatePersonalizedDailyQueries(maxQueries: 6);
+        final int totalPlays = AiRecommendationEngine.instance.getTotalSongsPlayedCount();
+        final int totalMins = AiRecommendationEngine.instance.getTotalListenMinutes();
+
+        return DraggableScrollableSheet(
+          initialChildSize: 0.82,
+          minChildSize: 0.55,
+          maxChildSize: 0.95,
+          expand: false,
+          builder: (_, scrollCtrl) {
+            return GlassBox(
+              margin: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(16),
+              borderRadius: 24,
+              blur: 24,
+              tintColor: const Color(0xFF0A1224),
+              borderColor: Colors.amberAccent,
+              borderWidth: 1.5,
+              child: ListView(
+                controller: scrollCtrl,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.auto_awesome_rounded, color: Colors.amberAccent, size: 26),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '🧠 YouTube & Instagram Style AI Daily Mix',
+                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Colors.white),
+                            ),
+                            Text(
+                              'Learns from every song you play, complete, like & search',
+                              style: TextStyle(fontSize: 11, color: Color(0xFF00E5FF)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, color: Colors.white70),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF132242),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.5)),
+                          ),
+                          child: Column(
+                            children: [
+                              Text(
+                                '$totalPlays',
+                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF00E676)),
+                              ),
+                              const Text('Songs Tracked', style: TextStyle(fontSize: 10.5, color: Colors.white70)),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF132242),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.amberAccent.withOpacity(0.5)),
+                          ),
+                          child: Column(
+                            children: [
+                              Text(
+                                '${totalMins}m',
+                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.amberAccent),
+                              ),
+                              const Text('Watch/Listen Time', style: TextStyle(fontSize: 10.5, color: Colors.white70)),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF132242),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.pinkAccent.withOpacity(0.5)),
+                          ),
+                          child: Column(
+                            children: [
+                              Text(
+                                '${recentSearches.length}',
+                                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.pinkAccent),
+                              ),
+                              const Text('Search Signals', style: TextStyle(fontSize: 10.5, color: Colors.white70)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.amberAccent,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    icon: const Icon(Icons.play_circle_fill_rounded, size: 22),
+                    label: const Text(
+                      '🎯 Load & Play My Personalized AI Daily Mix Now',
+                      style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
+                    ),
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _fetchCategoryOrTrending('For You (AI Mix)', resetPage: true);
+                    },
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    "🔥 Today's Smart AI Discovery Mixes (Tap Any to Load):",
+                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900, color: Colors.amberAccent),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: dailyQueries.map((q) {
+                      return ActionChip(
+                        backgroundColor: const Color(0xFF16284C),
+                        side: const BorderSide(color: Color(0xFF00E5FF)),
+                        label: Text(
+                          '⚡ $q',
+                          style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.bold),
+                        ),
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _searchCtrl.text = q;
+                          _searchAnySongWorldwide(q);
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  if (topArtists.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    const Text(
+                      '🎧 Your Most-Loved Artists (Based on Plays & Retention):',
+                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900, color: Color(0xFF00E676)),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: topArtists.map((entry) {
+                        return ActionChip(
+                          backgroundColor: const Color(0xFF0F292A),
+                          side: const BorderSide(color: Color(0xFF00E676)),
+                          label: Text(
+                            '🎵 ${entry.key.toUpperCase()} (${entry.value.toInt()} pts)',
+                            style: const TextStyle(fontSize: 10.5, color: Color(0xFF00E676), fontWeight: FontWeight.w900),
+                          ),
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            _searchCtrl.text = entry.key;
+                            _searchAnySongWorldwide(entry.key);
+                          },
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                  if (recentSearches.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    const Text(
+                      '🔎 Your Recent Searches Driving Recommendations:',
+                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900, color: Colors.pinkAccent),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: recentSearches.map((s) {
+                        return ActionChip(
+                          backgroundColor: const Color(0xFF281532),
+                          side: const BorderSide(color: Colors.pinkAccent),
+                          label: Text(
+                            '🔍 $s',
+                            style: const TextStyle(fontSize: 10.5, color: Colors.white, fontWeight: FontWeight.bold),
+                          ),
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            _searchCtrl.text = s;
+                            _searchAnySongWorldwide(s);
+                          },
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                  if (topGenres.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    const Text(
+                      '📊 Your Genre & Language Taste Radar:',
+                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900, color: Color(0xFF00E5FF)),
+                    ),
+                    const SizedBox(height: 8),
+                    ...topGenres.map((g) {
+                      final double pct = (g.value / (topGenres.first.value > 0 ? topGenres.first.value : 1.0)).clamp(0.15, 1.0);
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(g.key, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
+                                Text('${(pct * 100).toInt()}% Affinity', style: const TextStyle(fontSize: 10, color: Color(0xFF00E5FF))),
+                              ],
+                            ),
+                            const SizedBox(height: 3),
+                            LinearProgressIndicator(
+                              value: pct,
+                              backgroundColor: Colors.white12,
+                              color: const Color(0xFF00E5FF),
+                              minHeight: 5,
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _openLiveQueueAndBatchDownloadModal() async {
     _syncQueueWithVisibleIfChanged();
     showModalBottomSheet(
@@ -2128,6 +2463,26 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
                               ),
                               const SizedBox(width: 5),
                               GestureDetector(
+                                onTap: _openAiTasteAndDailyMixModal,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.amberAccent.withOpacity(0.20),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: Colors.amberAccent),
+                                  ),
+                                  child: const Text(
+                                    '🧠 AI Mix',
+                                    style: TextStyle(
+                                      fontSize: 9.2,
+                                      color: Colors.amberAccent,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 5),
+                              GestureDetector(
                                 onTap: _openLiveQueueAndBatchDownloadModal,
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -2852,3 +3207,4 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
     );
   }
 }
+

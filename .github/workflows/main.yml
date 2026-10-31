@@ -445,8 +445,10 @@ jobs:
           $PKG_LINE
           import android.Manifest
           import android.app.Activity
+          import android.app.PendingIntent
           import android.content.Context
           import android.content.Intent
+          import android.content.pm.PackageInstaller
           import android.content.pm.PackageManager
           import android.media.MediaCodec
           import android.media.MediaExtractor
@@ -547,6 +549,17 @@ jobs:
               override fun onNewIntent(intent: Intent) {
                   super.onNewIntent(intent)
                   handleIncomingShareIntent(intent)
+                  if (intent.action == "com.gajanan.djplaycommentry.OTA_SESSION_COMPLETE") {
+                      val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, -999)
+                      if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
+                          @Suppress("DEPRECATION")
+                          val confirmIntent = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
+                          if (confirmIntent != null) {
+                              confirmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                              startActivity(confirmIntent)
+                          }
+                      }
+                  }
               }
 
               private fun handleIncomingShareIntent(intent: Intent?) {
@@ -824,21 +837,6 @@ jobs:
                       }
                       masterLoudness?.setTargetGain(loudnessMb.coerceIn(0, 1500))
                   } catch (_: Exception) {}
-              }
-
-              override fun onNewIntent(intent: Intent) {
-                  super.onNewIntent(intent)
-                  if (intent.action == "com.gajanan.djplaycommentry.OTA_SESSION_COMPLETE") {
-                      val status = intent.getIntExtra(android.content.pm.PackageInstaller.EXTRA_STATUS, -999)
-                      if (status == android.content.pm.PackageInstaller.STATUS_PENDING_USER_ACTION) {
-                          @Suppress("DEPRECATION")
-                          val confirmIntent = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
-                          if (confirmIntent != null) {
-                              confirmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                              startActivity(confirmIntent)
-                          }
-                      }
-                  }
               }
 
               private fun installOtaApkFile(rawPath: String) {
@@ -1259,7 +1257,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Activate Live ota_version.json (Build 9999999 > 650060 & 500058) After APK Is Live
+      - name: Activate Live ota_version.json & ims_live_ota.json (Build 9999999 > 650060) ONLY After APK Build & Upload Succeed
         run: |
           git config user.name "IMS-OTA-Bot"
           git config user.email "ota@ims-studio.pro"
@@ -1271,9 +1269,39 @@ jobs:
             "buildNumber": 9999999,
             "versionName": "9999.0",
             "apkUrl": "https://github.com/GajananPatagar/dj-player/releases/download/v9999999/app-release.apk",
-            "notes": "IMS Pro Studio v9999.0 Flagship OTA Update: 100% Exact Song/Notification Sync, Zero-Crash Audio Unmute Engine, Live Queue Manager & Pro Karaoke"
+            "notes": "IMS Pro Studio v9999.0 Flagship OTA Update: YouTube/Instagram AI Daily Song Engine, 100% Exact Song/Notification Sync, Zero-Crash Audio Unmute & Pro Karaoke"
           }
           OTAEOF
-          git add ota_version.json
-          git commit -m "⚡ Activate Live OTA Build 9999999 for All v500 and v650 Devices [skip ci]" || true
+          cat << 'LIVEEOF' > ims_live_ota.json
+          {
+            "otaChannel": "IMS_LIVE_IN_APP_OTA",
+            "versionLabel": "IMS v9999.0 AI Flagship",
+            "activationPin": "1681",
+            "forceRelockToken": 1,
+            "defaultEqMode": "NORMAL_FLAT_0DB",
+            "liveAnnouncement": "✨ IMS Pro v9999.0 • AI Daily Mix Engine & 320K Master Active",
+            "extraOfflineCategories": [
+              "🎯 For You (AI Mix)",
+              "Marriage",
+              "Fashion Show",
+              "Devotional",
+              "Kannada",
+              "Hindi",
+              "DJ Bass & Party",
+              "Mass Entry",
+              "Janapada & Folk",
+              "Haldi & Sangeet",
+              "Reception & Party"
+            ],
+            "dailyTrendingBoostQueries": [
+              "Kannada 2026 Superhit Songs",
+              "Hindi 2026 Chartbusters",
+              "Indian Wedding Marriage Dance Hits",
+              "Fashion Show Ramp Walk Bass Music"
+            ]
+          }
+          LIVEEOF
+          git add ota_version.json ims_live_ota.json
+          git commit -m "⚡ Activate Verified OTA Build 9999999 + Live Banner After Successful APK Release [skip ci]" || true
           git push origin HEAD:main || true
+

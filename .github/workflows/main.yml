@@ -826,12 +826,62 @@ jobs:
                   } catch (_: Exception) {}
               }
 
+              override fun onNewIntent(intent: Intent) {
+                  super.onNewIntent(intent)
+                  if (intent.action == "com.gajanan.djplaycommentry.OTA_SESSION_COMPLETE") {
+                      val status = intent.getIntExtra(android.content.pm.PackageInstaller.EXTRA_STATUS, -999)
+                      if (status == android.content.pm.PackageInstaller.STATUS_PENDING_USER_ACTION) {
+                          @Suppress("DEPRECATION")
+                          val confirmIntent = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
+                          if (confirmIntent != null) {
+                              confirmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                              startActivity(confirmIntent)
+                          }
+                      }
+                  }
+              }
+
               private fun installOtaApkFile(rawPath: String) {
                   try {
                       val srcFile = File(rawPath)
-                      if (!srcFile.exists()) return
+                      if (!srcFile.exists() || srcFile.length() < 1000000L) return
+
+                      try {
+                          val pkgInstaller = applicationContext.packageManager.packageInstaller
+                          val params = android.content.pm.PackageInstaller.SessionParams(
+                              android.content.pm.PackageInstaller.SessionParams.MODE_FULL_INSTALL
+                          )
+                          params.setAppPackageName(applicationContext.packageName)
+                          if (Build.VERSION.SDK_INT >= 31) {
+                              params.setRequireUserAction(
+                                  android.content.pm.PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED
+                              )
+                          }
+                          val sessionId = pkgInstaller.createSession(params)
+                          val session = pkgInstaller.openSession(sessionId)
+                          session.openWrite("ims_ota_update_5000.apk", 0, srcFile.length()).use { outStream ->
+                              srcFile.inputStream().use { inStream ->
+                                  inStream.copyTo(outStream, 65536)
+                              }
+                              session.fsync(outStream)
+                          }
+                          val callbackIntent = Intent(this, MainActivity::class.java).apply {
+                              action = "com.gajanan.djplaycommentry.OTA_SESSION_COMPLETE"
+                              addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                          }
+                          val piFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                              PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+                          } else {
+                              PendingIntent.FLAG_UPDATE_CURRENT
+                          }
+                          val pendingIntent = PendingIntent.getActivity(this, sessionId, callbackIntent, piFlags)
+                          session.commit(pendingIntent.intentSender)
+                          session.close()
+                          return
+                      } catch (_: Exception) {}
+
                       val pubDir = externalCacheDir ?: cacheDir
-                      val pubApk = File(pubDir, "ims_pro_ota_1000.apk")
+                      val pubApk = File(pubDir, "ims_pro_ota_5000.apk")
                       srcFile.copyTo(pubApk, overwrite = true)
                       pubApk.setReadable(true, false)
 
@@ -842,7 +892,6 @@ jobs:
                           addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                           addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                       }
-                      // Directly target Android's built-in system PackageInstaller so ES File Explorer & Termux never show "Open with"!
                       val resolved = packageManager.queryIntentActivities(installIntent, 0)
                       for (info in resolved) {
                           val pkg = info.activityInfo.packageName.lowercase()
@@ -1190,12 +1239,41 @@ jobs:
           flutter pub get
           flutter build apk --release --no-tree-shake-icons
 
-      - name: Publish APK to GitHub Releases (v5000)
+      - name: Publish APK to GitHub Releases (v9999999 — Global OTA for v500 & v650)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v5000
-          name: "IMS Pro Studio v5000.0 Flagship OTA Release"
+          tag_name: v9999999
+          name: "IMS Pro Studio v9999.0 Flagship Global OTA Release"
           make_latest: true
           files: build/app/outputs/flutter-apk/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Also Mirror APK to v5000 and v1000 Tags
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v5000
+          name: "IMS Pro Studio v9999.0 (v5000 Mirror)"
+          make_latest: false
+          files: build/app/outputs/flutter-apk/app-release.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Activate Live ota_version.json (Build 9999999 > 650060 & 500058) After APK Is Live
+        run: |
+          git config user.name "IMS-OTA-Bot"
+          git config user.email "ota@ims-studio.pro"
+          git checkout -- .
+          git clean -fd
+          git pull --rebase origin main || true
+          cat << 'OTAEOF' > ota_version.json
+          {
+            "buildNumber": 9999999,
+            "versionName": "9999.0",
+            "apkUrl": "https://github.com/GajananPatagar/dj-player/releases/download/v9999999/app-release.apk",
+            "notes": "IMS Pro Studio v9999.0 Flagship OTA Update: 100% Exact Song/Notification Sync, Zero-Crash Audio Unmute Engine, Live Queue Manager & Pro Karaoke"
+          }
+          OTAEOF
+          git add ota_version.json
+          git commit -m "⚡ Activate Live OTA Build 9999999 for All v500 and v650 Devices [skip ci]" || true
+          git push origin HEAD:main || true

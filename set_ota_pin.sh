@@ -4,7 +4,7 @@ NEW_PIN="${1:-1681}"
 cat << JSON > ims_live_ota.json
 {
   "otaChannel": "IMS_LIVE_IN_APP_OTA",
-  "versionLabel": "IMS v5000.0 Flagship",
+  "versionLabel": "IMS v9999.0 Flagship",
   "activationPin": "$NEW_PIN",
   "forceRelockToken": 1,
   "defaultEqMode": "NORMAL_FLAT_0DB",

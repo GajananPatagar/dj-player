@@ -1,7 +1,7 @@
 name: dj_player
-description: IMS Pro Studio v5000 Flagship Edition
+description: IMS Pro Studio v9999 Flagship Edition
 publish_to: 'none'
-version: 5000.0.0+5000
+version: 9999.0.0+9999999
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

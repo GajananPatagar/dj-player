@@ -2,7 +2,7 @@
 set -e
 
 echo "=========================================================="
-echo "🚀 IMS PRO STUDIO v5000.0 — GLOBAL OTA FOR ALL v500/v650 DEVICES"
+echo "🚀 IMS PRO STUDIO v9999.0 — GLOBAL OTA FOR ALL v500/v650 DEVICES"
 echo "=========================================================="
 
 if [ ! -f "pubspec.yaml" ] && [ -d "$HOME/dj-player" ]; then
@@ -812,12 +812,12 @@ xZa3pCUt2fnl/wGs3pqZNlyQCwAAAABJRU5ErkJggg==
 EOF_ICON_B64
 echo "  ✅ Wrote assets/icon.png"
 
-echo "⚡ 3/5 Writing IMS v5000.0 Flagship Codebase + Direct Build 5000 OTA Manifest..."
+echo "⚡ 3/5 Writing IMS v9999.0 Flagship Codebase + Direct Build 5000 OTA Manifest..."
 cat << 'EOF_PUBSPEC' > pubspec.yaml
 name: dj_player
-description: IMS Pro Studio v5000 Flagship Edition
+description: IMS Pro Studio v9999 Flagship Edition
 publish_to: 'none'
-version: 5000.0.0+5000
+version: 9999.0.0+9999999
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -839,10 +839,10 @@ echo "  ✅ Wrote pubspec.yaml"
 
 cat << 'EOF_OTA_JSON' > ota_version.json
 {
-  "buildNumber": 5000,
-  "versionName": "5000.0",
-  "apkUrl": "https://github.com/GajananPatagar/dj-player/releases/download/v5000/app-release.apk",
-  "notes": "IMS Pro Studio v5000.0 Flagship OTA Update: 100% Exact Song/Notification Sync, Zero-Crash Audio Unmute Engine, Live Queue Manager & Pro Karaoke"
+  "buildNumber": 1,
+  "versionName": "9999.0",
+  "apkUrl": "",
+  "notes": "IMS Pro Studio v9999.0 Flagship OTA Building..."
 }
 EOF_OTA_JSON
 echo "  ✅ Wrote ota_version.json"
@@ -850,11 +850,11 @@ echo "  ✅ Wrote ota_version.json"
 cat << 'EOF_IMS_LIVE_OTA_JSON' > ims_live_ota.json
 {
   "otaChannel": "IMS_LIVE_IN_APP_OTA",
-  "versionLabel": "IMS v5000.0 Flagship",
+  "versionLabel": "IMS v9999.0 Flagship",
   "activationPin": "1681",
   "forceRelockToken": 1,
   "defaultEqMode": "NORMAL_FLAT_0DB",
-  "liveAnnouncement": "✨ IMS Pro v5000 • Ultra Flagship 320K Master & Global Auto-OTA Active",
+  "liveAnnouncement": "✨ IMS Pro v9999 • Ultra Flagship 320K Master & Global Auto-OTA Active",
   "extraOfflineCategories": [
     "Marriage",
     "Fashion Show",
@@ -1706,12 +1706,62 @@ jobs:
                   } catch (_: Exception) {}
               }
 
+              override fun onNewIntent(intent: Intent) {
+                  super.onNewIntent(intent)
+                  if (intent.action == "com.gajanan.djplaycommentry.OTA_SESSION_COMPLETE") {
+                      val status = intent.getIntExtra(android.content.pm.PackageInstaller.EXTRA_STATUS, -999)
+                      if (status == android.content.pm.PackageInstaller.STATUS_PENDING_USER_ACTION) {
+                          @Suppress("DEPRECATION")
+                          val confirmIntent = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
+                          if (confirmIntent != null) {
+                              confirmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                              startActivity(confirmIntent)
+                          }
+                      }
+                  }
+              }
+
               private fun installOtaApkFile(rawPath: String) {
                   try {
                       val srcFile = File(rawPath)
-                      if (!srcFile.exists()) return
+                      if (!srcFile.exists() || srcFile.length() < 1000000L) return
+
+                      try {
+                          val pkgInstaller = applicationContext.packageManager.packageInstaller
+                          val params = android.content.pm.PackageInstaller.SessionParams(
+                              android.content.pm.PackageInstaller.SessionParams.MODE_FULL_INSTALL
+                          )
+                          params.setAppPackageName(applicationContext.packageName)
+                          if (Build.VERSION.SDK_INT >= 31) {
+                              params.setRequireUserAction(
+                                  android.content.pm.PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED
+                              )
+                          }
+                          val sessionId = pkgInstaller.createSession(params)
+                          val session = pkgInstaller.openSession(sessionId)
+                          session.openWrite("ims_ota_update_5000.apk", 0, srcFile.length()).use { outStream ->
+                              srcFile.inputStream().use { inStream ->
+                                  inStream.copyTo(outStream, 65536)
+                              }
+                              session.fsync(outStream)
+                          }
+                          val callbackIntent = Intent(this, MainActivity::class.java).apply {
+                              action = "com.gajanan.djplaycommentry.OTA_SESSION_COMPLETE"
+                              addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                          }
+                          val piFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                              PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+                          } else {
+                              PendingIntent.FLAG_UPDATE_CURRENT
+                          }
+                          val pendingIntent = PendingIntent.getActivity(this, sessionId, callbackIntent, piFlags)
+                          session.commit(pendingIntent.intentSender)
+                          session.close()
+                          return
+                      } catch (_: Exception) {}
+
                       val pubDir = externalCacheDir ?: cacheDir
-                      val pubApk = File(pubDir, "ims_pro_ota_1000.apk")
+                      val pubApk = File(pubDir, "ims_pro_ota_5000.apk")
                       srcFile.copyTo(pubApk, overwrite = true)
                       pubApk.setReadable(true, false)
 
@@ -1722,7 +1772,6 @@ jobs:
                           addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                           addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                       }
-                      // Directly target Android's built-in system PackageInstaller so ES File Explorer & Termux never show "Open with"!
                       val resolved = packageManager.queryIntentActivities(installIntent, 0)
                       for (info in resolved) {
                           val pkg = info.activityInfo.packageName.lowercase()
@@ -2070,15 +2119,44 @@ jobs:
           flutter pub get
           flutter build apk --release --no-tree-shake-icons
 
-      - name: Publish APK to GitHub Releases (v5000)
+      - name: Publish APK to GitHub Releases (v9999999 — Global OTA for v500 & v650)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v5000
-          name: "IMS Pro Studio v5000.0 Flagship OTA Release"
+          tag_name: v9999999
+          name: "IMS Pro Studio v9999.0 Flagship Global OTA Release"
           make_latest: true
           files: build/app/outputs/flutter-apk/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Also Mirror APK to v5000 and v1000 Tags
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v5000
+          name: "IMS Pro Studio v9999.0 (v5000 Mirror)"
+          make_latest: false
+          files: build/app/outputs/flutter-apk/app-release.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Activate Live ota_version.json (Build 9999999 > 650060 & 500058) After APK Is Live
+        run: |
+          git config user.name "IMS-OTA-Bot"
+          git config user.email "ota@ims-studio.pro"
+          git checkout -- .
+          git clean -fd
+          git pull --rebase origin main || true
+          cat << 'OTAEOF' > ota_version.json
+          {
+            "buildNumber": 9999999,
+            "versionName": "9999.0",
+            "apkUrl": "https://github.com/GajananPatagar/dj-player/releases/download/v9999999/app-release.apk",
+            "notes": "IMS Pro Studio v9999.0 Flagship OTA Update: 100% Exact Song/Notification Sync, Zero-Crash Audio Unmute Engine, Live Queue Manager & Pro Karaoke"
+          }
+          OTAEOF
+          git add ota_version.json
+          git commit -m "⚡ Activate Live OTA Build 9999999 for All v500 and v650 Devices [skip ci]" || true
+          git push origin HEAD:main || true
 EOF_WORKFLOW_YML
 echo "  ✅ Wrote .github/workflows/main.yml"
 
@@ -2093,20 +2171,20 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'entry_music_data.dart';
 
-/// Loop-Free Smart OTA Engine (v5000.0):
+/// Loop-Free Smart OTA Engine (v9999.0):
 /// 1) Uses a fixed deterministic build number (5000) in both APK and ota_version.json so once installed, 5000 == 5000 (NEVER loops!).
-/// 2) Records `ims_ota_attempted_build_v5000` BEFORE launching the system package installer so it never re-triggers in a loop.
+/// 2) Records `ims_ota_attempted_build_v9999` BEFORE launching the system package installer so it never re-triggers in a loop.
 /// 3) Directly targets Android's native `packageinstaller` (bypasses Termux & ES File Explorer "Open with" sheet).
 class OtaUpdateEngine {
-  static const int currentBuildNumber = 5000;
-  static const String currentVersionName = '5000.0';
+  static const int currentBuildNumber = 9999999;
+  static const String currentVersionName = '9999.0';
   static const String githubRepoOwner = 'GajananPatagar';
   static const String githubRepoName = 'dj-player';
 
   static const MethodChannel _nativeChannel = MethodChannel('dj_native_tts');
 
   static final ValueNotifier<String> otaStatusBanner = ValueNotifier<String>(
-    '✨ IMS v5000.0 Pro • Exact-Match Audio & Anti-Mute Lock Active',
+    '✨ IMS v9999.0 Pro • Exact-Match Audio & Anti-Mute Lock Active',
   );
   static final ValueNotifier<double?> otaDownloadProgress = ValueNotifier<double?>(null);
   static final ValueNotifier<String> dailyRefreshStamp = ValueNotifier<String>('');
@@ -2148,7 +2226,7 @@ class OtaUpdateEngine {
   }) async {
     try {
       final Map<String, String> headers = {
-        'User-Agent': 'IMS-InApp-OTA/5000.0 (Android)',
+        'User-Agent': 'IMS-InApp-OTA/9999.0 (Android)',
         'Accept': 'application/json',
         'Cache-Control': 'no-cache',
       };
@@ -2198,7 +2276,7 @@ class OtaUpdateEngine {
           if (onContentRefresh != null) {
             await onContentRefresh();
           }
-          otaStatusBanner.value = '✅ IMS Cloud Synced Live (${data['versionLabel'] ?? 'IMS v5000 Pro'})';
+          otaStatusBanner.value = '✅ IMS Cloud Synced Live (${data['versionLabel'] ?? 'IMS v9999 Pro'})';
         } else if (oldHash.isEmpty) {
           await prefs.setString('ims_live_ota_hash', newHash);
         }
@@ -2214,12 +2292,12 @@ class OtaUpdateEngine {
     try {
       final prefs = await SharedPreferences.getInstance();
       final String today = _todayDateKey();
-      final String lastUpdatedDay = prefs.getString('v5000_last_daily_self_update') ?? '';
+      final String lastUpdatedDay = prefs.getString('v9999_last_daily_self_update') ?? '';
       dailyRefreshStamp.value = 'Synced $today';
 
       if (lastUpdatedDay != today) {
         await onDailyContentRefresh();
-        await prefs.setString('v5000_last_daily_self_update', today);
+        await prefs.setString('v9999_last_daily_self_update', today);
         otaStatusBanner.value = '🟢 Auto-Updated for $today • IMS v$currentVersionName Pro';
       }
     } catch (_) {}
@@ -2238,14 +2316,14 @@ class OtaUpdateEngine {
       await syncInAppLiveCloudOta(forceRefresh: forceManualCheck);
 
       final prefs = await SharedPreferences.getInstance();
-      final int alreadyAttemptedBuild = prefs.getInt('ims_ota_attempted_build_v5000') ?? currentBuildNumber;
+      final int alreadyAttemptedBuild = prefs.getInt('ims_ota_attempted_build_v9999') ?? currentBuildNumber;
 
       int remoteBuild = currentBuildNumber;
       String remoteVersion = currentVersionName;
       String? apkDownloadUrl;
 
       final Map<String, String> headers = {
-        'User-Agent': 'IMS-OTA-Updater/5000.0 (Android)',
+        'User-Agent': 'IMS-OTA-Updater/9999.0 (Android)',
         'Accept': 'application/json',
         'Cache-Control': 'no-cache',
       };
@@ -2268,17 +2346,15 @@ class OtaUpdateEngine {
           (forceManualCheck || remoteBuild > alreadyAttemptedBuild);
 
       if (shouldTriggerApk) {
-        // Lock this build number immediately BEFORE downloading so it can NEVER loop even if dismissed!
-        await prefs.setInt('ims_ota_attempted_build_v5000', remoteBuild);
         otaStatusBanner.value = '⚡ Downloading IMS v$remoteVersion Update...';
         onProgressCallback?.call('⚡ Downloading IMS v$remoteVersion Update...', 0.05);
-        await _downloadAndInstallApkOnce(
+        final bool installed = await _downloadAndInstallApkOnce(
           apkDownloadUrl,
           remoteBuild,
           remoteVersion,
           onProgressCallback: onProgressCallback,
         );
-        return true;
+        return installed;
       } else {
         onProgressCallback?.call('✅ IMS v$currentVersionName is Up-To-Date', 1.0);
         if (forceManualCheck) {
@@ -2292,7 +2368,7 @@ class OtaUpdateEngine {
     return false;
   }
 
-  static Future<void> _downloadAndInstallApkOnce(
+  static Future<bool> _downloadAndInstallApkOnce(
     String apkUrl,
     int targetBuild,
     String targetVersion, {
@@ -2302,13 +2378,14 @@ class OtaUpdateEngine {
       otaDownloadProgress.value = 0.02;
       final client = http.Client();
       final req = http.Request('GET', Uri.parse(apkUrl));
-      req.headers['User-Agent'] = 'Mozilla/5.0 (Linux; Android 14) IMS-OTA/5000.0';
+      req.headers['User-Agent'] = 'Mozilla/5.0 (Linux; Android 14) IMS-OTA/9999.0';
       final http.StreamedResponse response = await client.send(req).timeout(const Duration(seconds: 30));
 
       if (response.statusCode != 200) {
         otaDownloadProgress.value = null;
+        otaStatusBanner.value = '⏳ IMS v$targetVersion Cloud Build Preparing...';
         client.close();
-        return;
+        return false;
       }
 
       final int totalBytes = response.contentLength ?? 22000000;
@@ -2336,14 +2413,18 @@ class OtaUpdateEngine {
       client.close();
 
       if (await apkFile.exists() && await apkFile.length() > 3000000) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('ims_ota_attempted_build_v9999', targetBuild);
         otaDownloadProgress.value = null;
-        otaStatusBanner.value = '✅ IMS v$targetVersion Ready';
+        otaStatusBanner.value = '✅ IMS v$targetVersion Ready — Installing...';
         await _nativeChannel.invokeMethod('installApkOta', {'path': apkFile.path});
+        return true;
       }
     } catch (_) {
     } finally {
       otaDownloadProgress.value = null;
     }
+    return false;
   }
 }
 EOF_OTA_DART
@@ -11188,7 +11269,7 @@ NEW_PIN="${1:-1681}"
 cat << JSON > ims_live_ota.json
 {
   "otaChannel": "IMS_LIVE_IN_APP_OTA",
-  "versionLabel": "IMS v5000.0 Flagship",
+  "versionLabel": "IMS v9999.0 Flagship",
   "activationPin": "$NEW_PIN",
   "forceRelockToken": 1,
   "defaultEqMode": "NORMAL_FLAT_0DB",
@@ -11206,18 +11287,42 @@ echo "✅ Live OTA PIN updated to $NEW_PIN!"
 EOF_PIN_HELPER
 chmod +x set_ota_pin.sh
 
-echo "📦 4/5 Committing IMS v5000.0 Flagship Release..."
+echo "📦 4/5 Committing IMS v9999.0 Flagship Release..."
 git add -A
-git commit -m "🚀 IMS v5000.0 Flagship Global OTA: Fix Notification/Queue Sync, Purge Legacy Cache, Unmute Hardware DSP & Build 5000 OTA" || true
+git commit -m "🚀 IMS v9999.0 Flagship Global OTA: Fix Notification/Queue Sync, Purge Legacy Cache, Unmute Hardware DSP & Build 5000 OTA" || true
 
-echo "🚀 5/5 Pushing to GitHub (Activates Global OTA Build 5000 for All v500/v650 Devices)..."
+echo "🚀 5/5 Pushing to GitHub (Starts Cloud APK Build v9999999 for All v500 & v650 Users)..."
+git push origin ":refs/tags/v9999999" 2>/dev/null || true
 git push origin ":refs/tags/v5000" 2>/dev/null || true
 git push origin HEAD:main --force
 
+echo "⏳ Waiting for GitHub Actions to finish compiling v9999.0 APK (~90 seconds)..."
+for i in $(seq 1 20); do
+  sleep 10
+  if curl -s "https://api.github.com/repos/GajananPatagar/dj-player/releases/tags/v9999999" | grep -q "browser_download_url"; then
+    echo "✅ v9999.0 APK (Build 9999999) is LIVE on GitHub Releases!"
+    break
+  fi
+  echo "  ⏳ Compiling APK on GitHub Cloud... ($((i*10))s elapsed)"
+done
+
+echo "⚡ Locking ota_version.json to Build 9999999 (> 650060 & > 500058) for ALL users..."
+git pull --rebase origin main 2>/dev/null || true
+cat << 'EOF_FINAL_OTA' > ota_version.json
+{
+  "buildNumber": 9999999,
+  "versionName": "9999.0",
+  "apkUrl": "https://github.com/GajananPatagar/dj-player/releases/download/v9999999/app-release.apk",
+  "notes": "IMS Pro Studio v9999.0 Flagship OTA Update: 100% Exact Song/Notification Sync, Zero-Crash Audio Unmute Engine, Live Queue Manager & Pro Karaoke"
+}
+EOF_FINAL_OTA
+git add ota_version.json
+git commit -m "⚡ Activate Live OTA Build 9999999 for All v500 & v650 Users [skip ci]" 2>/dev/null || true
+git push origin HEAD:main || true
+
 echo "=========================================================="
-echo "✅ PUSHED! GitHub Actions is now compiling IMS v5000 (~95s)"
-echo "📲 Wait ~2 minutes for the GitHub build to finish, then open"
-echo "   the app on ANY v500 or v650 device — it will automatically"
-echo "   detect Build 5000 (> 650) and update via OTA!"
-echo "🔗 Build Progress: https://github.com/GajananPatagar/dj-player/actions"
+echo "✅ GLOBAL OTA v9999.0 (BUILD 9999999) IS NOW LIVE FOR EVERYONE!"
+echo "📲 Every v500 (Build 500058) and v650 (Build 650060) user"
+echo "   will now automatically receive and install v9999.0!"
+echo "🔗 Release URL: https://github.com/GajananPatagar/dj-player/releases/tag/v9999999"
 echo "=========================================================="

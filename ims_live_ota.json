@@ -1,11 +1,12 @@
 {
   "otaChannel": "IMS_LIVE_IN_APP_OTA",
-  "versionLabel": "IMS v9999.0 Flagship",
+  "versionLabel": "IMS v9999.0 AI Flagship",
   "activationPin": "1681",
   "forceRelockToken": 1,
   "defaultEqMode": "NORMAL_FLAT_0DB",
-  "liveAnnouncement": "✨ IMS Pro v9999 • Ultra Flagship 320K Master & Global Auto-OTA Active",
+  "liveAnnouncement": "✨ IMS Pro v9999.0 • AI Daily Mix Engine & 320K Master Active",
   "extraOfflineCategories": [
+    "🎯 For You (AI Mix)",
     "Marriage",
     "Fashion Show",
     "Devotional",
@@ -24,4 +25,3 @@
     "Fashion Show Ramp Walk Bass Music"
   ]
 }
-

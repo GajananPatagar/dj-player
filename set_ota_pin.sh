@@ -4,11 +4,11 @@ NEW_PIN="${1:-1681}"
 cat << JSON > ims_live_ota.json
 {
   "otaChannel": "IMS_LIVE_IN_APP_OTA",
-  "versionLabel": "IMS v1000.0 Pro",
+  "versionLabel": "IMS v5000.0 Flagship",
   "activationPin": "$NEW_PIN",
   "forceRelockToken": 1,
   "defaultEqMode": "NORMAL_FLAT_0DB",
-  "liveAnnouncement": "✨ IMS Pro v1000 • Flagship 320K Master & Smart OTA Active",
+  "liveAnnouncement": "✨ IMS Pro v5000 • Ultra Flagship 320K Master & Global Auto-OTA Active",
   "extraOfflineCategories": [
     "Marriage", "Fashion Show", "Devotional", "Kannada", "Hindi",
     "DJ Bass & Party", "Mass Entry", "Janapada & Folk", "Haldi & Sangeet", "Reception & Party"

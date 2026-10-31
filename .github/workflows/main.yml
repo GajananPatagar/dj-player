@@ -132,10 +132,14 @@ jobs:
                           }
 
                           override fun onSkipToNext() {
+                              cachedArtBitmap = null
+                              currentPosMs = 0L
                               MainActivity.dispatchMediaCommandToFlutter("NEXT")
                           }
 
                           override fun onSkipToPrevious() {
+                              cachedArtBitmap = null
+                              currentPosMs = 0L
                               MainActivity.dispatchMediaCommandToFlutter("PREV")
                           }
 
@@ -158,6 +162,8 @@ jobs:
 
                   val action = intent?.action ?: ""
                   if (action == "ACTION_PREV") {
+                      cachedArtBitmap = null
+                      currentPosMs = 0L
                       MainActivity.dispatchMediaCommandToFlutter("PREV")
                       return START_STICKY
                   } else if (action == "ACTION_TOGGLE") {
@@ -166,6 +172,8 @@ jobs:
                       refreshNotificationAndSession()
                       return START_STICKY
                   } else if (action == "ACTION_NEXT") {
+                      cachedArtBitmap = null
+                      currentPosMs = 0L
                       MainActivity.dispatchMediaCommandToFlutter("NEXT")
                       return START_STICKY
                   } else if (action == "ACTION_AIRHORN") {
@@ -297,11 +305,14 @@ jobs:
                   try {
                       val metaBuilder = MediaMetadata.Builder()
                           .putString(MediaMetadata.METADATA_KEY_TITLE, currentTitle)
+                          .putString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE, currentTitle)
                           .putString(MediaMetadata.METADATA_KEY_ARTIST, currentArtist)
-                          .putString(MediaMetadata.METADATA_KEY_ALBUM, "IMS Pro Studio • Glass Audio Engine")
+                          .putString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE, currentArtist)
+                          .putString(MediaMetadata.METADATA_KEY_ALBUM, currentArtist)
                           .putLong(MediaMetadata.METADATA_KEY_DURATION, currentDurMs)
                           .putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, artBmp)
                           .putBitmap(MediaMetadata.METADATA_KEY_ART, artBmp)
+                          .putBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON, artBmp)
                       mediaSession?.setMetadata(metaBuilder.build())
 
                       val stateInt = if (currentIsPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED
@@ -326,6 +337,8 @@ jobs:
                       } else {
                           startForeground(1001, notif)
                       }
+                      val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                      nm.notify(1001, notif)
                   } catch (_: Exception) {}
               }
 
@@ -440,6 +453,7 @@ jobs:
           import android.media.MediaFormat
           import android.media.MediaMuxer
           import android.media.MediaRecorder
+          import android.media.AudioManager
           import android.media.MediaScannerConnection
           import android.media.audiofx.BassBoost
           import android.media.audiofx.Equalizer
@@ -925,9 +939,34 @@ jobs:
                           "resetAudioToNormalFlat" -> {
                               try {
                                   masterEq?.enabled = false
+                                  masterEq?.release()
+                                  masterEq = null
+                              } catch (_: Exception) {}
+                              try {
                                   masterBass?.enabled = false
+                                  masterBass?.release()
+                                  masterBass = null
+                              } catch (_: Exception) {}
+                              try {
                                   masterLoudness?.enabled = false
+                                  masterLoudness?.release()
+                                  masterLoudness = null
+                              } catch (_: Exception) {}
+                              try {
                                   masterVirtualizer?.enabled = false
+                                  masterVirtualizer?.release()
+                                  masterVirtualizer = null
+                              } catch (_: Exception) {}
+                              try {
+                                  val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                                      am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0)
+                                  }
+                                  val curVol = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+                                  val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                                  if (curVol <= 0 && maxVol > 0) {
+                                      am.setStreamVolume(AudioManager.STREAM_MUSIC, (maxVol * 0.65).toInt().coerceAtLeast(1), 0)
+                                  }
                               } catch (_: Exception) {}
                               result.success(true)
                           }
@@ -1146,34 +1185,17 @@ jobs:
             rm -rf android/app/src/main/res/mipmap-anydpi-v26
           fi
 
-      - name: Build IMS Pro Studio v1000.0 Release APK
+      - name: Build IMS Pro Studio v5000.0 Flagship Release APK
         run: |
           flutter pub get
           flutter build apk --release --no-tree-shake-icons
 
-      - name: Publish APK to GitHub Releases (v1000.0)
+      - name: Publish APK to GitHub Releases (v5000)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1000
-          name: "IMS Pro Studio v1000.0 (Exact-Match Audio & Anti-Mute Release)"
+          tag_name: v5000
+          name: "IMS Pro Studio v5000.0 Flagship OTA Release"
           make_latest: true
           files: build/app/outputs/flutter-apk/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Update ota_version.json to Build 1000 After APK Is Live
-        run: |
-          cat << JSONEOF > ota_version.json
-          {
-            "buildNumber": 1000,
-            "versionName": "1000.0",
-            "apkUrl": "https://github.com/GajananPatagar/dj-player/releases/latest/download/app-release.apk",
-            "notes": "IMS Pro v1000.0: Exact Song/Notification Sync & Anti-Mute Audio Lock"
-          }
-          JSONEOF
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add ota_version.json
-          git commit -m "⚡ IMS OTA v1000.0 Live [skip ci]" || true
-          git pull --rebase origin main || true
-          git push origin HEAD:main || true

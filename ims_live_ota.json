@@ -1,10 +1,10 @@
 {
   "otaChannel": "IMS_LIVE_IN_APP_OTA",
-  "versionLabel": "IMS v1000.0 Pro",
+  "versionLabel": "IMS v5000.0 Flagship",
   "activationPin": "1681",
   "forceRelockToken": 1,
   "defaultEqMode": "NORMAL_FLAT_0DB",
-  "liveAnnouncement": "✨ IMS Pro v1000 • Pure Original 320K Master & Auto-OTA Active",
+  "liveAnnouncement": "✨ IMS Pro v5000 • Ultra Flagship 320K Master & Global Auto-OTA Active",
   "extraOfflineCategories": [
     "Marriage",
     "Fashion Show",

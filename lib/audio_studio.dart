@@ -63,6 +63,8 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
   List<Map<String, dynamic>> _tracks = [];
   List<Map<String, dynamic>> _playbackQueue = [];
   Map<String, dynamic>? _nowPlayingTrack;
+  final ValueNotifier<Map<String, dynamic>?> _nowPlayingNotifier = ValueNotifier<Map<String, dynamic>?>(null);
+  String _lastLyricsLoadedId = '';
   int _queueIndex = -1;
 
   bool _isPlaying = false;
@@ -99,6 +101,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
       }
       if (mounted) setState(() {});
     });
+    _purgeAllLegacyCacheFiles();
     _configureBackgroundAudioContext();
     _setupListeners();
     _registerNativeMediaCallbacks();
@@ -123,6 +126,17 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
     WidgetsBinding.instance.removeObserver(this);
     _sleepTimer?.cancel();
     super.dispose();
+  }
+
+  /// Deletes any leftover bg_next_cache.mp4 from older v500/v650 builds so stale cached songs can NEVER play!
+  Future<void> _purgeAllLegacyCacheFiles() async {
+    try {
+      final dir = await getTemporaryDirectory();
+      final legacyCache = File('${dir.path}/bg_next_cache.mp4');
+      if (await legacyCache.exists()) {
+        await legacyCache.delete();
+      }
+    } catch (_) {}
   }
 
   Future<void> _configureBackgroundAudioContext() async {
@@ -499,6 +513,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
       _nowPlayingTrack = track;
       _isPlaying = true;
     }
+    _nowPlayingNotifier.value = track;
 
     _syncForegroundNotification();
     if (!_customEqEnabled) {
@@ -584,7 +599,26 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
     }
   }
 
+  void _syncQueueWithVisibleIfChanged() {
+    final List<Map<String, dynamic>> vis = _currentVisibleList();
+    if (vis.isEmpty) return;
+    if (_nowPlayingTrack != null) {
+      final String curId = (_nowPlayingTrack!['id'] ?? '').toString();
+      final int idxInVis = vis.indexWhere((e) => (e['id'] ?? '').toString() == curId);
+      if (idxInVis >= 0) {
+        _playbackQueue = List<Map<String, dynamic>>.from(vis);
+        _queueIndex = idxInVis;
+        return;
+      }
+    }
+    if (_playbackQueue.isEmpty) {
+      _playbackQueue = List<Map<String, dynamic>>.from(vis);
+      _queueIndex = 0;
+    }
+  }
+
   void _playNext() {
+    _syncQueueWithVisibleIfChanged();
     if (_playbackQueue.isEmpty) return;
     if (_shuffleMode && _playbackQueue.length > 1) {
       int next = DateTime.now().microsecond % _playbackQueue.length;
@@ -598,6 +632,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
   }
 
   void _playPrev() {
+    _syncQueueWithVisibleIfChanged();
     if (_playbackQueue.isEmpty) return;
     _playFromQueueIndex((_queueIndex - 1 + _playbackQueue.length) % _playbackQueue.length);
   }
@@ -1356,6 +1391,150 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
     }
   }
 
+  Future<void> _openLiveQueueAndBatchDownloadModal() async {
+    _syncQueueWithVisibleIfChanged();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            return Container(
+              height: MediaQuery.of(ctx).size.height * 0.78,
+              padding: const EdgeInsets.all(10),
+              child: GlassBox(
+                padding: const EdgeInsets.all(14),
+                borderRadius: 24,
+                blur: 22,
+                tintColor: const Color(0xFF0A1328),
+                borderColor: const Color(0xFF00E5FF),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '📋 LIVE UP-NEXT QUEUE (${_playbackQueue.length} Songs)',
+                            style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900, color: Color(0xFF00E5FF)),
+                          ),
+                        ),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF00E676),
+                            foregroundColor: Colors.black,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          icon: const Icon(Icons.downloading_rounded, size: 15),
+                          label: const Text('Batch Save Top 5', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900)),
+                          onPressed: () async {
+                            Navigator.pop(ctx);
+                            final vis = _currentVisibleList().take(5).toList();
+                            if (vis.isEmpty) return;
+                            for (final trk in vis) {
+                              await VaultManager.downloadTrack(trk, isEntry: false, category: _selectedOfflineCategory);
+                            }
+                            if (mounted) {
+                              setState(() {});
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  backgroundColor: Colors.green.shade800,
+                                  content: Text('✅ Batch Saved Top ${vis.length} Songs to $_selectedOfflineCategory Offline Folder!'),
+                                ),
+                              );
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      _activeQueueScopeBanner,
+                      style: const TextStyle(fontSize: 10.5, color: Colors.amberAccent, fontWeight: FontWeight.bold),
+                    ),
+                    const Divider(color: Colors.white24),
+                    Expanded(
+                      child: _playbackQueue.isEmpty
+                          ? const Center(child: Text('Queue is empty — tap any song to start!', style: TextStyle(color: Colors.white60)))
+                          : ListView.builder(
+                              itemCount: _playbackQueue.length,
+                              itemBuilder: (ctx, i) {
+                                final item = _playbackQueue[i];
+                                final bool isCur = (i == _queueIndex);
+                                return ListTile(
+                                  dense: true,
+                                  leading: CircleAvatar(
+                                    radius: 14,
+                                    backgroundColor: isCur ? Colors.amberAccent : const Color(0xFF172542),
+                                    child: Text(
+                                      '#${i + 1}',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w900,
+                                        color: isCur ? Colors.black : Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                  title: Text(
+                                    item['title'].toString(),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w900,
+                                      color: isCur ? Colors.amberAccent : Colors.white,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    item['artist'].toString(),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 10.5, color: Colors.cyanAccent),
+                                  ),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (!isCur && _playbackQueue.length > 1)
+                                        IconButton(
+                                          visualDensity: VisualDensity.compact,
+                                          icon: const Icon(Icons.close_rounded, size: 17, color: Colors.white54),
+                                          onPressed: () {
+                                            setModalState(() {
+                                              _playbackQueue.removeAt(i);
+                                              if (i < _queueIndex) _queueIndex--;
+                                            });
+                                            setState(() {});
+                                          },
+                                        ),
+                                      IconButton(
+                                        visualDensity: VisualDensity.compact,
+                                        icon: Icon(
+                                          isCur ? Icons.volume_up_rounded : Icons.play_circle_fill_rounded,
+                                          color: isCur ? const Color(0xFF00E676) : const Color(0xFF00E5FF),
+                                        ),
+                                        onPressed: () {
+                                          Navigator.pop(ctx);
+                                          _playFromQueueIndex(i);
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   void _openEqualizerAndSleepConsole() {
     showModalBottomSheet(
       context: context,
@@ -1577,30 +1756,37 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
     bool showLyricsView = true;
     String scriptMode = 'KANGLISH (ಕನ್ನಡ-Eng)';
 
+    _lastLyricsLoadedId = '';
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setModalState) {
-            if (loadingLyrics && syncedLyrics.isEmpty) {
-              KaraokeEngine.fetchSyncedLyrics(
-                trk['id'].toString(),
-                trk['title'].toString(),
-                trk['artist'].toString(),
-                (trk['durationSec'] as int?) ?? 180,
-              ).then((lines) {
-                if (ctx.mounted) {
-                  setModalState(() {
-                    syncedLyrics = lines;
-                    loadingLyrics = false;
+        return ValueListenableBuilder<Map<String, dynamic>?>(
+          valueListenable: _nowPlayingNotifier,
+          builder: (ctx, liveNotifiedTrack, _) {
+            return StatefulBuilder(
+              builder: (ctx, setModalState) {
+                final Map<String, dynamic> currentTrk = liveNotifiedTrack ?? _nowPlayingTrack ?? trk;
+                final String curId = (currentTrk['id'] ?? '').toString();
+                if (_lastLyricsLoadedId != curId) {
+                  _lastLyricsLoadedId = curId;
+                  loadingLyrics = true;
+                  syncedLyrics = [];
+                  KaraokeEngine.fetchSyncedLyrics(
+                    curId,
+                    currentTrk['title'].toString(),
+                    currentTrk['artist'].toString(),
+                    (currentTrk['durationSec'] as int?) ?? 180,
+                  ).then((lines) {
+                    if (ctx.mounted && _lastLyricsLoadedId == curId) {
+                      setModalState(() {
+                        syncedLyrics = lines;
+                        loadingLyrics = false;
+                      });
+                    }
                   });
                 }
-              });
-            }
-
-            final Map<String, dynamic> currentTrk = _nowPlayingTrack ?? trk;
             final int posMs = _position.inMilliseconds;
             int activeLineIdx = 0;
             for (int i = 0; i < syncedLyrics.length; i++) {
@@ -1873,6 +2059,8 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
                 ),
               ),
             );
+              },
+            );
           },
         );
       },
@@ -1936,6 +2124,26 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
                                     fontWeight: FontWeight.w800,
                                   ),
                                   overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 5),
+                              GestureDetector(
+                                onTap: _openLiveQueueAndBatchDownloadModal,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF00E676).withOpacity(0.18),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: const Color(0xFF00E676)),
+                                  ),
+                                  child: const Text(
+                                    '📋 Queue',
+                                    style: TextStyle(
+                                      fontSize: 9.2,
+                                      color: Color(0xFF00E676),
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
                                 ),
                               ),
                               const SizedBox(width: 5),

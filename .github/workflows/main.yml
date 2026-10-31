@@ -1154,7 +1154,7 @@ jobs:
       - name: Publish APK to GitHub Releases (v1000.0)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1000.0
+          tag_name: v1000
           name: "IMS Pro Studio v1000.0 (Exact-Match Audio & Anti-Mute Release)"
           make_latest: true
           files: build/app/outputs/flutter-apk/app-release.apk
@@ -1175,4 +1175,5 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add ota_version.json
           git commit -m "⚡ IMS OTA v1000.0 Live [skip ci]" || true
+          git pull --rebase origin main || true
           git push origin HEAD:main || true

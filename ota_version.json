@@ -1,6 +1,6 @@
 {
-  "buildNumber": 1,
+  "buildNumber": 9999999,
   "versionName": "9999.0",
-  "apkUrl": "",
-  "notes": "IMS Pro Studio v9999.0 Flagship OTA Building..."
+  "apkUrl": "https://github.com/GajananPatagar/dj-player/releases/download/v9999999/app-release.apk",
+  "notes": "IMS Pro Studio v9999.0 Flagship OTA Update: 100% Exact Song/Notification Sync, Zero-Crash Audio Unmute Engine, Live Queue Manager & Pro Karaoke"
 }

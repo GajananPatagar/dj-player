@@ -50,6 +50,8 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
   bool _isLoading = false;
   bool _isLoadingMore = false;
   bool _isBusySwitching = false;
+  int _playRequestToken = 0;
+  int _lastVolGuardSec = -1;
   bool _showQuickDjPads = false;
   bool _autoDjCrossfade = true;
   int _currentSearchPage = 1;
@@ -129,7 +131,7 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
             stayAwake: true,
             contentType: AndroidContentType.music,
             usageType: AndroidUsageType.media,
-            audioFocus: AndroidAudioFocus.gain,
+            audioFocus: AndroidAudioFocus.none,
           ),
         ),
       );
@@ -192,6 +194,15 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
         setState(() => _position = pos);
       } else {
         _position = pos;
+      }
+
+      // Anti-Mute Volume Watchdog: ensures Android never silently mutes the stream while playing
+      if (_isPlaying && pos.inSeconds != _lastVolGuardSec && pos.inSeconds % 3 == 0) {
+        _lastVolGuardSec = pos.inSeconds;
+        final double guardVol = _isTalkoverDucked
+            ? 0.15
+            : MasterVolumeController.page1MusicVolume.value.clamp(0.25, 1.0);
+        _player.setVolume(guardVol);
       }
 
       if (_loopPointASec != null &&
@@ -266,7 +277,8 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
   }
 
   Future<void> _preCacheNextTrackInBackground() async {
-    if (_playbackQueue.length < 2 || _queueIndex < 0) return;
+    // Disabled shared bg_next_cache.mp4 overwrite so every song plays its exact own stream 100% of the time!
+    return;
     final int nextIdx = (_queueIndex + 1) % _playbackQueue.length;
     final Map<String, dynamic> nextTrack = _playbackQueue[nextIdx];
     final String nextId = (nextTrack['id'] ?? '').toString();
@@ -452,28 +464,33 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
   }
 
   Future<void> _playFromQueueIndex(int qIdx) async {
-    if (_isBusySwitching) return;
     if (_playbackQueue.isEmpty || qIdx < 0 || qIdx >= _playbackQueue.length) return;
 
+    final int myToken = ++_playRequestToken;
     _isBusySwitching = true;
     _shouldBePlayingInBg = true;
     _loopPointASec = null;
     _loopPointBSec = null;
     _position = Duration.zero;
 
-    final Map<String, dynamic> track = _playbackQueue[qIdx];
-    final String trackId = (track['id'] ?? '').toString();
+    if (MasterVolumeController.page1MusicVolume.value <= 0.05) {
+      MasterVolumeController.page1MusicVolume.value = 1.0;
+    }
+
+    final Map<String, dynamic> track = Map<String, dynamic>.from(_playbackQueue[qIdx]);
     final int customStartSec = int.tryParse((track['customStartSec'] ?? '0').toString()) ?? 0;
 
     if (mounted) {
       setState(() {
         _queueIndex = qIdx;
-        _nowPlayingTrack = Map<String, dynamic>.from(track);
+        _nowPlayingTrack = track;
+        _isPlaying = true;
         _statusBadge = '⚡ Playing #${qIdx + 1}: ${track['title']}';
       });
     } else {
       _queueIndex = qIdx;
-      _nowPlayingTrack = Map<String, dynamic>.from(track);
+      _nowPlayingTrack = track;
+      _isPlaying = true;
     }
 
     _syncForegroundNotification();
@@ -482,64 +499,46 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
     }
 
     try {
-      final double targetVol = _isTalkoverDucked ? 0.15 : MasterVolumeController.page1MusicVolume.value;
+      final double targetVol = _isTalkoverDucked
+          ? 0.15
+          : MasterVolumeController.page1MusicVolume.value.clamp(0.25, 1.0);
 
       if (track['localPath'] != null) {
         final File file = File(track['localPath'].toString());
         if (await file.exists()) {
+          if (myToken != _playRequestToken) return;
           await _player.stop();
           await _player.setVolume(targetVol);
-          await _player.play(DeviceFileSource(file.path));
+          await _player.play(DeviceFileSource(file.path), volume: targetVol);
           await _player.setPlaybackRate(_playbackSpeed);
-          if (customStartSec > 0) {
+          if (customStartSec > 0 && myToken == _playRequestToken) {
             await _player.seek(Duration(seconds: customStartSec));
           }
-          if (mounted) {
+          if (mounted && myToken == _playRequestToken) {
             setState(() {
               _statusBadge =
                   '🟢 Offline #${qIdx + 1} [${track['category'] ?? _selectedOfflineCategory}]: ${track['title']}';
             });
           }
-          _isBusySwitching = false;
           _syncForegroundNotification();
-          _preCacheNextTrackInBackground();
           return;
         }
-      }
-
-      if (_preCachedNextTrackId == trackId &&
-          _preCachedNextLocalPath != null &&
-          File(_preCachedNextLocalPath!).existsSync()) {
-        await _player.stop();
-        await _player.setVolume(targetVol);
-        await _player.play(DeviceFileSource(_preCachedNextLocalPath!));
-        await _player.setPlaybackRate(_playbackSpeed);
-        if (customStartSec > 0) {
-          await _player.seek(Duration(seconds: customStartSec));
-        }
-        if (mounted) {
-          setState(() {
-            _statusBadge = '🟢 Instant Cached #${qIdx + 1}: ${track['title']}';
-          });
-        }
-        _isBusySwitching = false;
-        _syncForegroundNotification();
-        _preCacheNextTrackInBackground();
-        return;
       }
 
       final List urls = (track['urls'] as List?) ?? [];
       bool started = false;
       for (final rawUrl in urls) {
+        if (myToken != _playRequestToken) return;
         try {
           await _player.stop();
+          await _player.setVolume(targetVol);
           await _player.play(UrlSource(rawUrl.toString()), volume: targetVol);
           await _player.setPlaybackRate(_playbackSpeed);
-          if (customStartSec > 0) {
+          if (customStartSec > 0 && myToken == _playRequestToken) {
             await _player.seek(Duration(seconds: customStartSec));
           }
           started = true;
-          if (mounted) {
+          if (mounted && myToken == _playRequestToken) {
             setState(() {
               _statusBadge = '🟢 Playing #${qIdx + 1}: ${track['title']}';
             });
@@ -548,15 +547,16 @@ class _AudioStudioScreenState extends State<AudioStudioScreen> with WidgetsBindi
         } catch (_) {}
       }
 
-      if (!started && _playbackQueue.length > 1) {
+      if (!started && myToken == _playRequestToken && _playbackQueue.length > 1) {
         _isBusySwitching = false;
         _playNext();
         return;
       }
     } finally {
-      _isBusySwitching = false;
-      _syncForegroundNotification();
-      _preCacheNextTrackInBackground();
+      if (myToken == _playRequestToken) {
+        _isBusySwitching = false;
+        _syncForegroundNotification();
+      }
     }
   }
 

@@ -808,7 +808,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _checkPendingSharedIntent();
-      OtaUpdateEngine.checkAndAutoInstallOtaUpdate();
+      OtaUpdateEngine.syncInAppLiveCloudOta();
     }
   }
 

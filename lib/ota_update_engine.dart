@@ -1,21 +1,27 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'entry_music_data.dart';
 
-/// 100% Pure In-App Cloud OTA Engine:
-/// Updates songs, categories, PIN, and studio config silently inside the app via JSON (`ims_live_ota.json`).
-/// NEVER downloads `.apk` files and NEVER opens the Android "Open with / Install APK" popup!
+/// Loop-Free Smart OTA Engine (v800.0):
+/// 1) Uses a fixed deterministic build number (800) in both APK and ota_version.json so once installed, 800 == 800 (NEVER loops!).
+/// 2) Records `ims_ota_attempted_build_v800` BEFORE launching the system package installer so it never re-triggers in a loop.
+/// 3) Directly targets Android's native `packageinstaller` (bypasses Termux & ES File Explorer "Open with" sheet).
 class OtaUpdateEngine {
-  static const int currentBuildNumber = 700;
-  static const String currentVersionName = 'IMS Pro';
+  static const int currentBuildNumber = 800;
+  static const String currentVersionName = '800.0';
   static const String githubRepoOwner = 'GajananPatagar';
   static const String githubRepoName = 'dj-player';
 
+  static const MethodChannel _nativeChannel = MethodChannel('dj_native_tts');
+
   static final ValueNotifier<String> otaStatusBanner = ValueNotifier<String>(
-    '✨ IMS Pro Studio • 320kbps Original Master & Live Cloud Active',
+    '✨ IMS v800.0 Pro • Exact-Match Audio & Anti-Mute Lock Active',
   );
   static final ValueNotifier<double?> otaDownloadProgress = ValueNotifier<double?>(null);
   static final ValueNotifier<String> dailyRefreshStamp = ValueNotifier<String>('');
@@ -26,19 +32,23 @@ class OtaUpdateEngine {
   static final ValueNotifier<List<String>> remoteTrendingQueries = ValueNotifier<List<String>>([]);
 
   static Timer? _periodicTimer;
-  static bool _isSyncing = false;
+  static bool _isCheckingOrDownloading = false;
 
-  /// Starts silent In-App Cloud OTA & Daily Self-Update (100% inside the app, 0 popups, 0 APK installs!)
   static Future<void> initAutoOtaAndDailySelfUpdate({
     required Future<void> Function() onDailyContentRefresh,
   }) async {
     await syncInAppLiveCloudOta(onContentRefresh: onDailyContentRefresh, forceRefresh: false);
     await _checkAndRunDailySelfUpdate(onDailyContentRefresh);
 
+    Future.delayed(const Duration(seconds: 3), () {
+      checkAndAutoInstallOtaUpdate(forceManualCheck: false);
+    });
+
     _periodicTimer?.cancel();
-    _periodicTimer = Timer.periodic(const Duration(hours: 2), (_) async {
+    _periodicTimer = Timer.periodic(const Duration(hours: 1), (_) async {
       await syncInAppLiveCloudOta(onContentRefresh: onDailyContentRefresh, forceRefresh: false);
       await _checkAndRunDailySelfUpdate(onDailyContentRefresh);
+      await checkAndAutoInstallOtaUpdate(forceManualCheck: false);
     });
   }
 
@@ -47,16 +57,13 @@ class OtaUpdateEngine {
     return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
   }
 
-  /// Syncs `ims_live_ota.json` silently inside the app (Never downloads an APK or asks for permissions!)
   static Future<bool> syncInAppLiveCloudOta({
     Future<void> Function()? onContentRefresh,
     bool forceRefresh = false,
   }) async {
-    if (_isSyncing) return false;
-    _isSyncing = true;
     try {
       final Map<String, String> headers = {
-        'User-Agent': 'IMS-InApp-OTA/700.0 (Android)',
+        'User-Agent': 'IMS-InApp-OTA/800.0 (Android)',
         'Accept': 'application/json',
         'Cache-Control': 'no-cache',
       };
@@ -106,16 +113,13 @@ class OtaUpdateEngine {
           if (onContentRefresh != null) {
             await onContentRefresh();
           }
-          otaStatusBanner.value = '✅ IMS Cloud Synced Live • 320kbps Master Ready';
+          otaStatusBanner.value = '✅ IMS Cloud Synced Live (${data['versionLabel'] ?? 'IMS v800 Pro'})';
         } else if (oldHash.isEmpty) {
           await prefs.setString('ims_live_ota_hash', newHash);
         }
         return true;
       }
-    } catch (_) {
-    } finally {
-      _isSyncing = false;
-    }
+    } catch (_) {}
     return false;
   }
 
@@ -125,25 +129,135 @@ class OtaUpdateEngine {
     try {
       final prefs = await SharedPreferences.getInstance();
       final String today = _todayDateKey();
-      final String lastUpdatedDay = prefs.getString('v700_last_daily_self_update') ?? '';
+      final String lastUpdatedDay = prefs.getString('v800_last_daily_self_update') ?? '';
       dailyRefreshStamp.value = 'Synced $today';
 
       if (lastUpdatedDay != today) {
         await onDailyContentRefresh();
-        await prefs.setString('v700_last_daily_self_update', today);
-        otaStatusBanner.value = '🟢 Daily Auto-Updated ($today) • IMS Pro Studio';
+        await prefs.setString('v800_last_daily_self_update', today);
+        otaStatusBanner.value = '🟢 Auto-Updated for $today • IMS v$currentVersionName Pro';
       }
     } catch (_) {}
   }
 
-  /// Silent In-App Cloud Check Only (Never downloads or launches any external .apk installer!)
+  /// Checks ONLY `ota_version.json` with a strict one-shot guard per buildNumber so it NEVER loops!
   static Future<bool> checkAndAutoInstallOtaUpdate({
     bool forceManualCheck = false,
     void Function(String statusText, double? progress)? onProgressCallback,
   }) async {
-    onProgressCallback?.call('🔄 Syncing IMS Live Cloud Configuration...', null);
-    await syncInAppLiveCloudOta(forceRefresh: forceManualCheck);
-    onProgressCallback?.call('✅ IMS Cloud Synced & Ready', 1.0);
+    if (_isCheckingOrDownloading) return false;
+    _isCheckingOrDownloading = true;
+
+    try {
+      onProgressCallback?.call('🔍 Checking IMS Cloud OTA...', null);
+      await syncInAppLiveCloudOta(forceRefresh: forceManualCheck);
+
+      final prefs = await SharedPreferences.getInstance();
+      final int alreadyAttemptedBuild = prefs.getInt('ims_ota_attempted_build_v800') ?? currentBuildNumber;
+
+      int remoteBuild = currentBuildNumber;
+      String remoteVersion = currentVersionName;
+      String? apkDownloadUrl;
+
+      final Map<String, String> headers = {
+        'User-Agent': 'IMS-OTA-Updater/800.0 (Android)',
+        'Accept': 'application/json',
+        'Cache-Control': 'no-cache',
+      };
+
+      try {
+        final String rawVersionUrl =
+            'https://raw.githubusercontent.com/$githubRepoOwner/$githubRepoName/main/ota_version.json?t=${DateTime.now().millisecondsSinceEpoch}';
+        final res = await http.get(Uri.parse(rawVersionUrl), headers: headers).timeout(const Duration(seconds: 6));
+        if (res.statusCode == 200) {
+          final Map<String, dynamic> data = jsonDecode(res.body);
+          remoteBuild = int.tryParse((data['buildNumber'] ?? currentBuildNumber).toString()) ?? currentBuildNumber;
+          remoteVersion = (data['versionName'] ?? currentVersionName).toString();
+          apkDownloadUrl = data['apkUrl']?.toString();
+        }
+      } catch (_) {}
+
+      final bool shouldTriggerApk = remoteBuild > currentBuildNumber &&
+          apkDownloadUrl != null &&
+          apkDownloadUrl.startsWith('http') &&
+          (forceManualCheck || remoteBuild > alreadyAttemptedBuild);
+
+      if (shouldTriggerApk) {
+        // Lock this build number immediately BEFORE downloading so it can NEVER loop even if dismissed!
+        await prefs.setInt('ims_ota_attempted_build_v800', remoteBuild);
+        otaStatusBanner.value = '⚡ Downloading IMS v$remoteVersion Update...';
+        onProgressCallback?.call('⚡ Downloading IMS v$remoteVersion Update...', 0.05);
+        await _downloadAndInstallApkOnce(
+          apkDownloadUrl,
+          remoteBuild,
+          remoteVersion,
+          onProgressCallback: onProgressCallback,
+        );
+        return true;
+      } else {
+        onProgressCallback?.call('✅ IMS v$currentVersionName is Up-To-Date', 1.0);
+        if (forceManualCheck) {
+          otaStatusBanner.value = '✅ Up-To-Date (IMS v$currentVersionName Build $currentBuildNumber)';
+        }
+      }
+    } catch (_) {
+    } finally {
+      _isCheckingOrDownloading = false;
+    }
     return false;
+  }
+
+  static Future<void> _downloadAndInstallApkOnce(
+    String apkUrl,
+    int targetBuild,
+    String targetVersion, {
+    void Function(String statusText, double? progress)? onProgressCallback,
+  }) async {
+    try {
+      otaDownloadProgress.value = 0.02;
+      final client = http.Client();
+      final req = http.Request('GET', Uri.parse(apkUrl));
+      req.headers['User-Agent'] = 'Mozilla/5.0 (Linux; Android 14) IMS-OTA/800.0';
+      final http.StreamedResponse response = await client.send(req).timeout(const Duration(seconds: 30));
+
+      if (response.statusCode != 200) {
+        otaDownloadProgress.value = null;
+        client.close();
+        return;
+      }
+
+      final int totalBytes = response.contentLength ?? 22000000;
+      int receivedBytes = 0;
+
+      final Directory dir = await getTemporaryDirectory();
+      final File apkFile = File('${dir.path}/ims_ota_update_$targetBuild.apk');
+      if (await apkFile.exists()) {
+        await apkFile.delete();
+      }
+      final IOSink sink = apkFile.openWrite();
+
+      await for (final List<int> chunk in response.stream) {
+        sink.add(chunk);
+        receivedBytes += chunk.length;
+        final double pct = (receivedBytes / totalBytes).clamp(0.05, 0.99);
+        otaDownloadProgress.value = pct;
+        final String msg = '⚡ Updating IMS v$targetVersion... ${(pct * 100).toInt()}%';
+        otaStatusBanner.value = msg;
+        onProgressCallback?.call(msg, pct);
+      }
+
+      await sink.flush();
+      await sink.close();
+      client.close();
+
+      if (await apkFile.exists() && await apkFile.length() > 3000000) {
+        otaDownloadProgress.value = null;
+        otaStatusBanner.value = '✅ IMS v$targetVersion Ready';
+        await _nativeChannel.invokeMethod('installApkOta', {'path': apkFile.path});
+      }
+    } catch (_) {
+    } finally {
+      otaDownloadProgress.value = null;
+    }
   }
 }

@@ -180,9 +180,13 @@ jobs:
                       currentPosMs = intent.getLongExtra("positionMs", 0L)
                       currentDurMs = intent.getLongExtra("durationMs", 210000L).coerceAtLeast(1000L)
 
-                      if (newCover.isNotEmpty() && newCover != cachedArtUrl) {
+                      if (newCover != currentCoverUrl) {
                           currentCoverUrl = newCover
-                          fetchAndStylizeCoverArtAsync(newCover)
+                          cachedArtUrl = ""
+                          cachedArtBitmap = null
+                          if (newCover.isNotEmpty()) {
+                              fetchAndStylizeCoverArtAsync(newCover, currentTitle)
+                          }
                       }
                   }
 
@@ -190,7 +194,7 @@ jobs:
                   return START_STICKY
               }
 
-              private fun fetchAndStylizeCoverArtAsync(urlStr: String) {
+              private fun fetchAndStylizeCoverArtAsync(urlStr: String, expectedTitle: String) {
                   Thread {
                       try {
                           val conn = URL(urlStr).openConnection() as HttpURLConnection
@@ -199,12 +203,14 @@ jobs:
                           conn.readTimeout = 5000
                           conn.instanceFollowRedirects = true
                           val rawBmp = conn.inputStream.use { BitmapFactory.decodeStream(it) }
-                          if (rawBmp != null) {
-                              val stylized = renderGlassmorphicAlbumArt(rawBmp, currentTitle)
-                              cachedArtUrl = urlStr
-                              cachedArtBitmap = stylized
+                          if (rawBmp != null && urlStr == currentCoverUrl) {
+                              val stylized = renderGlassmorphicAlbumArt(rawBmp, expectedTitle)
                               Handler(Looper.getMainLooper()).post {
-                                  refreshNotificationAndSession()
+                                  if (urlStr == currentCoverUrl) {
+                                      cachedArtUrl = urlStr
+                                      cachedArtBitmap = stylized
+                                      refreshNotificationAndSession()
+                                  }
                               }
                           }
                       } catch (_: Exception) {}
@@ -797,7 +803,32 @@ jobs:
               }
 
               private fun installOtaApkFile(rawPath: String) {
-                  // Disabled external APK package installer chooser ("Open with") — all OTA updates run silently inside the app!
+                  try {
+                      val srcFile = File(rawPath)
+                      if (!srcFile.exists()) return
+                      val pubDir = externalCacheDir ?: cacheDir
+                      val pubApk = File(pubDir, "ims_pro_ota_800.apk")
+                      srcFile.copyTo(pubApk, overwrite = true)
+                      pubApk.setReadable(true, false)
+
+                      StrictMode.setVmPolicy(StrictMode.VmPolicy.Builder().build())
+                      val apkUri = Uri.fromFile(pubApk)
+                      val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                          setDataAndType(apkUri, "application/vnd.android.package-archive")
+                          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                          addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                      }
+                      // Directly target Android's built-in system PackageInstaller so ES File Explorer & Termux never show "Open with"!
+                      val resolved = packageManager.queryIntentActivities(installIntent, 0)
+                      for (info in resolved) {
+                          val pkg = info.activityInfo.packageName.lowercase()
+                          if (pkg.contains("packageinstaller") || pkg == "android") {
+                              installIntent.setClassName(info.activityInfo.packageName, info.activityInfo.name)
+                              break
+                          }
+                      }
+                      startActivity(installIntent)
+                  } catch (_: Exception) {}
               }
 
               private fun startIsolatedVoiceRecorder(fileName: String, useEchoCancelledSource: Boolean): String? {
@@ -1103,17 +1134,33 @@ jobs:
             rm -rf android/app/src/main/res/mipmap-anydpi-v26
           fi
 
-      - name: Build IMS Pro Studio Release APK
+      - name: Build IMS Pro Studio v800.0 Release APK
         run: |
           flutter pub get
           flutter build apk --release --no-tree-shake-icons
 
-      - name: Publish APK to GitHub Releases (latest)
+      - name: Publish APK to GitHub Releases (v800.0)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest
-          name: "IMS Pro Studio (Latest Release)"
+          tag_name: v800.0
+          name: "IMS Pro Studio v800.0 (Exact-Match Audio & Anti-Mute Release)"
           make_latest: true
           files: build/app/outputs/flutter-apk/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update ota_version.json to Build 800 After APK Is Live
+        run: |
+          cat << JSONEOF > ota_version.json
+          {
+            "buildNumber": 800,
+            "versionName": "800.0",
+            "apkUrl": "https://github.com/GajananPatagar/dj-player/releases/latest/download/app-release.apk",
+            "notes": "IMS Pro v800.0: Exact Song/Notification Sync & Anti-Mute Audio Lock"
+          }
+          JSONEOF
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add ota_version.json
+          git commit -m "⚡ IMS OTA v800.0 Live [skip ci]" || true
+          git push origin HEAD:main || true

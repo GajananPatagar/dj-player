@@ -41,6 +41,17 @@ class _EntryMusicStudioScreenState extends State<EntryMusicStudioScreen> {
   void initState() {
     super.initState();
     VaultManager.initVaults();
+    _entryPlayer.setAudioContext(
+      AudioContext(
+        android: const AudioContextAndroid(
+          isSpeakerphoneOn: false,
+          stayAwake: true,
+          contentType: AndroidContentType.music,
+          usageType: AndroidUsageType.media,
+          audioFocus: AndroidAudioFocus.none,
+        ),
+      ),
+    );
     _entryPlayer.onPlayerStateChanged.listen((state) {
       if (mounted) {
         setState(() => _isPlaying = (state == PlayerState.playing));
@@ -103,8 +114,7 @@ class _EntryMusicStudioScreenState extends State<EntryMusicStudioScreen> {
         _isLoading = false;
         _statusText = '🔥 ${_onlineEntryTracks.length} Heavy Bass Funk & Entry Tracks Ready (0.0s Instant Play)';
       });
-      // Pre-buffer Track #1 at its exact bass drop so sliding volume up from 0% plays with 0.0s delay!
-      _preBufferTrackAtCursor(_queueCursor);
+      // Only pre-buffer when user is actively on Entry BGM tab!
     }
   }
 

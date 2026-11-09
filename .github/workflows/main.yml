@@ -1325,20 +1325,43 @@ jobs:
             rm -rf android/app/src/main/res/mipmap-anydpi-v26
           fi
 
-      - name: Build Obfuscated Anti-Mod IMS v9999.0 Release APK (For Direct / OTA Install)
+      - name: Install Production 2048-Bit RSA Release Keystore & Configure Release Signing
+        run: |
+          mkdir -p android/app
+          base64 -d ims_upload_keystore.b64 > android/app/ims-upload-keystore.jks
+          cat << 'KEYEOF' > android/key.properties
+          storePassword=ims1681pro
+          keyPassword=ims1681pro
+          keyAlias=ims_upload_key
+          storeFile=ims-upload-keystore.jks
+          KEYEOF
+          # Also replace ~/.android/debug.keystore with a release-DN keystore so Gradle NEVER signs with CN=Android Debug!
+          mkdir -p "$HOME/.android"
+          rm -f "$HOME/.android/debug.keystore"
+          keytool -genkeypair -v             -keystore "$HOME/.android/debug.keystore"             -storetype JKS             -keyalg RSA -keysize 2048 -validity 10000             -alias androiddebugkey             -storepass android -keypass android             -dname "CN=Gajanan Patagar, OU=IMS Pro Studio, O=IMS Organisation, L=Bengaluru, ST=Karnataka, C=IN"
+
+      - name: Build Obfuscated Anti-Mod IMS v9999.0 Release APK (Signed in Release Mode)
         run: |
           flutter pub get
           flutter build apk --release --no-tree-shake-icons --obfuscate --split-debug-info=build/debug-apk-symbols
-          cp build/app/outputs/flutter-apk/app-release.apk /tmp/app-release.apk
+          cp build/app/outputs/flutter-apk/app-release.apk /tmp/app-release-unsigned.apk
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name "apksigner" | sort -V | tail -n 1)
+          "$APKSIGNER" sign             --ks android/app/ims-upload-keystore.jks             --ks-key-alias ims_upload_key             --ks-pass pass:ims1681pro             --key-pass pass:ims1681pro             --out /tmp/app-release.apk             /tmp/app-release-unsigned.apk
+          "$APKSIGNER" verify --print-certs /tmp/app-release.apk
 
-      - name: Build Obfuscated Google Play Store Compliant App Bundle (IMS-PlayStore-Bundle.aab)
+      - name: Build & Sign Google Play Store Production App Bundle (IMS-PlayStore-Bundle.aab)
         run: |
-          # Google Play Store strictly prohibits REQUEST_INSTALL_PACKAGES and sharedUserId in Play Store AAB uploads!
+          # 1. Strip REQUEST_INSTALL_PACKAGES and sharedUserId (prohibited by Google Play Store)
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           sed -i '/REQUEST_INSTALL_PACKAGES/d' "$MANIFEST"
           sed -i 's/android:sharedUserId="com.gajanan.ims.shared"//g' "$MANIFEST"
+          # 2. Build Release AAB with Dart Obfuscation
           flutter build appbundle --release --no-tree-shake-icons --obfuscate --split-debug-info=build/debug-aab-symbols
           cp build/app/outputs/bundle/release/app-release.aab /tmp/IMS-PlayStore-Bundle.aab
+          # 3. Strip any existing META-INF signature and sign strictly in Production Release Mode with ims-upload-keystore.jks
+          zip -d /tmp/IMS-PlayStore-Bundle.aab "META-INF/*.SF" "META-INF/*.RSA" "META-INF/*.DSA" "META-INF/MANIFEST.MF" || true
+          jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256             -keystore android/app/ims-upload-keystore.jks             -storepass ims1681pro             -keypass ims1681pro             /tmp/IMS-PlayStore-Bundle.aab             ims_upload_key
+          jarsigner -verify -verbose -certs /tmp/IMS-PlayStore-Bundle.aab | grep "CN=Gajanan Patagar" 
 
       - name: Publish APK + Google Play Store AAB Bundle to GitHub Releases (v9999999)
         uses: softprops/action-gh-release@v2

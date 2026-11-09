@@ -27,11 +27,17 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Generate Fresh Android V2 Scaffold First
+      - name: Generate Fresh Android V2 Scaffold First & Lock Package Name to com.gajanan.djplaycommentry
         run: |
           rm -rf android
           flutter create --platforms=android --org com.gajanan.djplaycommentry --project-name dj_player .
-          grep -n "void main()" lib/main.dart
+          for gf in android/app/build.gradle android/app/build.gradle.kts; do
+            if [ -f "$gf" ]; then
+              sed -i 's/applicationId = "com.gajanan.djplaycommentry.dj_player"/applicationId = "com.gajanan.djplaycommentry"/g' "$gf"
+              sed -i 's/applicationId "com.gajanan.djplaycommentry.dj_player"/applicationId "com.gajanan.djplaycommentry"/g' "$gf"
+            fi
+          done
+          grep -rn "applicationId" android/app/ || true
 
       - name: Inject Glassmorphic MediaSession Lockscreen Service, Zero-Popup WakeLock, Hardware DSP & TTS
         run: |

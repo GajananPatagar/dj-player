@@ -29,16 +29,78 @@ class ImsSecurityManager {
   static const String _prefRelockTokenKey = 'ims_unlocked_relock_token_v650';
   static const String _prefCustomPinKey = 'ims_custom_pin_v650';
   static const String _prefCachedOtaPinKey = 'ims_cached_ota_pin_v650';
+  static const String _prefBoundDeviceIdKey = 'ims_bound_hw_device_id_v9999';
+  static const String _prefVipStatusKey = 'ims_vip_pro_active_until_ms_v9999';
 
-  /// Checks if 1st-time installation lock has already been unlocked (and matches current OTA relock token).
+  static String currentDeviceId = 'VERIFYING_HW...';
+  static String installerPackage = '';
+  static bool isPlayStoreInstall = false;
+  static bool isTampered = false;
+  static String tamperReason = 'CLEAN';
+  static final ValueNotifier<bool> isVipProActive = ValueNotifier<bool>(false);
+
+  static Future<void> evaluateNativeHardwareSecurity() async {
+    try {
+      final Map? res = await AppSoundEngine._nativeChannel.invokeMethod<Map>('getHardwareSecurityStatus');
+      if (res != null) {
+        currentDeviceId = (res['deviceId'] ?? 'HW_LOCKED').toString();
+        installerPackage = (res['installerPackage'] ?? '').toString();
+        isPlayStoreInstall = (res['isPlayStoreInstall'] == true);
+        isTampered = (res['isTampered'] == true);
+        tamperReason = (res['tamperReason'] ?? 'CLEAN').toString();
+      }
+    } catch (_) {}
+    await checkVipStatus();
+  }
+
+  static Future<bool> checkVipStatus() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final int untilMs = prefs.getInt(_prefVipStatusKey) ?? 0;
+      final bool active = untilMs > DateTime.now().millisecondsSinceEpoch;
+      isVipProActive.value = active;
+      return active;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> unlockVipForDuration(Duration dur) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final int target = DateTime.now().add(dur).millisecondsSinceEpoch;
+      await prefs.setInt(_prefVipStatusKey, target);
+      isVipProActive.value = true;
+    } catch (_) {}
+  }
+
+  /// Checks if this specific hardware device is authorized and NOT a shared/cloned install on another phone!
   static Future<bool> isFirstTimeInstallUnlocked() async {
+    await evaluateNativeHardwareSecurity();
+    if (isTampered) return false;
+
+    // Official Google Play Store installations automatically bind to the buyer's hardware Device ID!
+    if (isPlayStoreInstall) {
+      await markFirstTimeInstallUnlocked();
+      return true;
+    }
+
     try {
       final prefs = await SharedPreferences.getInstance();
       final bool unlocked = prefs.getBool(_prefUnlockedKey) ?? false;
       final int savedToken = prefs.getInt(_prefRelockTokenKey) ?? 1;
+      final String savedHwId = prefs.getString(_prefBoundDeviceIdKey) ?? '';
       final int remoteToken = OtaUpdateEngine.remoteRelockToken.value;
       if (unlocked && savedToken >= remoteToken) {
-        return true;
+        if (savedHwId.isEmpty || savedHwId == currentDeviceId) {
+          if (savedHwId.isEmpty) {
+            await prefs.setString(_prefBoundDeviceIdKey, currentDeviceId);
+          }
+          return true;
+        } else {
+          // Shared/Cloned data detected on a DIFFERENT hardware device! Block immediately!
+          return false;
+        }
       }
     } catch (_) {}
     try {
@@ -46,8 +108,10 @@ class ImsSecurityManager {
       final f = File('${dir.path}/ims_unlocked_v650.flag');
       if (await f.exists()) {
         final String content = (await f.readAsString()).trim();
-        final int fileTok = int.tryParse(content) ?? 1;
-        if (fileTok >= OtaUpdateEngine.remoteRelockToken.value) {
+        final List<String> parts = content.split('|');
+        final int fileTok = int.tryParse(parts.first) ?? 1;
+        final String fileHw = parts.length > 1 ? parts[1] : currentDeviceId;
+        if (fileTok >= OtaUpdateEngine.remoteRelockToken.value && fileHw == currentDeviceId) {
           return true;
         }
       }
@@ -61,11 +125,12 @@ class ImsSecurityManager {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_prefUnlockedKey, true);
       await prefs.setInt(_prefRelockTokenKey, tok);
+      await prefs.setString(_prefBoundDeviceIdKey, currentDeviceId);
     } catch (_) {}
     try {
       final dir = await getApplicationDocumentsDirectory();
       final f = File('${dir.path}/ims_unlocked_v650.flag');
-      await f.writeAsString('$tok');
+      await f.writeAsString('$tok|$currentDeviceId');
     } catch (_) {}
   }
 
@@ -667,10 +732,31 @@ class _ImsFirstTimeLockGateState extends State<ImsFirstTimeLockGate> {
                   ),
                   const SizedBox(height: 14),
 
-                  const Text(
-                    '🔐 Enter Security Access Code\n(One-Time Verification on First Installation)',
+                  Text(
+                    ImsSecurityManager.isTampered
+                        ? '🛡️ SECURITY ALERT: MODDING / PATCHING DETECTED (${ImsSecurityManager.tamperReason})\nThis modified APK is permanently blocked.'
+                        : '🔒 Hardware Device-Locked Protection Active\nShared APKs Outside Google Play Store Require One-Time Device Authorization',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 11.5, color: Color(0xFF00E5FF), fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: ImsSecurityManager.isTampered ? Colors.redAccent : const Color(0xFF00E5FF),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFF00E676)),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    icon: const Icon(Icons.shop_two_rounded, size: 16, color: Color(0xFF00E676)),
+                    label: const Text(
+                      'Install Official App on Google Play Store',
+                      style: TextStyle(fontSize: 10.5, color: Color(0xFF00E676), fontWeight: FontWeight.w900),
+                    ),
+                    onPressed: () {
+                      AppSoundEngine._nativeChannel.invokeMethod('openPlayStoreListing');
+                    },
                   ),
                   const SizedBox(height: 16),
 
@@ -952,6 +1038,247 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
     );
   }
 
+  void _openVipMonetizationStudioModal() {
+    final TextEditingController vipPinCtrl = TextEditingController();
+    String statusMsg = '';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            final bool isVip = ImsSecurityManager.isVipProActive.value;
+            final String shortHw = ImsSecurityManager.currentDeviceId.length > 18
+                ? ImsSecurityManager.currentDeviceId.substring(0, 18)
+                : ImsSecurityManager.currentDeviceId;
+            return Padding(
+              padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+              child: GlassBox(
+                margin: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(16),
+                borderRadius: 24,
+                blur: 24,
+                tintColor: const Color(0xFF0A1224),
+                borderColor: Colors.amberAccent,
+                borderWidth: 1.6,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.workspace_premium_rounded, color: Colors.amberAccent, size: 28),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  isVip ? '👑 IMS VIP PRO STUDIO (ACTIVE)' : '💎 IMS VIP PRO & CREATOR PASS',
+                                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Colors.amberAccent),
+                                ),
+                                Text(
+                                  'Hardware-Locked License: $shortHw • Anti-Mod R8 Shield ON',
+                                  style: const TextStyle(fontSize: 10, color: Color(0xFF00E676)),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded, color: Colors.white70),
+                            onPressed: () => Navigator.pop(ctx),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF132242),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.5)),
+                        ),
+                        child: const Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '✨ Unlock Full Commercial DJ & Event Studio Benefits:',
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Colors.white),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              '• 100% Ad-Free Stage & Wedding Performance Mode\n'
+                              '• Unlimited 320kbps Offline Batch Downloads & Custom Folders\n'
+                              '• Full Studio Karaoke Vocal Cut, Pitch Shift & 192kbps Recording\n'
+                              '• Hardware-Locked Single-Device Anti-Share Protection',
+                              style: TextStyle(fontSize: 11, color: Colors.white70, height: 1.35),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _vipPlanTile(
+                        title: '⚡ Monthly Pro DJ Pass',
+                        subtitle: 'Full Ad-Free Studio + Batch 320K Offline Vaults',
+                        price: '₹49 / Month',
+                        color: const Color(0xFF00E5FF),
+                        onTap: () {
+                          setModalState(() {
+                            statusMsg = '📲 Connect Google Play Billing or enter VIP Activation Key below!';
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 7),
+                      _vipPlanTile(
+                        title: '🔥 Annual Wedding & Event Master',
+                        subtitle: 'Best Value • Priority Cloud Catalog + All Stage FX',
+                        price: '₹299 / Year',
+                        color: const Color(0xFF00E676),
+                        onTap: () {
+                          setModalState(() {
+                            statusMsg = '📲 Connect Google Play Billing or enter VIP Activation Key below!';
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 7),
+                      _vipPlanTile(
+                        title: '👑 Lifetime Studio VIP License',
+                        subtitle: 'One-Time Unlock Bound to Hardware ID ($shortHw)',
+                        price: '₹499 Lifetime',
+                        color: Colors.amberAccent,
+                        onTap: () {
+                          setModalState(() {
+                            statusMsg = '📲 Connect Google Play Billing or enter VIP Activation Key below!';
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF00E676),
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(vertical: 11),
+                          ),
+                          icon: const Icon(Icons.play_circle_fill_rounded, size: 20),
+                          label: const Text(
+                            '🎬 Watch 15s Sponsored Ad → Unlock 24h VIP Pro Free',
+                            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900),
+                          ),
+                          onPressed: () async {
+                            await ImsSecurityManager.unlockVipForDuration(const Duration(hours: 24));
+                            setModalState(() {
+                              statusMsg = '✅ 24-Hour VIP Pro Pass Unlocked on This Device!';
+                            });
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: vipPinCtrl,
+                              obscureText: true,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                labelText: 'Have a VIP Activation Code?',
+                                filled: true,
+                                fillColor: Color(0xFF141E33),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.amberAccent,
+                              foregroundColor: Colors.black,
+                            ),
+                            onPressed: () async {
+                              final bool ok = await ImsSecurityManager.verifyPin(vipPinCtrl.text);
+                              if (ok) {
+                                await ImsSecurityManager.unlockVipForDuration(const Duration(days: 3650));
+                                setModalState(() {
+                                  statusMsg = '👑 Lifetime VIP Pro Activated & Bound to This Device!';
+                                });
+                              } else {
+                                setModalState(() {
+                                  statusMsg = '❌ Invalid VIP Activation Code';
+                                });
+                              }
+                            },
+                            child: const Text('Activate', style: TextStyle(fontWeight: FontWeight.w900)),
+                          ),
+                        ],
+                      ),
+                      if (statusMsg.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          statusMsg,
+                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900, color: Colors.amberAccent),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _vipPlanTile({
+    required String title,
+    required String subtitle,
+    required String price,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        decoration: BoxDecoration(
+          color: const Color(0xFF121F3D),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(0.75)),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900, color: color)),
+                  Text(subtitle, style: const TextStyle(fontSize: 10.5, color: Colors.white70)),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                price,
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.black),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _openInAppOtaAndMasterMixerModal() {
     showModalBottomSheet(
       context: context,
@@ -1121,6 +1448,22 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                 ],
               ),
               actions: [
+                GestureDetector(
+                  onTap: _openVipMonetizationStudioModal,
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(vertical: 11, horizontal: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(colors: [Color(0xFFFFD700), Color(0xFFFF8F00)]),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Text(
+                      '💎 VIP',
+                      style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: Colors.black),
+                    ),
+                  ),
+                ),
                 IconButton(
                   visualDensity: VisualDensity.compact,
                   tooltip: 'Auto-OTA & Master Mixer',

@@ -468,8 +468,10 @@ jobs:
           import android.os.Environment
           import android.os.Handler
           import android.os.Looper
+          import android.os.Debug
           import android.os.PowerManager
           import android.os.StrictMode
+          import android.provider.Settings
           import android.speech.tts.TextToSpeech
           import android.speech.tts.Voice
           import android.view.KeyEvent
@@ -839,6 +841,78 @@ jobs:
                   } catch (_: Exception) {}
               }
 
+              private fun evaluateHardwareSecurityAndInstaller(): Map<String, Any> {
+                  var androidId = "UNKNOWN_HW"
+                  try {
+                      androidId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "HW_FALLBACK"
+                  } catch (_: Exception) {}
+                  val hwFingerprint = "${androidId}_${Build.BOARD}_${Build.MODEL}_${Build.BRAND}"
+
+                  var installerPkg = ""
+                  try {
+                      installerPkg = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                          packageManager.getInstallSourceInfo(packageName).installingPackageName ?: ""
+                      } else {
+                          @Suppress("DEPRECATION")
+                          packageManager.getInstallerPackageName(packageName) ?: ""
+                      }
+                  } catch (_: Exception) {}
+
+                  val isPlayStore = (installerPkg == "com.android.vending" || installerPkg == "com.google.android.feedback")
+
+                  var isTampered = false
+                  var tamperReason = "CLEAN"
+                  try {
+                      if (Debug.isDebuggerConnected() || Debug.waitingForDebugger()) {
+                          isTampered = true
+                          tamperReason = "DEBUGGER_ATTACHED"
+                      }
+                  } catch (_: Exception) {}
+
+                  if (!isTampered) {
+                      try {
+                          val mapsFile = File("/proc/self/maps")
+                          if (mapsFile.exists()) {
+                              val mapsContent = mapsFile.readText().lowercase()
+                              if (mapsContent.contains("frida") ||
+                                  mapsContent.contains("xposedBridge") ||
+                                  mapsContent.contains("edxposed") ||
+                                  mapsContent.contains("lsposed") ||
+                                  mapsContent.contains("substrate")) {
+                                  isTampered = true
+                                  tamperReason = "HOOK_FRAMEWORK_DETECTED"
+                              }
+                          }
+                      } catch (_: Exception) {}
+                  }
+
+                  if (!isTampered) {
+                      val bannedPatchers = listOf(
+                          "com.chelpus.lackypatch",
+                          "com.dimonvideo.luckypatcher",
+                          "com.forpda.lp",
+                          "com.android.vending.billing.InAppBillingService.COIN",
+                          "com.android.vending.billing.InAppBillingService.LUCK"
+                      )
+                      for (badPkg in bannedPatchers) {
+                          try {
+                              packageManager.getPackageInfo(badPkg, 0)
+                              isTampered = true
+                              tamperReason = "PATCHER_APP_DETECTED"
+                              break
+                          } catch (_: Exception) {}
+                      }
+                  }
+
+                  return mapOf(
+                      "deviceId" to hwFingerprint,
+                      "installerPackage" to installerPkg,
+                      "isPlayStoreInstall" to isPlayStore,
+                      "isTampered" to isTampered,
+                      "tamperReason" to tamperReason
+                  )
+              }
+
               private fun installOtaApkFile(rawPath: String) {
                   try {
                       val srcFile = File(rawPath)
@@ -1022,6 +1096,25 @@ jobs:
                               val loudness = call.argument<Int>("loudness") ?: 0
                               val bands = call.argument<List<Int>>("bands") ?: listOf(0, 0, 0, 0, 0)
                               applyHardwareDsp(bass, loudness, bands)
+                              result.success(true)
+                          }
+                          "getHardwareSecurityStatus" -> {
+                              result.success(evaluateHardwareSecurityAndInstaller())
+                          }
+                          "openPlayStoreListing" -> {
+                              try {
+                                  val marketIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName")).apply {
+                                      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                  }
+                                  startActivity(marketIntent)
+                              } catch (_: Exception) {
+                                  try {
+                                      val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=$packageName")).apply {
+                                          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                      }
+                                      startActivity(webIntent)
+                                  } catch (_: Exception) {}
+                              }
                               result.success(true)
                           }
                           "installApkOta" -> {
@@ -1232,19 +1325,19 @@ jobs:
             rm -rf android/app/src/main/res/mipmap-anydpi-v26
           fi
 
-      - name: Build IMS Pro Studio v9999.0 Release APK (For Direct / OTA Install)
+      - name: Build Obfuscated Anti-Mod IMS v9999.0 Release APK (For Direct / OTA Install)
         run: |
           flutter pub get
-          flutter build apk --release --no-tree-shake-icons
+          flutter build apk --release --no-tree-shake-icons --obfuscate --split-debug-info=build/debug-apk-symbols
           cp build/app/outputs/flutter-apk/app-release.apk /tmp/app-release.apk
 
-      - name: Build Google Play Store Compliant App Bundle (IMS-PlayStore-Bundle.aab)
+      - name: Build Obfuscated Google Play Store Compliant App Bundle (IMS-PlayStore-Bundle.aab)
         run: |
           # Google Play Store strictly prohibits REQUEST_INSTALL_PACKAGES and sharedUserId in Play Store AAB uploads!
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           sed -i '/REQUEST_INSTALL_PACKAGES/d' "$MANIFEST"
           sed -i 's/android:sharedUserId="com.gajanan.ims.shared"//g' "$MANIFEST"
-          flutter build appbundle --release --no-tree-shake-icons
+          flutter build appbundle --release --no-tree-shake-icons --obfuscate --split-debug-info=build/debug-aab-symbols
           cp build/app/outputs/bundle/release/app-release.aab /tmp/IMS-PlayStore-Bundle.aab
 
       - name: Publish APK + Google Play Store AAB Bundle to GitHub Releases (v9999999)

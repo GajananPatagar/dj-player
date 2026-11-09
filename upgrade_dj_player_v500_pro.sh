@@ -839,6 +839,90 @@ EOF_PUBSPEC
 
 echo "  ✅ Wrote pubspec.yaml"
 
+cat << 'EOF_PRIVACY_MD' > PRIVACY_POLICY.md
+# Privacy Policy for IMS Pro Studio
+
+**Effective Date:** October 31, 2026  
+**Developer:** Gajanan Patagar  
+**Application Name:** IMS (IMS Pro Studio)  
+**Package ID:** `com.gajanan.djplaycommentry`
+
+## 1. Overview
+IMS Pro Studio ("the App") is an audio, music player, karaoke vocal studio, event entry BGM pad, and live sports commentary soundboard application. We respect your privacy and are committed to protecting it.
+
+## 2. Permissions We Request & Why
+- **Internet Access (`android.permission.INTERNET`)**: Used to stream music tracks, fetch song metadata, and sync daily catalog categories.
+- **Foreground Media Playback (`android.permission.FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`)**: Allows uninterrupted music playback and lock-screen/notification controls when your screen is turned off or while using other apps.
+- **Microphone / Audio Recording (`android.permission.RECORD_AUDIO`)**: Used **exclusively on your device** when you voluntarily use the Karaoke Studio or Live PA/Voice Recording pads. Your voice recordings are saved locally on your device and are never uploaded to external servers.
+- **Audio Settings (`android.permission.MODIFY_AUDIO_SETTINGS`)**: Used to provide hardware equalizer, bass boost, and volume normalization controls.
+- **Media & Storage Access (`READ_MEDIA_AUDIO`, `READ_EXTERNAL_STORAGE`)**: Used only when you choose to import local MP3/audio files from your phone storage into the app.
+
+## 3. Data Collection & Storage
+- **No Personal Identity Collection**: We do not require you to create an account or submit your name, email address, phone number, or location.
+- **Local Taste & Playlist Preferences**: Your favorites, offline saved tracks, custom song ordering, and AI Daily Mix listening preferences are stored locally on your device using Android `SharedPreferences`.
+- **Advertising & Monetization (When Enabled)**: If Google AdMob ads or Google Play Billing are enabled in future Play Store releases, Google may collect standard device identifiers (Advertising ID) in accordance with the [Google Privacy Policy](https://policies.google.com/privacy).
+
+## 4. Data Sharing & Third Parties
+We do not sell, trade, or rent any user data to third parties.
+
+## 5. Children's Privacy
+Our application is intended for general audiences and does not knowingly collect personal information from children under 13.
+
+## 6. Contact Us
+If you have any questions about this Privacy Policy, please contact the developer via the official GitHub repository:  
+`https://github.com/GajananPatagar/dj-player/issues`
+
+EOF_PRIVACY_MD
+
+echo "  ✅ Wrote PRIVACY_POLICY.md"
+
+cat << 'EOF_KEYSTORE_B64' > ims_upload_keystore.b64
+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
+l70REAANhcUjbG12agH3TrzI5pmS8jac6A==
+
+EOF_KEYSTORE_B64
+
+echo "  ✅ Wrote ims_upload_keystore.b64"
+
 cat << 'EOF_OTA_JSON' > ota_version.json
 {
   "buildNumber": 1,
@@ -1354,8 +1438,10 @@ jobs:
           import android.os.Environment
           import android.os.Handler
           import android.os.Looper
+          import android.os.Debug
           import android.os.PowerManager
           import android.os.StrictMode
+          import android.provider.Settings
           import android.speech.tts.TextToSpeech
           import android.speech.tts.Voice
           import android.view.KeyEvent
@@ -1725,6 +1811,78 @@ jobs:
                   } catch (_: Exception) {}
               }
 
+              private fun evaluateHardwareSecurityAndInstaller(): Map<String, Any> {
+                  var androidId = "UNKNOWN_HW"
+                  try {
+                      androidId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "HW_FALLBACK"
+                  } catch (_: Exception) {}
+                  val hwFingerprint = "${androidId}_${Build.BOARD}_${Build.MODEL}_${Build.BRAND}"
+
+                  var installerPkg = ""
+                  try {
+                      installerPkg = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                          packageManager.getInstallSourceInfo(packageName).installingPackageName ?: ""
+                      } else {
+                          @Suppress("DEPRECATION")
+                          packageManager.getInstallerPackageName(packageName) ?: ""
+                      }
+                  } catch (_: Exception) {}
+
+                  val isPlayStore = (installerPkg == "com.android.vending" || installerPkg == "com.google.android.feedback")
+
+                  var isTampered = false
+                  var tamperReason = "CLEAN"
+                  try {
+                      if (Debug.isDebuggerConnected() || Debug.waitingForDebugger()) {
+                          isTampered = true
+                          tamperReason = "DEBUGGER_ATTACHED"
+                      }
+                  } catch (_: Exception) {}
+
+                  if (!isTampered) {
+                      try {
+                          val mapsFile = File("/proc/self/maps")
+                          if (mapsFile.exists()) {
+                              val mapsContent = mapsFile.readText().lowercase()
+                              if (mapsContent.contains("frida") ||
+                                  mapsContent.contains("xposedBridge") ||
+                                  mapsContent.contains("edxposed") ||
+                                  mapsContent.contains("lsposed") ||
+                                  mapsContent.contains("substrate")) {
+                                  isTampered = true
+                                  tamperReason = "HOOK_FRAMEWORK_DETECTED"
+                              }
+                          }
+                      } catch (_: Exception) {}
+                  }
+
+                  if (!isTampered) {
+                      val bannedPatchers = listOf(
+                          "com.chelpus.lackypatch",
+                          "com.dimonvideo.luckypatcher",
+                          "com.forpda.lp",
+                          "com.android.vending.billing.InAppBillingService.COIN",
+                          "com.android.vending.billing.InAppBillingService.LUCK"
+                      )
+                      for (badPkg in bannedPatchers) {
+                          try {
+                              packageManager.getPackageInfo(badPkg, 0)
+                              isTampered = true
+                              tamperReason = "PATCHER_APP_DETECTED"
+                              break
+                          } catch (_: Exception) {}
+                      }
+                  }
+
+                  return mapOf(
+                      "deviceId" to hwFingerprint,
+                      "installerPackage" to installerPkg,
+                      "isPlayStoreInstall" to isPlayStore,
+                      "isTampered" to isTampered,
+                      "tamperReason" to tamperReason
+                  )
+              }
+
               private fun installOtaApkFile(rawPath: String) {
                   try {
                       val srcFile = File(rawPath)
@@ -1908,6 +2066,25 @@ jobs:
                               val loudness = call.argument<Int>("loudness") ?: 0
                               val bands = call.argument<List<Int>>("bands") ?: listOf(0, 0, 0, 0, 0)
                               applyHardwareDsp(bass, loudness, bands)
+                              result.success(true)
+                          }
+                          "getHardwareSecurityStatus" -> {
+                              result.success(evaluateHardwareSecurityAndInstaller())
+                          }
+                          "openPlayStoreListing" -> {
+                              try {
+                                  val marketIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName")).apply {
+                                      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                  }
+                                  startActivity(marketIntent)
+                              } catch (_: Exception) {
+                                  try {
+                                      val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=$packageName")).apply {
+                                          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                      }
+                                      startActivity(webIntent)
+                                  } catch (_: Exception) {}
+                              }
                               result.success(true)
                           }
                           "installApkOta" -> {
@@ -2118,18 +2295,54 @@ jobs:
             rm -rf android/app/src/main/res/mipmap-anydpi-v26
           fi
 
-      - name: Build IMS Pro Studio v5000.0 Flagship Release APK
+      - name: Install Production 2048-Bit RSA Release Keystore & Configure Release Signing
+        run: |
+          mkdir -p android/app
+          base64 -d ims_upload_keystore.b64 > android/app/ims-upload-keystore.jks
+          cat << 'KEYEOF' > android/key.properties
+          storePassword=ims1681pro
+          keyPassword=ims1681pro
+          keyAlias=ims_upload_key
+          storeFile=ims-upload-keystore.jks
+          KEYEOF
+          # Also replace ~/.android/debug.keystore with a release-DN keystore so Gradle NEVER signs with CN=Android Debug!
+          mkdir -p "$HOME/.android"
+          rm -f "$HOME/.android/debug.keystore"
+          keytool -genkeypair -v             -keystore "$HOME/.android/debug.keystore"             -storetype JKS             -keyalg RSA -keysize 2048 -validity 10000             -alias androiddebugkey             -storepass android -keypass android             -dname "CN=Gajanan Patagar, OU=IMS Pro Studio, O=IMS Organisation, L=Bengaluru, ST=Karnataka, C=IN"
+
+      - name: Build Obfuscated Anti-Mod IMS v9999.0 Release APK (Signed in Release Mode)
         run: |
           flutter pub get
-          flutter build apk --release --no-tree-shake-icons
+          flutter build apk --release --no-tree-shake-icons --obfuscate --split-debug-info=build/debug-apk-symbols
+          cp build/app/outputs/flutter-apk/app-release.apk /tmp/app-release-unsigned.apk
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name "apksigner" | sort -V | tail -n 1)
+          "$APKSIGNER" sign             --ks android/app/ims-upload-keystore.jks             --ks-key-alias ims_upload_key             --ks-pass pass:ims1681pro             --key-pass pass:ims1681pro             --out /tmp/app-release.apk             /tmp/app-release-unsigned.apk
+          "$APKSIGNER" verify --print-certs /tmp/app-release.apk
 
-      - name: Publish APK to GitHub Releases (v9999999 — Global OTA for v500 & v650)
+      - name: Build & Sign Google Play Store Production App Bundle (IMS-PlayStore-Bundle.aab)
+        run: |
+          # 1. Strip REQUEST_INSTALL_PACKAGES and sharedUserId (prohibited by Google Play Store)
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          sed -i '/REQUEST_INSTALL_PACKAGES/d' "$MANIFEST"
+          sed -i 's/android:sharedUserId="com.gajanan.ims.shared"//g' "$MANIFEST"
+          # 2. Build Release AAB with Dart Obfuscation
+          flutter build appbundle --release --no-tree-shake-icons --obfuscate --split-debug-info=build/debug-aab-symbols
+          cp build/app/outputs/bundle/release/app-release.aab /tmp/IMS-PlayStore-Bundle.aab
+          # 3. Strip any existing META-INF signature and sign strictly in Production Release Mode with ims-upload-keystore.jks
+          zip -d /tmp/IMS-PlayStore-Bundle.aab "META-INF/*.SF" "META-INF/*.RSA" "META-INF/*.DSA" "META-INF/MANIFEST.MF" || true
+          jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256             -keystore android/app/ims-upload-keystore.jks             -storepass ims1681pro             -keypass ims1681pro             /tmp/IMS-PlayStore-Bundle.aab             ims_upload_key
+          jarsigner -verify -verbose -certs /tmp/IMS-PlayStore-Bundle.aab | grep "CN=Gajanan Patagar" 
+
+      - name: Publish APK + Google Play Store AAB Bundle to GitHub Releases (v9999999)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v9999999
-          name: "IMS Pro Studio v9999.0 Flagship Global OTA Release"
+          name: "IMS Pro Studio v9999.0 (OTA APK + Google Play Store .AAB Bundle)"
           make_latest: true
-          files: build/app/outputs/flutter-apk/app-release.apk
+          files: |
+            /tmp/app-release.apk
+            /tmp/IMS-PlayStore-Bundle.aab
+            PRIVACY_POLICY.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -11396,16 +11609,78 @@ class ImsSecurityManager {
   static const String _prefRelockTokenKey = 'ims_unlocked_relock_token_v650';
   static const String _prefCustomPinKey = 'ims_custom_pin_v650';
   static const String _prefCachedOtaPinKey = 'ims_cached_ota_pin_v650';
+  static const String _prefBoundDeviceIdKey = 'ims_bound_hw_device_id_v9999';
+  static const String _prefVipStatusKey = 'ims_vip_pro_active_until_ms_v9999';
 
-  /// Checks if 1st-time installation lock has already been unlocked (and matches current OTA relock token).
+  static String currentDeviceId = 'VERIFYING_HW...';
+  static String installerPackage = '';
+  static bool isPlayStoreInstall = false;
+  static bool isTampered = false;
+  static String tamperReason = 'CLEAN';
+  static final ValueNotifier<bool> isVipProActive = ValueNotifier<bool>(false);
+
+  static Future<void> evaluateNativeHardwareSecurity() async {
+    try {
+      final Map? res = await AppSoundEngine._nativeChannel.invokeMethod<Map>('getHardwareSecurityStatus');
+      if (res != null) {
+        currentDeviceId = (res['deviceId'] ?? 'HW_LOCKED').toString();
+        installerPackage = (res['installerPackage'] ?? '').toString();
+        isPlayStoreInstall = (res['isPlayStoreInstall'] == true);
+        isTampered = (res['isTampered'] == true);
+        tamperReason = (res['tamperReason'] ?? 'CLEAN').toString();
+      }
+    } catch (_) {}
+    await checkVipStatus();
+  }
+
+  static Future<bool> checkVipStatus() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final int untilMs = prefs.getInt(_prefVipStatusKey) ?? 0;
+      final bool active = untilMs > DateTime.now().millisecondsSinceEpoch;
+      isVipProActive.value = active;
+      return active;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> unlockVipForDuration(Duration dur) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final int target = DateTime.now().add(dur).millisecondsSinceEpoch;
+      await prefs.setInt(_prefVipStatusKey, target);
+      isVipProActive.value = true;
+    } catch (_) {}
+  }
+
+  /// Checks if this specific hardware device is authorized and NOT a shared/cloned install on another phone!
   static Future<bool> isFirstTimeInstallUnlocked() async {
+    await evaluateNativeHardwareSecurity();
+    if (isTampered) return false;
+
+    // Official Google Play Store installations automatically bind to the buyer's hardware Device ID!
+    if (isPlayStoreInstall) {
+      await markFirstTimeInstallUnlocked();
+      return true;
+    }
+
     try {
       final prefs = await SharedPreferences.getInstance();
       final bool unlocked = prefs.getBool(_prefUnlockedKey) ?? false;
       final int savedToken = prefs.getInt(_prefRelockTokenKey) ?? 1;
+      final String savedHwId = prefs.getString(_prefBoundDeviceIdKey) ?? '';
       final int remoteToken = OtaUpdateEngine.remoteRelockToken.value;
       if (unlocked && savedToken >= remoteToken) {
-        return true;
+        if (savedHwId.isEmpty || savedHwId == currentDeviceId) {
+          if (savedHwId.isEmpty) {
+            await prefs.setString(_prefBoundDeviceIdKey, currentDeviceId);
+          }
+          return true;
+        } else {
+          // Shared/Cloned data detected on a DIFFERENT hardware device! Block immediately!
+          return false;
+        }
       }
     } catch (_) {}
     try {
@@ -11413,8 +11688,10 @@ class ImsSecurityManager {
       final f = File('${dir.path}/ims_unlocked_v650.flag');
       if (await f.exists()) {
         final String content = (await f.readAsString()).trim();
-        final int fileTok = int.tryParse(content) ?? 1;
-        if (fileTok >= OtaUpdateEngine.remoteRelockToken.value) {
+        final List<String> parts = content.split('|');
+        final int fileTok = int.tryParse(parts.first) ?? 1;
+        final String fileHw = parts.length > 1 ? parts[1] : currentDeviceId;
+        if (fileTok >= OtaUpdateEngine.remoteRelockToken.value && fileHw == currentDeviceId) {
           return true;
         }
       }
@@ -11428,11 +11705,12 @@ class ImsSecurityManager {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_prefUnlockedKey, true);
       await prefs.setInt(_prefRelockTokenKey, tok);
+      await prefs.setString(_prefBoundDeviceIdKey, currentDeviceId);
     } catch (_) {}
     try {
       final dir = await getApplicationDocumentsDirectory();
       final f = File('${dir.path}/ims_unlocked_v650.flag');
-      await f.writeAsString('$tok');
+      await f.writeAsString('$tok|$currentDeviceId');
     } catch (_) {}
   }
 
@@ -12034,10 +12312,31 @@ class _ImsFirstTimeLockGateState extends State<ImsFirstTimeLockGate> {
                   ),
                   const SizedBox(height: 14),
 
-                  const Text(
-                    '🔐 Enter Security Access Code\n(One-Time Verification on First Installation)',
+                  Text(
+                    ImsSecurityManager.isTampered
+                        ? '🛡️ SECURITY ALERT: MODDING / PATCHING DETECTED (${ImsSecurityManager.tamperReason})\nThis modified APK is permanently blocked.'
+                        : '🔒 Hardware Device-Locked Protection Active\nShared APKs Outside Google Play Store Require One-Time Device Authorization',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 11.5, color: Color(0xFF00E5FF), fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: ImsSecurityManager.isTampered ? Colors.redAccent : const Color(0xFF00E5FF),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFF00E676)),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    icon: const Icon(Icons.shop_two_rounded, size: 16, color: Color(0xFF00E676)),
+                    label: const Text(
+                      'Install Official App on Google Play Store',
+                      style: TextStyle(fontSize: 10.5, color: Color(0xFF00E676), fontWeight: FontWeight.w900),
+                    ),
+                    onPressed: () {
+                      AppSoundEngine._nativeChannel.invokeMethod('openPlayStoreListing');
+                    },
                   ),
                   const SizedBox(height: 16),
 
@@ -12319,6 +12618,247 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
     );
   }
 
+  void _openVipMonetizationStudioModal() {
+    final TextEditingController vipPinCtrl = TextEditingController();
+    String statusMsg = '';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            final bool isVip = ImsSecurityManager.isVipProActive.value;
+            final String shortHw = ImsSecurityManager.currentDeviceId.length > 18
+                ? ImsSecurityManager.currentDeviceId.substring(0, 18)
+                : ImsSecurityManager.currentDeviceId;
+            return Padding(
+              padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+              child: GlassBox(
+                margin: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(16),
+                borderRadius: 24,
+                blur: 24,
+                tintColor: const Color(0xFF0A1224),
+                borderColor: Colors.amberAccent,
+                borderWidth: 1.6,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.workspace_premium_rounded, color: Colors.amberAccent, size: 28),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  isVip ? '👑 IMS VIP PRO STUDIO (ACTIVE)' : '💎 IMS VIP PRO & CREATOR PASS',
+                                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Colors.amberAccent),
+                                ),
+                                Text(
+                                  'Hardware-Locked License: $shortHw • Anti-Mod R8 Shield ON',
+                                  style: const TextStyle(fontSize: 10, color: Color(0xFF00E676)),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded, color: Colors.white70),
+                            onPressed: () => Navigator.pop(ctx),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF132242),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.5)),
+                        ),
+                        child: const Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '✨ Unlock Full Commercial DJ & Event Studio Benefits:',
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Colors.white),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              '• 100% Ad-Free Stage & Wedding Performance Mode\n'
+                              '• Unlimited 320kbps Offline Batch Downloads & Custom Folders\n'
+                              '• Full Studio Karaoke Vocal Cut, Pitch Shift & 192kbps Recording\n'
+                              '• Hardware-Locked Single-Device Anti-Share Protection',
+                              style: TextStyle(fontSize: 11, color: Colors.white70, height: 1.35),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _vipPlanTile(
+                        title: '⚡ Monthly Pro DJ Pass',
+                        subtitle: 'Full Ad-Free Studio + Batch 320K Offline Vaults',
+                        price: '₹49 / Month',
+                        color: const Color(0xFF00E5FF),
+                        onTap: () {
+                          setModalState(() {
+                            statusMsg = '📲 Connect Google Play Billing or enter VIP Activation Key below!';
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 7),
+                      _vipPlanTile(
+                        title: '🔥 Annual Wedding & Event Master',
+                        subtitle: 'Best Value • Priority Cloud Catalog + All Stage FX',
+                        price: '₹299 / Year',
+                        color: const Color(0xFF00E676),
+                        onTap: () {
+                          setModalState(() {
+                            statusMsg = '📲 Connect Google Play Billing or enter VIP Activation Key below!';
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 7),
+                      _vipPlanTile(
+                        title: '👑 Lifetime Studio VIP License',
+                        subtitle: 'One-Time Unlock Bound to Hardware ID ($shortHw)',
+                        price: '₹499 Lifetime',
+                        color: Colors.amberAccent,
+                        onTap: () {
+                          setModalState(() {
+                            statusMsg = '📲 Connect Google Play Billing or enter VIP Activation Key below!';
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF00E676),
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(vertical: 11),
+                          ),
+                          icon: const Icon(Icons.play_circle_fill_rounded, size: 20),
+                          label: const Text(
+                            '🎬 Watch 15s Sponsored Ad → Unlock 24h VIP Pro Free',
+                            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900),
+                          ),
+                          onPressed: () async {
+                            await ImsSecurityManager.unlockVipForDuration(const Duration(hours: 24));
+                            setModalState(() {
+                              statusMsg = '✅ 24-Hour VIP Pro Pass Unlocked on This Device!';
+                            });
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: vipPinCtrl,
+                              obscureText: true,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                labelText: 'Have a VIP Activation Code?',
+                                filled: true,
+                                fillColor: Color(0xFF141E33),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.amberAccent,
+                              foregroundColor: Colors.black,
+                            ),
+                            onPressed: () async {
+                              final bool ok = await ImsSecurityManager.verifyPin(vipPinCtrl.text);
+                              if (ok) {
+                                await ImsSecurityManager.unlockVipForDuration(const Duration(days: 3650));
+                                setModalState(() {
+                                  statusMsg = '👑 Lifetime VIP Pro Activated & Bound to This Device!';
+                                });
+                              } else {
+                                setModalState(() {
+                                  statusMsg = '❌ Invalid VIP Activation Code';
+                                });
+                              }
+                            },
+                            child: const Text('Activate', style: TextStyle(fontWeight: FontWeight.w900)),
+                          ),
+                        ],
+                      ),
+                      if (statusMsg.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          statusMsg,
+                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900, color: Colors.amberAccent),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _vipPlanTile({
+    required String title,
+    required String subtitle,
+    required String price,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        decoration: BoxDecoration(
+          color: const Color(0xFF121F3D),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(0.75)),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900, color: color)),
+                  Text(subtitle, style: const TextStyle(fontSize: 10.5, color: Colors.white70)),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                price,
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.black),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _openInAppOtaAndMasterMixerModal() {
     showModalBottomSheet(
       context: context,
@@ -12488,6 +13028,22 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                 ],
               ),
               actions: [
+                GestureDetector(
+                  onTap: _openVipMonetizationStudioModal,
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(vertical: 11, horizontal: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(colors: [Color(0xFFFFD700), Color(0xFFFF8F00)]),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Text(
+                      '💎 VIP',
+                      style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: Colors.black),
+                    ),
+                  ),
+                ),
                 IconButton(
                   visualDensity: VisualDensity.compact,
                   tooltip: 'Auto-OTA & Master Mixer',

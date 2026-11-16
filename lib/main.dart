@@ -15,6 +15,7 @@ import 'entry_music_studio.dart';
 import 'glass_widgets.dart';
 import 'karaoke_studio.dart';
 import 'ota_update_engine.dart';
+import 'monetization_and_ads_engine.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -1041,6 +1042,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
   void _openVipMonetizationStudioModal() {
     final TextEditingController vipPinCtrl = TextEditingController();
     String statusMsg = '';
+    bool isSuccessMsg = false;
 
     showModalBottomSheet(
       context: context,
@@ -1050,9 +1052,8 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
         return StatefulBuilder(
           builder: (ctx, setModalState) {
             final bool isVip = ImsSecurityManager.isVipProActive.value;
-            final String shortHw = ImsSecurityManager.currentDeviceId.length > 18
-                ? ImsSecurityManager.currentDeviceId.substring(0, 18)
-                : ImsSecurityManager.currentDeviceId;
+            final String hwId = ImsSecurityManager.currentDeviceId;
+            final String shortHw = hwId.length > 18 ? hwId.substring(0, 18) : hwId;
             return Padding(
               padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
               child: GlassBox(
@@ -1078,7 +1079,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                               children: [
                                 Text(
                                   isVip ? '👑 IMS VIP PRO STUDIO (ACTIVE)' : '💎 IMS VIP PRO & CREATOR PASS',
-                                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Colors.amberAccent),
+                                  style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900, color: Colors.amberAccent),
                                 ),
                                 Text(
                                   'Hardware-Locked License: $shortHw • Anti-Mod R8 Shield ON',
@@ -1088,14 +1089,49 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                             ),
                           ),
                           IconButton(
+                            tooltip: 'Owner Customer Key Generator',
+                            icon: const Icon(Icons.vpn_key_rounded, color: Color(0xFF00E5FF), size: 20),
+                            onPressed: () {
+                              showModalBottomSheet(
+                                context: context,
+                                isScrollControlled: true,
+                                backgroundColor: Colors.transparent,
+                                builder: (_) => const OwnerVipKeyGeneratorSheet(),
+                              );
+                            },
+                          ),
+                          IconButton(
                             icon: const Icon(Icons.close_rounded, color: Colors.white70),
                             onPressed: () => Navigator.pop(ctx),
                           ),
                         ],
                       ),
+                      if (statusMsg.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: (isSuccessMsg ? const Color(0xFF00E676) : Colors.redAccent).withOpacity(0.18),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isSuccessMsg ? const Color(0xFF00E676) : Colors.redAccent,
+                              width: 1.4,
+                            ),
+                          ),
+                          child: Text(
+                            statusMsg,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w900,
+                              color: isSuccessMsg ? const Color(0xFF00E676) : Colors.redAccent,
+                            ),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 10),
                       Container(
-                        padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.all(11),
                         decoration: BoxDecoration(
                           color: const Color(0xFF132242),
                           borderRadius: BorderRadius.circular(14),
@@ -1105,16 +1141,17 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '✨ Unlock Full Commercial DJ & Event Studio Benefits:',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Colors.white),
+                              '✨ Tap Any Pass Below to Pay via UPI / Play Store or Unlock:',
+                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900, color: Colors.white),
                             ),
-                            SizedBox(height: 4),
+                            SizedBox(height: 3),
                             Text(
-                              '• 100% Ad-Free Stage & Wedding Performance Mode\n'
-                              '• Unlimited 320kbps Offline Batch Downloads & Custom Folders\n'
-                              '• Full Studio Karaoke Vocal Cut, Pitch Shift & 192kbps Recording\n'
-                              '• Hardware-Locked Single-Device Anti-Share Protection',
-                              style: TextStyle(fontSize: 11, color: Colors.white70, height: 1.35),
+                              '• 100% Ad-Free Stage & Wedding Performance Mode
+'
+                              '• Unlimited 320kbps Offline Batch Downloads & Custom Folders
+'
+                              '• Full Studio Karaoke Vocal Cut, Pitch Shift & 192kbps Recording',
+                              style: TextStyle(fontSize: 10.5, color: Colors.white70, height: 1.3),
                             ),
                           ],
                         ),
@@ -1122,37 +1159,67 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                       const SizedBox(height: 10),
                       _vipPlanTile(
                         title: '⚡ Monthly Pro DJ Pass',
-                        subtitle: 'Full Ad-Free Studio + Batch 320K Offline Vaults',
+                        subtitle: 'Tap to Pay ₹49 via GPay / PhonePe / Play Store & Unlock 30 Days',
                         price: '₹49 / Month',
                         color: const Color(0xFF00E5FF),
                         onTap: () {
-                          setModalState(() {
-                            statusMsg = '📲 Connect Google Play Billing or enter VIP Activation Key below!';
-                          });
+                          ImsMonetizationEngine.instance.openPassCheckoutDialog(
+                            context,
+                            planTitle: '⚡ Monthly Pro DJ Pass',
+                            planSubtitle: '30-Day Full Ad-Free Studio + Unlimited 320K Offline Vaults',
+                            amountInr: 49,
+                            productId: ImsMonetizationEngine.kProductMonthly49,
+                            tierCode: 'MONTHLY',
+                            accentColor: const Color(0xFF00E5FF),
+                            onUnlocked: () => setModalState(() {
+                              statusMsg = '👑 Monthly Pro DJ Pass Activated!';
+                              isSuccessMsg = true;
+                            }),
+                          );
                         },
                       ),
                       const SizedBox(height: 7),
                       _vipPlanTile(
                         title: '🔥 Annual Wedding & Event Master',
-                        subtitle: 'Best Value • Priority Cloud Catalog + All Stage FX',
+                        subtitle: 'Tap to Pay ₹299 via GPay / PhonePe / Play Store & Unlock 1 Year',
                         price: '₹299 / Year',
                         color: const Color(0xFF00E676),
                         onTap: () {
-                          setModalState(() {
-                            statusMsg = '📲 Connect Google Play Billing or enter VIP Activation Key below!';
-                          });
+                          ImsMonetizationEngine.instance.openPassCheckoutDialog(
+                            context,
+                            planTitle: '🔥 Annual Wedding & Event Master',
+                            planSubtitle: '365-Day Full Commercial Event & Wedding DJ License',
+                            amountInr: 299,
+                            productId: ImsMonetizationEngine.kProductAnnual299,
+                            tierCode: 'ANNUAL',
+                            accentColor: const Color(0xFF00E676),
+                            onUnlocked: () => setModalState(() {
+                              statusMsg = '👑 Annual Wedding & Event Master Pass Activated!';
+                              isSuccessMsg = true;
+                            }),
+                          );
                         },
                       ),
                       const SizedBox(height: 7),
                       _vipPlanTile(
                         title: '👑 Lifetime Studio VIP License',
-                        subtitle: 'One-Time Unlock Bound to Hardware ID ($shortHw)',
+                        subtitle: 'Tap to Pay ₹499 One-Time — Permanently Bound to $shortHw',
                         price: '₹499 Lifetime',
                         color: Colors.amberAccent,
                         onTap: () {
-                          setModalState(() {
-                            statusMsg = '📲 Connect Google Play Billing or enter VIP Activation Key below!';
-                          });
+                          ImsMonetizationEngine.instance.openPassCheckoutDialog(
+                            context,
+                            planTitle: '👑 Lifetime Studio VIP License',
+                            planSubtitle: 'Permanent Hardware-Bound VIP Studio Master License',
+                            amountInr: 499,
+                            productId: ImsMonetizationEngine.kProductLifetime499,
+                            tierCode: 'LIFETIME',
+                            accentColor: Colors.amberAccent,
+                            onUnlocked: () => setModalState(() {
+                              statusMsg = '👑 Lifetime Studio VIP License Activated!';
+                              isSuccessMsg = true;
+                            }),
+                          );
                         },
                       ),
                       const SizedBox(height: 10),
@@ -1162,18 +1229,23 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF00E676),
                             foregroundColor: Colors.black,
-                            padding: const EdgeInsets.symmetric(vertical: 11),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
                           ),
                           icon: const Icon(Icons.play_circle_fill_rounded, size: 20),
                           label: const Text(
                             '🎬 Watch 15s Sponsored Ad → Unlock 24h VIP Pro Free',
                             style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900),
                           ),
-                          onPressed: () async {
-                            await ImsSecurityManager.unlockVipForDuration(const Duration(hours: 24));
-                            setModalState(() {
-                              statusMsg = '✅ 24-Hour VIP Pro Pass Unlocked on This Device!';
-                            });
+                          onPressed: () {
+                            ImsMonetizationEngine.instance.show15SecondRewardedAdExperience(
+                              context,
+                              onRewardGranted: () {
+                                setModalState(() {
+                                  statusMsg = '✅ 24-Hour VIP Pro Pass Unlocked by Watching Sponsored Ad!';
+                                  isSuccessMsg = true;
+                                });
+                              },
+                            );
                           },
                         ),
                       ),
@@ -1183,11 +1255,10 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                           Expanded(
                             child: TextField(
                               controller: vipPinCtrl,
-                              obscureText: true,
                               keyboardType: TextInputType.number,
                               decoration: const InputDecoration(
                                 isDense: true,
-                                labelText: 'Have a VIP Activation Code?',
+                                labelText: 'Enter 6-Digit VIP Key',
                                 filled: true,
                                 fillColor: Color(0xFF141E33),
                               ),
@@ -1198,17 +1269,24 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.amberAccent,
                               foregroundColor: Colors.black,
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
                             ),
                             onPressed: () async {
-                              final bool ok = await ImsSecurityManager.verifyPin(vipPinCtrl.text);
-                              if (ok) {
-                                await ImsSecurityManager.unlockVipForDuration(const Duration(days: 3650));
+                              final Duration? dur = await ImsMonetizationEngine.verifyVipActivationKey(
+                                vipPinCtrl.text,
+                                hwId,
+                              );
+                              if (dur != null) {
+                                await ImsSecurityManager.unlockVipForDuration(dur);
+                                AppSoundEngine.playSynthesizedSfx('BELL');
                                 setModalState(() {
-                                  statusMsg = '👑 Lifetime VIP Pro Activated & Bound to This Device!';
+                                  statusMsg = '👑 VIP Pro Activated & Bound to Device $shortHw!';
+                                  isSuccessMsg = true;
                                 });
                               } else {
                                 setModalState(() {
-                                  statusMsg = '❌ Invalid VIP Activation Code';
+                                  statusMsg = '❌ Invalid Key for Device $shortHw! Tap any pass above to get your key.';
+                                  isSuccessMsg = false;
                                 });
                               }
                             },
@@ -1216,13 +1294,6 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                           ),
                         ],
                       ),
-                      if (statusMsg.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          statusMsg,
-                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900, color: Colors.amberAccent),
-                        ),
-                      ],
                     ],
                   ),
                 ),
@@ -1538,6 +1609,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
               children: _pages,
             ),
           ),
+          LiveBottomAdBanner(onTapVipUpgrade: _openVipMonetizationStudioModal),
         ],
       ),
       bottomNavigationBar: ClipRect(

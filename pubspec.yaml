@@ -1,7 +1,7 @@
 name: dj_player
-description: IMS Pro Studio v9999 Flagship Edition
+description: IMS Pro Studio v10000.0 Commercial Play Store Edition
 publish_to: 'none'
-version: 9999.0.0+9999999
+version: 10000.0.0+10000001
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -13,6 +13,8 @@ dependencies:
   audioplayers: any
   shared_preferences: any
   path_provider: any
+  in_app_purchase: any
+  google_mobile_ads: any
 
 flutter:
   uses-material-design: true

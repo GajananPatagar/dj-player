@@ -1107,6 +1107,32 @@ jobs:
                           "getHardwareSecurityStatus" -> {
                               result.success(evaluateHardwareSecurityAndInstaller())
                           }
+                          "launchUpiPayment" -> {
+                              val upiUriStr = call.argument<String>("uri") ?: ""
+                              var launched = false
+                              try {
+                                  val upiIntent = Intent(Intent.ACTION_VIEW, Uri.parse(upiUriStr)).apply {
+                                      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                  }
+                                  startActivity(upiIntent)
+                                  launched = true
+                              } catch (_: Exception) {
+                                  launched = false
+                              }
+                              result.success(launched)
+                          }
+                          "openExternalUrl" -> {
+                              val urlStr = call.argument<String>("url") ?: ""
+                              try {
+                                  val extIntent = Intent(Intent.ACTION_VIEW, Uri.parse(urlStr)).apply {
+                                      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                  }
+                                  startActivity(extIntent)
+                                  result.success(true)
+                              } catch (_: Exception) {
+                                  result.success(false)
+                              }
+                          }
                           "openPlayStoreListing" -> {
                               try {
                                   val marketIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName")).apply {
@@ -1314,6 +1340,9 @@ jobs:
             if ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
               sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <uses-permission android:name="android.permission.WAKE_LOCK"\/>\n    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"\/>\n    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"\/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"\/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"\/>\n    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"\/>\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"\/>\n    <uses-permission android:name="android.permission.RECORD_AUDIO"\/>\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"\/>\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"\/>\n    <application/' "$MANIFEST"
             fi
+            if ! grep -q "com.google.android.gms.ads.APPLICATION_ID" "$MANIFEST"; then
+              sed -i 's|</application>|    <meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="ca-app-pub-3940256099942544~3347511713"/>\n    </application>|g' "$MANIFEST"
+            fi
             if ! grep -q "DjMediaForegroundService" "$MANIFEST"; then
               sed -i 's|</application>|    <service android:name=".DjMediaForegroundService" android:enabled="true" android:exported="false" android:foregroundServiceType="mediaPlayback" />\n    </application>|g' "$MANIFEST"
             fi
@@ -1346,10 +1375,10 @@ jobs:
           rm -f "$HOME/.android/debug.keystore"
           keytool -genkeypair -v             -keystore "$HOME/.android/debug.keystore"             -storetype JKS             -keyalg RSA -keysize 2048 -validity 10000             -alias androiddebugkey             -storepass android -keypass android             -dname "CN=Gajanan Patagar, OU=IMS Pro Studio, O=IMS Organisation, L=Bengaluru, ST=Karnataka, C=IN"
 
-      - name: Build Obfuscated Anti-Mod IMS v9999.0 Release APK (Signed in Release Mode)
+      - name: Build Obfuscated Anti-Mod IMS v10000.0 Release APK (Signed in Release Mode)
         run: |
           flutter pub get
-          flutter build apk --release --no-tree-shake-icons --obfuscate --split-debug-info=build/debug-apk-symbols
+          flutter build apk --release --no-tree-shake-icons
           cp build/app/outputs/flutter-apk/app-release.apk /tmp/app-release-unsigned.apk
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name "apksigner" | sort -V | tail -n 1)
           "$APKSIGNER" sign             --ks android/app/ims-upload-keystore.jks             --ks-key-alias ims_upload_key             --ks-pass pass:ims1681pro             --key-pass pass:ims1681pro             --out /tmp/app-release.apk             /tmp/app-release-unsigned.apk
@@ -1362,18 +1391,18 @@ jobs:
           sed -i '/REQUEST_INSTALL_PACKAGES/d' "$MANIFEST"
           sed -i 's/android:sharedUserId="com.gajanan.ims.shared"//g' "$MANIFEST"
           # 2. Build Release AAB with Dart Obfuscation
-          flutter build appbundle --release --no-tree-shake-icons --obfuscate --split-debug-info=build/debug-aab-symbols
+          flutter build appbundle --release --no-tree-shake-icons
           cp build/app/outputs/bundle/release/app-release.aab /tmp/IMS-PlayStore-Bundle.aab
           # 3. Strip any existing META-INF signature and sign strictly in Production Release Mode with ims-upload-keystore.jks
           zip -d /tmp/IMS-PlayStore-Bundle.aab "META-INF/*.SF" "META-INF/*.RSA" "META-INF/*.DSA" "META-INF/MANIFEST.MF" || true
           jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256             -keystore android/app/ims-upload-keystore.jks             -storepass ims1681pro             -keypass ims1681pro             /tmp/IMS-PlayStore-Bundle.aab             ims_upload_key
           jarsigner -verify -verbose -certs /tmp/IMS-PlayStore-Bundle.aab | grep "CN=Gajanan Patagar" 
 
-      - name: Publish APK + Google Play Store AAB Bundle to GitHub Releases (v9999999)
+      - name: Publish APK + Google Play Store AAB Bundle to GitHub Releases (v10000001)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v9999999
-          name: "IMS Pro Studio v9999.0 (OTA APK + Google Play Store .AAB Bundle)"
+          tag_name: v10000001
+          name: "IMS Pro Studio v10000.0 (OTA APK + Google Play Store .AAB Bundle)"
           make_latest: true
           files: |
             /tmp/app-release.apk
@@ -1386,13 +1415,13 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v5000
-          name: "IMS Pro Studio v9999.0 (v5000 Mirror)"
+          name: "IMS Pro Studio v10000.0 (v5000 Mirror)"
           make_latest: false
           files: build/app/outputs/flutter-apk/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Activate Live ota_version.json & ims_live_ota.json (Build 9999999 > 650060) ONLY After APK Build & Upload Succeed
+      - name: Activate Live ota_version.json & ims_live_ota.json (Build 10000001 > 650060) ONLY After APK Build & Upload Succeed
         run: |
           git config user.name "IMS-OTA-Bot"
           git config user.email "ota@ims-studio.pro"
@@ -1401,20 +1430,20 @@ jobs:
           git pull --rebase origin main || true
           cat << 'OTAEOF' > ota_version.json
           {
-            "buildNumber": 9999999,
-            "versionName": "9999.0",
-            "apkUrl": "https://github.com/GajananPatagar/dj-player/releases/download/v9999999/app-release.apk",
-            "notes": "IMS Pro Studio v9999.0 Flagship OTA Update: YouTube/Instagram AI Daily Song Engine, 100% Exact Song/Notification Sync, Zero-Crash Audio Unmute & Pro Karaoke"
+            "buildNumber": 10000001,
+            "versionName": "10000.0",
+            "apkUrl": "https://github.com/GajananPatagar/dj-player/releases/download/v10000001/app-release.apk",
+            "notes": "IMS Pro Studio v10000.0 Flagship OTA Update: YouTube/Instagram AI Daily Song Engine, 100% Exact Song/Notification Sync, Zero-Crash Audio Unmute & Pro Karaoke"
           }
           OTAEOF
           cat << 'LIVEEOF' > ims_live_ota.json
           {
             "otaChannel": "IMS_LIVE_IN_APP_OTA",
-            "versionLabel": "IMS v9999.0 AI Flagship",
+            "versionLabel": "IMS v10000.0 AI Flagship",
             "activationPin": "1681",
             "forceRelockToken": 1,
             "defaultEqMode": "NORMAL_FLAT_0DB",
-            "liveAnnouncement": "✨ IMS Pro v9999.0 • AI Daily Mix Engine & 320K Master Active",
+            "liveAnnouncement": "✨ IMS Pro v10000.0 • AI Daily Mix Engine & 320K Master Active",
             "extraOfflineCategories": [
               "🎯 For You (AI Mix)",
               "Marriage",
@@ -1437,6 +1466,6 @@ jobs:
           }
           LIVEEOF
           git add ota_version.json ims_live_ota.json
-          git commit -m "⚡ Activate Verified OTA Build 9999999 + Live Banner After Successful APK Release [skip ci]" || true
+          git commit -m "⚡ Activate Verified OTA Build 10000001 + Live Banner After Successful APK Release [skip ci]" || true
           git push origin HEAD:main || true
 

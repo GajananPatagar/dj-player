@@ -7,21 +7,19 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'entry_music_data.dart';
+import 'monetization_and_ads_engine.dart';
 
-/// Loop-Free Smart OTA Engine (v9999.0):
-/// 1) Uses a fixed deterministic build number (5000) in both APK and ota_version.json so once installed, 5000 == 5000 (NEVER loops!).
-/// 2) Records `ims_ota_attempted_build_v9999` BEFORE launching the system package installer so it never re-triggers in a loop.
-/// 3) Directly targets Android's native `packageinstaller` (bypasses Termux & ES File Explorer "Open with" sheet).
+/// Loop-Free Smart OTA & Live Monetization Config Engine (v10000.0):
 class OtaUpdateEngine {
-  static const int currentBuildNumber = 9999999;
-  static const String currentVersionName = '9999.0';
+  static const int currentBuildNumber = 10000001;
+  static const String currentVersionName = '10000.0';
   static const String githubRepoOwner = 'GajananPatagar';
   static const String githubRepoName = 'dj-player';
 
   static const MethodChannel _nativeChannel = MethodChannel('dj_native_tts');
 
   static final ValueNotifier<String> otaStatusBanner = ValueNotifier<String>(
-    '✨ IMS v9999.0 Pro • Exact-Match Audio & Anti-Mute Lock Active',
+    '✨ IMS v10000.0 Pro • Live Ads, VIP Passes & 320K Master Active',
   );
   static final ValueNotifier<double?> otaDownloadProgress = ValueNotifier<double?>(null);
   static final ValueNotifier<String> dailyRefreshStamp = ValueNotifier<String>('');
@@ -30,6 +28,19 @@ class OtaUpdateEngine {
   static final ValueNotifier<String> remoteOtaPin = ValueNotifier<String>('1681');
   static final ValueNotifier<int> remoteRelockToken = ValueNotifier<int>(1);
   static final ValueNotifier<List<String>> remoteTrendingQueries = ValueNotifier<List<String>>([]);
+
+  /// Live Monetization & Sponsor Parameters (Controlled remotely from `ims_live_ota.json`)
+  static final ValueNotifier<String> merchantUpiId = ValueNotifier<String>('9483776820@ybl');
+  static final ValueNotifier<String> merchantWhatsapp = ValueNotifier<String>('919483776820');
+  static final ValueNotifier<String> sponsorBannerTitle = ValueNotifier<String>(
+    '🔊 Inchara Master Sounds • Pro DJ & Stage Audio (Sirsi)',
+  );
+  static final ValueNotifier<String> sponsorBannerSub = ValueNotifier<String>(
+    'Tap to Book Fire 57 & S8118 Pro Sound or Upgrade to VIP Ad-Free!',
+  );
+  static final ValueNotifier<String> sponsorActionUrl = ValueNotifier<String>(
+    'https://wa.me/919483776820?text=Hi%20Inchara%20Master%20Sounds%2C%20I%20saw%20your%20ad%20in%20IMS%20Pro%20Studio!',
+  );
 
   static Timer? _periodicTimer;
   static bool _isCheckingOrDownloading = false;
@@ -63,7 +74,7 @@ class OtaUpdateEngine {
   }) async {
     try {
       final Map<String, String> headers = {
-        'User-Agent': 'IMS-InApp-OTA/9999.0 (Android)',
+        'User-Agent': 'IMS-InApp-OTA/10000.0 (Android)',
         'Accept': 'application/json',
         'Cache-Control': 'no-cache',
       };
@@ -91,6 +102,32 @@ class OtaUpdateEngine {
           remoteRelockToken.value = relockTok;
         }
 
+        if (data['merchantUpiId'] != null && data['merchantUpiId'].toString().trim().isNotEmpty) {
+          merchantUpiId.value = data['merchantUpiId'].toString().trim();
+        }
+        if (data['merchantWhatsapp'] != null && data['merchantWhatsapp'].toString().trim().isNotEmpty) {
+          merchantWhatsapp.value = data['merchantWhatsapp'].toString().trim();
+        }
+        if (data['sponsorBannerTitle'] != null && data['sponsorBannerTitle'].toString().trim().isNotEmpty) {
+          sponsorBannerTitle.value = data['sponsorBannerTitle'].toString().trim();
+        }
+        if (data['sponsorBannerSub'] != null && data['sponsorBannerSub'].toString().trim().isNotEmpty) {
+          sponsorBannerSub.value = data['sponsorBannerSub'].toString().trim();
+        }
+        if (data['sponsorActionUrl'] != null && data['sponsorActionUrl'].toString().trim().isNotEmpty) {
+          sponsorActionUrl.value = data['sponsorActionUrl'].toString().trim();
+        }
+
+        if (data['admobBannerUnitId'] != null && data['admobBannerUnitId'].toString().trim().isNotEmpty) {
+          ImsMonetizationEngine.bannerAdUnitId = data['admobBannerUnitId'].toString().trim();
+        }
+        if (data['admobInterstitialUnitId'] != null && data['admobInterstitialUnitId'].toString().trim().isNotEmpty) {
+          ImsMonetizationEngine.interstitialAdUnitId = data['admobInterstitialUnitId'].toString().trim();
+        }
+        if (data['admobRewardedUnitId'] != null && data['admobRewardedUnitId'].toString().trim().isNotEmpty) {
+          ImsMonetizationEngine.rewardedAdUnitId = data['admobRewardedUnitId'].toString().trim();
+        }
+
         if (data['extraOfflineCategories'] is List) {
           for (final rawCat in (data['extraOfflineCategories'] as List)) {
             final String c = rawCat.toString().trim();
@@ -113,7 +150,7 @@ class OtaUpdateEngine {
           if (onContentRefresh != null) {
             await onContentRefresh();
           }
-          otaStatusBanner.value = '✅ IMS Cloud Synced Live (${data['versionLabel'] ?? 'IMS v9999 Pro'})';
+          otaStatusBanner.value = '✅ IMS Cloud Synced Live (${data['versionLabel'] ?? 'IMS v10000 Pro'})';
         } else if (oldHash.isEmpty) {
           await prefs.setString('ims_live_ota_hash', newHash);
         }
@@ -129,18 +166,17 @@ class OtaUpdateEngine {
     try {
       final prefs = await SharedPreferences.getInstance();
       final String today = _todayDateKey();
-      final String lastUpdatedDay = prefs.getString('v9999_last_daily_self_update') ?? '';
+      final String lastUpdatedDay = prefs.getString('v10000_last_daily_self_update') ?? '';
       dailyRefreshStamp.value = 'Synced $today';
 
       if (lastUpdatedDay != today) {
         await onDailyContentRefresh();
-        await prefs.setString('v9999_last_daily_self_update', today);
+        await prefs.setString('v10000_last_daily_self_update', today);
         otaStatusBanner.value = '🟢 Auto-Updated for $today • IMS v$currentVersionName Pro';
       }
     } catch (_) {}
   }
 
-  /// Checks ONLY `ota_version.json` with a strict one-shot guard per buildNumber so it NEVER loops!
   static Future<bool> checkAndAutoInstallOtaUpdate({
     bool forceManualCheck = false,
     void Function(String statusText, double? progress)? onProgressCallback,
@@ -153,14 +189,14 @@ class OtaUpdateEngine {
       await syncInAppLiveCloudOta(forceRefresh: forceManualCheck);
 
       final prefs = await SharedPreferences.getInstance();
-      final int alreadyAttemptedBuild = prefs.getInt('ims_ota_attempted_build_v9999') ?? currentBuildNumber;
+      final int alreadyAttemptedBuild = prefs.getInt('ims_ota_attempted_build_v10000') ?? currentBuildNumber;
 
       int remoteBuild = currentBuildNumber;
       String remoteVersion = currentVersionName;
       String? apkDownloadUrl;
 
       final Map<String, String> headers = {
-        'User-Agent': 'IMS-OTA-Updater/9999.0 (Android)',
+        'User-Agent': 'IMS-OTA-Updater/10000.0 (Android)',
         'Accept': 'application/json',
         'Cache-Control': 'no-cache',
       };
@@ -215,7 +251,7 @@ class OtaUpdateEngine {
       otaDownloadProgress.value = 0.02;
       final client = http.Client();
       final req = http.Request('GET', Uri.parse(apkUrl));
-      req.headers['User-Agent'] = 'Mozilla/5.0 (Linux; Android 14) IMS-OTA/9999.0';
+      req.headers['User-Agent'] = 'Mozilla/5.0 (Linux; Android 14) IMS-OTA/10000.0';
       final http.StreamedResponse response = await client.send(req).timeout(const Duration(seconds: 30));
 
       if (response.statusCode != 200) {
@@ -251,7 +287,7 @@ class OtaUpdateEngine {
 
       if (await apkFile.exists() && await apkFile.length() > 3000000) {
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setInt('ims_ota_attempted_build_v9999', targetBuild);
+        await prefs.setInt('ims_ota_attempted_build_v10000', targetBuild);
         otaDownloadProgress.value = null;
         otaStatusBanner.value = '✅ IMS v$targetVersion Ready — Installing...';
         await _nativeChannel.invokeMethod('installApkOta', {'path': apkFile.path});

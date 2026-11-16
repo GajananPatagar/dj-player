@@ -24,6 +24,7 @@ void main() {
 }
 
 class ImsSecurityManager {
+  static Future<int> getRemainingVipSeconds() => ImsMonetizationEngine.getRemainingVipSeconds();
   // Internal fallback seed (NEVER displayed in any UI label, hint, or dialog!)
   static const String _internalFallbackPin = '1681';
   static const String _prefUnlockedKey = 'ims_first_install_unlocked_v650';
@@ -1296,7 +1297,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                                 hwId,
                               );
                               if (dur != null) {
-                                await ImsSecurityManager.unlockVipForDuration(dur);
+                                await ImsMonetizationEngine.unlockVipForDurationInternal(dur);
                                 await ImsMonetizationEngine.instance.refreshVipTimer();
                                 AppSoundEngine.playSynthesizedSfx('BELL');
                                 setModalState(() {

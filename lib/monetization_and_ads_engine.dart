@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'glass_widgets.dart';
 import 'main.dart';
 import 'ota_update_engine.dart';
@@ -84,9 +85,24 @@ class ImsMonetizationEngine {
   static const String googlePaymentsAccountId = '5387-7398-7907-9564';
   static const String verifiedOrganisationName = 'INCHARA MASTER SOUNDS';
 
-  final ValueNotifier<int> vipRemainingSecondsNotifier = ValueNotifier<int>(0);
-  final ValueNotifier<bool> showEndingSoonWarningBanner = ValueNotifier<bool>(false);
+  // Product & Ad Unit Identifiers (for OTA & Pass Checkout compatibility)
+  static const String kProductMonthly49 = 'ims_vip_monthly_49';
+  static const String kProductAnnual299 = 'ims_vip_annual_299';
+  static const String kProductLifetime499 = 'ims_vip_lifetime_499';
 
+  static String bannerAdUnitId = 'ca-pub-1729380220130058/banner';
+  static String interstitialAdUnitId = 'ca-pub-1729380220130058/interstitial';
+  static String rewardedAdUnitId = 'ca-pub-1729380220130058/rewarded';
+
+  // Live 1-Hour VIP Notifiers & Playback Hooks
+  static final ValueNotifier<int> vipRemainingSeconds = ValueNotifier<int>(0);
+  ValueNotifier<int> get vipRemainingSecondsNotifier => vipRemainingSeconds;
+  final ValueNotifier<bool> showEndingSoonWarningBanner = ValueNotifier<bool>(false);
+  static final ValueNotifier<bool> isSongCurrentlyPlaying = ValueNotifier<bool>(false);
+  static VoidCallback? onForceAdWhen1HourExpiresWhilePlaying;
+
+  static int _cachedExpiryEpochMs = 0;
+  int _lastRemSecs = -1;
   Timer? _hourlyCountdownTimer;
   bool _initialized = false;
   bool _adDialogCurrentlyOpen = false;
@@ -96,12 +112,67 @@ class ImsMonetizationEngine {
     _latestAppContext = ctx;
   }
 
+  /// Self-contained 1-Hour VIP remaining seconds reader (zero external class dependency)
+  static Future<int> getRemainingVipSeconds() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final bool lifetime = prefs.getBool('ims_lifetime_vip_v650') ?? false;
+      if (lifetime) {
+        if (!ImsSecurityManager.isVipProActive.value) {
+          ImsSecurityManager.isVipProActive.value = true;
+        }
+        return 315360000;
+      }
+      final int expMs = prefs.getInt('ims_vip_expiry_ms_v10000') ??
+          prefs.getInt('ims_vip_expiry_epoch_ms') ??
+          _cachedExpiryEpochMs;
+      final int nowMs = DateTime.now().millisecondsSinceEpoch;
+      final int remSec = ((expMs - nowMs) / 1000).floor();
+      if (remSec > 0) {
+        if (!ImsSecurityManager.isVipProActive.value) {
+          ImsSecurityManager.isVipProActive.value = true;
+        }
+        return remSec;
+      } else {
+        if (ImsSecurityManager.isVipProActive.value) {
+          ImsSecurityManager.isVipProActive.value = false;
+        }
+        return 0;
+      }
+    } catch (_) {
+      return ImsSecurityManager.isVipProActive.value ? 3600 : 0;
+    }
+  }
+
+  /// Self-contained 1-Hour / Pass VIP unlocker that persists expiry timestamp in SharedPreferences
+  static Future<void> unlockVipForDurationInternal(Duration duration) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final int expMs = DateTime.now().add(duration).millisecondsSinceEpoch;
+      _cachedExpiryEpochMs = expMs;
+      await prefs.setInt('ims_vip_expiry_ms_v10000', expMs);
+      await prefs.setInt('ims_vip_expiry_epoch_ms', expMs);
+      if (duration.inDays >= 3650) {
+        await prefs.setBool('ims_lifetime_vip_v650', true);
+      }
+      ImsSecurityManager.isVipProActive.value = true;
+    } catch (_) {}
+    await ImsSecurityManager.unlockVipForDuration(duration);
+  }
+
+  Future<void> initialize() async {
+    await initMonetizationAndAds();
+  }
+
+  Future<void> refreshVipTimer() async {
+    await _refreshRemainingVipSeconds();
+  }
+
   Future<void> initMonetizationAndAds() async {
     if (_initialized) return;
     _initialized = true;
     await _refreshRemainingVipSeconds();
 
-    // If brand new session with 0s left, grant initial 3-minute welcome grace or prompt 1st ad on play
     _hourlyCountdownTimer?.cancel();
     _hourlyCountdownTimer = Timer.periodic(const Duration(seconds: 1), (_) async {
       await _refreshRemainingVipSeconds();
@@ -109,10 +180,16 @@ class ImsMonetizationEngine {
   }
 
   Future<void> _refreshRemainingVipSeconds() async {
-    final int rem = await ImsSecurityManager.getRemainingVipSeconds();
-    vipRemainingSecondsNotifier.value = rem;
+    final int rem = await getRemainingVipSeconds();
+    final int prev = _lastRemSecs;
+    _lastRemSecs = rem;
+    vipRemainingSeconds.value = rem;
     // Show "Ending Soon" warning banner when between 1 and 180 seconds (3 minutes) remain!
     showEndingSoonWarningBanner.value = (rem > 0 && rem <= 180);
+    // If a song was actively playing and the 1-hour timer just expired (prev > 0 -> rem <= 0), trigger ad prompt!
+    if (prev > 0 && rem <= 0 && isSongCurrentlyPlaying.value) {
+      onForceAdWhen1HourExpiresWhilePlaying?.call();
+    }
   }
 
   String formatRemainingTime(int totalSecs) {
@@ -133,7 +210,7 @@ class ImsMonetizationEngine {
     BuildContext? context, {
     required VoidCallback onAdWatchedProceedPlay,
   }) async {
-    final int rem = await ImsSecurityManager.getRemainingVipSeconds();
+    final int rem = await ImsMonetizationEngine.getRemainingVipSeconds();
     if (rem > 0) {
       return true; // Already has active 1-hour VIP (or subscription pass)! Proceed immediately!
     }
@@ -141,7 +218,7 @@ class ImsMonetizationEngine {
     final BuildContext? targetCtx = context ?? _latestAppContext;
     if (targetCtx == null || !targetCtx.mounted) {
       // Fallback: grant 1 hour if no UI context mounted
-      await ImsSecurityManager.unlockVipForDuration(const Duration(hours: 1));
+      await ImsMonetizationEngine.unlockVipForDurationInternal(const Duration(hours: 1));
       await _refreshRemainingVipSeconds();
       return true;
     }
@@ -157,7 +234,7 @@ class ImsMonetizationEngine {
         builder: (ctx) => _FullScreen15SecAdSenseDialog(
           headlineReason: '🎵 Watch 1 AdSense Ad → Unlock 1 Full Hour of Songs & VIP Access!',
           onRewardEarned: () async {
-            await ImsSecurityManager.unlockVipForDuration(const Duration(hours: 1));
+            await ImsMonetizationEngine.unlockVipForDurationInternal(const Duration(hours: 1));
             await _refreshRemainingVipSeconds();
             unlocked = true;
           },
@@ -229,7 +306,7 @@ class ImsMonetizationEngine {
         builder: (ctx) => _FullScreen15SecAdSenseDialog(
           headlineReason: '📺 Watch 1 Google AdSense Ad → Unlock +1 Hour Full VIP Access!',
           onRewardEarned: () async {
-            await ImsSecurityManager.unlockVipForDuration(const Duration(hours: 1));
+            await ImsMonetizationEngine.unlockVipForDurationInternal(const Duration(hours: 1));
             await _refreshRemainingVipSeconds();
             onRewardGranted();
           },
@@ -694,7 +771,7 @@ class _AdSenseSubscriptionPassDialogState extends State<_AdSenseSubscriptionPass
                         hwId,
                       );
                       if (unlockedDur != null) {
-                        await ImsSecurityManager.unlockVipForDuration(unlockedDur);
+                        await ImsMonetizationEngine.unlockVipForDurationInternal(unlockedDur);
                         AppSoundEngine.playSynthesizedSfx('BELL');
                         widget.onUnlocked();
                         if (mounted) {

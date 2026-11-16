@@ -1141,7 +1141,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '✨ Tap Any Pass Below to Pay via UPI / Play Store or Unlock:',
+                              '✨ All Passes & Ads Connected to Google Console Profile 5967-2551-0049:',
                               style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900, color: Colors.white),
                             ),
                             SizedBox(height: 3),
@@ -1163,7 +1163,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                       const SizedBox(height: 10),
                       _vipPlanTile(
                         title: '⚡ Monthly Pro DJ Pass',
-                        subtitle: 'Tap to Pay ₹49 via GPay / PhonePe / Play Store & Unlock 30 Days',
+                        subtitle: 'Official Google Play Console Subscription (INCHARA MASTER SOUNDS)',
                         price: '₹49 / Month',
                         color: const Color(0xFF00E5FF),
                         onTap: () {
@@ -1185,7 +1185,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                       const SizedBox(height: 7),
                       _vipPlanTile(
                         title: '🔥 Annual Wedding & Event Master',
-                        subtitle: 'Tap to Pay ₹299 via GPay / PhonePe / Play Store & Unlock 1 Year',
+                        subtitle: 'Official Google Play Console Annual Pass (Profile 5967-2551-0049)',
                         price: '₹299 / Year',
                         color: const Color(0xFF00E676),
                         onTap: () {
@@ -1207,7 +1207,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                       const SizedBox(height: 7),
                       _vipPlanTile(
                         title: '👑 Lifetime Studio VIP License',
-                        subtitle: 'Tap to Pay ₹499 One-Time — Permanently Bound to $shortHw',
+                        subtitle: 'Official Google Play Console Lifetime Pass (Bound to $shortHw)',
                         price: '₹499 Lifetime',
                         color: Colors.amberAccent,
                         onTap: () {

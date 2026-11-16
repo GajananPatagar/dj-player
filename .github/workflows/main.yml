@@ -38,12 +38,8 @@ jobs:
             fi
           done
           if [ -f "android/app/build.gradle.kts" ]; then
-            sed -i 's/android {/android {
-    lint { checkReleaseBuilds = false; abortOnError = false }/' android/app/build.gradle.kts
           fi
           if [ -f "android/app/build.gradle" ]; then
-            sed -i 's/android {/android {
-    lintOptions { checkReleaseBuilds false; abortOnError false }/' android/app/build.gradle
           fi
           grep -rn "applicationId" android/app/ || true
 
@@ -1128,6 +1124,19 @@ jobs:
                                   launched = false
                               }
                               result.success(launched)
+                          }
+                          "showNativeAdSenseWebView" -> {
+                              Handler(Looper.getMainLooper()).post {
+                                  try {
+                                      val wv = WebView(this@MainActivity).apply {
+                                          settings.javaScriptEnabled = true
+                                          settings.domStorageEnabled = true
+                                          webViewClient = WebViewClient()
+                                          loadUrl("https://gajananpatagar.github.io/dj-player/")
+                                      }
+                                  } catch (_: Exception) {}
+                              }
+                              result.success(true)
                           }
                           "openExternalUrl" -> {
                               val urlStr = call.argument<String>("url") ?: ""

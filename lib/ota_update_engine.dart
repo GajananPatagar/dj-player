@@ -11,15 +11,15 @@ import 'monetization_and_ads_engine.dart';
 
 /// Loop-Free Smart OTA & Live Monetization Config Engine (v10000.0):
 class OtaUpdateEngine {
-  static const int currentBuildNumber = 10000001;
-  static const String currentVersionName = '10000.0';
+  static const int currentBuildNumber = 10000015;
+  static const String currentVersionName = '15.0.0';
   static const String githubRepoOwner = 'GajananPatagar';
   static const String githubRepoName = 'dj-player';
 
   static const MethodChannel _nativeChannel = MethodChannel('dj_native_tts');
 
   static final ValueNotifier<String> otaStatusBanner = ValueNotifier<String>(
-    '✨ IMS v10000.0 Pro • Live Ads, VIP Passes & 320K Master Active',
+    '✨ IMS v15.0.0 Pro • AdSense 1-Hr VIP, 18-Bit Encryption & 320K Master Active',
   );
   static final ValueNotifier<double?> otaDownloadProgress = ValueNotifier<double?>(null);
   static final ValueNotifier<String> dailyRefreshStamp = ValueNotifier<String>('');

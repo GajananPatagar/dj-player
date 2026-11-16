@@ -31,13 +31,7 @@ jobs:
         run: |
           rm -rf android
           flutter create --platforms=android --org com.gajanan --project-name dj_player .
-          if [ -f "android/app/build.gradle.kts" ]; then
-            sed -i 's/com.gajanan.dj_player/com.gajanan.djplaycommentry/g' android/app/build.gradle.kts
-          fi
-          if [ -f "android/app/build.gradle" ]; then
-            sed -i 's/com.gajanan.dj_player/com.gajanan.djplaycommentry/g' android/app/build.gradle
-          fi
-          find android -type f \( -name "*.kt" -o -name "*.java" -o -name "*.xml" -o -name "*.gradle" -o -name "*.kts" \) -exec sed -i 's/com.gajanan.dj_player/com.gajanan.djplaycommentry/g' {} +
+          python3 tools/configure_gradle_mirrors.py
 
       - name: Inject Glassmorphic MediaSession Lockscreen Service, Zero-Popup WakeLock, Hardware DSP & TTS
         run: |

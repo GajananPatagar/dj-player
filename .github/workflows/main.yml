@@ -85,6 +85,23 @@ jobs:
               private var cachedArtUrl: String = ""
               private var cachedArtBitmap: Bitmap? = null
 
+              private var pendingUpiResult: MethodChannel.Result? = null
+
+              override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+                  super.onActivityResult(requestCode, resultCode, data)
+                  if (requestCode == 9001) {
+                      val cb = pendingUpiResult
+                      pendingUpiResult = null
+                      if (cb != null) {
+                          val resp = (data?.getStringExtra("response") ?: "").uppercase()
+                          val isSuccess = (resultCode == android.app.Activity.RESULT_OK) &&
+                              (resp.contains("STATUS=SUCCESS") || resp.contains("RESPONSECODE=00")) &&
+                              !resp.contains("STATUS=FAILURE") && !resp.contains("STATUS=SUBMITTED")
+                          cb.success(if (isSuccess) "SUCCESS" else "CANCELLED_OR_FAILED")
+                      }
+                  }
+              }
+
               override fun onCreate() {
                   super.onCreate()
                   acquireLocks()
@@ -1103,19 +1120,17 @@ jobs:
                           }
                           "launchUpiPayment" -> {
                               val upiUriStr = call.argument<String>("uri") ?: ""
-                              var launched = false
                               try {
-                                  val upiIntent = Intent(Intent.ACTION_VIEW, Uri.parse(upiUriStr)).apply {
-                                      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                  }
-                                  startActivity(upiIntent)
-                                  launched = true
+                                  pendingUpiResult = result
+                                  val upiIntent = Intent(Intent.ACTION_VIEW, Uri.parse(upiUriStr))
+                                  startActivityForResult(upiIntent, 9001)
                               } catch (_: Exception) {
-                                  launched = false
+                                  pendingUpiResult = null
+                                  result.success("NO_UPI_APP")
                               }
-                              result.success(launched)
                           }
                           "showNativeAdSenseWebView" -> {
+                              val showPopup = call.argument<Boolean>("showPopup") ?: false
                               Handler(Looper.getMainLooper()).post {
                                   try {
                                       val wv = WebView(this@MainActivity).apply {
@@ -1123,6 +1138,15 @@ jobs:
                                           settings.domStorageEnabled = true
                                           webViewClient = WebViewClient()
                                           loadUrl("https://gajananpatagar.github.io/dj-player/")
+                                      }
+                                      if (showPopup) {
+                                          android.app.AlertDialog.Builder(this@MainActivity)
+                                              .setTitle("🎬 Sponsored Showcase")
+                                              .setView(wv)
+                                              .setPositiveButton("Close") { d, _ -> d.dismiss() }
+                                              .show()
+                                      } else {
+                                          addContentView(wv, android.view.ViewGroup.LayoutParams(1, 1))
                                       }
                                   } catch (_: Exception) {}
                               }

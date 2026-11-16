@@ -264,12 +264,8 @@ class ImsMonetizationEngine {
       return const Duration(days: 3650);
     }
 
-    // Also support 12-digit UPI UTR / Transaction Reference Number after direct UPI payment
-    if (RegExp(r'^[0-9]{12}$').hasMatch(clean) && expectedTierCode != null) {
-      if (expectedTierCode == 'MONTHLY') return const Duration(days: 31);
-      if (expectedTierCode == 'ANNUAL') return const Duration(days: 366);
-      if (expectedTierCode == 'LIFETIME') return const Duration(days: 3650);
-    }
+    // Strict anti-fraud check: Never accept arbitrary typed 12-digit numbers!
+    // Only accept cryptographic 6-digit Hardware-Bound VIP Keys or 18-Bit Master Key.
 
     final bool isMaster = await ImsSecurityManager.verifyPin(clean);
     if (isMaster) {
@@ -278,8 +274,8 @@ class ImsMonetizationEngine {
     return null;
   }
 
-  /// Directly launches UPI / Google Pay / PhonePe / Paytm payment app with pre-filled amount!
-  static Future<bool> launchDirectPaymentPage({
+  /// Launches UPI app via startActivityForResult and checks the real UPI response ("SUCCESS" + responseCode=00)
+  static Future<String> launchDirectPaymentPage({
     required int amountInr,
     required String planTitle,
   }) async {
@@ -291,12 +287,13 @@ class ImsMonetizationEngine {
     final String upiUri =
         'upi://pay?pa=$upiId&pn=$encodedName&am=$amountInr.00&cu=INR&tn=$encodedNote';
     try {
-      final bool? launched = await _nativeChannel.invokeMethod<bool>('launchUpiPayment', {
+      final String? res = await _nativeChannel.invokeMethod<String>('launchUpiPayment', {
         'uri': upiUri,
       });
-      if (launched == true) return true;
-    } catch (_) {}
-    return false;
+      return res ?? 'FAILED';
+    } catch (_) {
+      return 'FAILED';
+    }
   }
 
   static Future<void> openExternalUrl(String url) async {
@@ -350,8 +347,28 @@ class ImsMonetizationEngine {
     required Color accentColor,
     required VoidCallback onUnlocked,
   }) async {
-    // 1. Immediately redirect user to Payment App (Google Pay / PhonePe / Paytm / UPI) on tap!
-    await launchDirectPaymentPage(amountInr: amountInr, planTitle: planTitle);
+    // 1. Immediately redirect user to Payment App (GPay / PhonePe / Paytm / UPI) and wait for real UPI callback!
+    final String upiStatus = await launchDirectPaymentPage(amountInr: amountInr, planTitle: planTitle);
+    if (upiStatus == 'SUCCESS') {
+      final Duration dur = tierCode == 'MONTHLY'
+          ? const Duration(days: 31)
+          : (tierCode == 'ANNUAL' ? const Duration(days: 366) : const Duration(days: 3650));
+      await ImsMonetizationEngine.unlockVipForDurationInternal(dur);
+      await _refreshRemainingVipSeconds();
+      onUnlocked();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFF00E676),
+            content: Text(
+              '👑 Payment Verified by UPI App! $planTitle Unlocked Automatically!',
+              style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w900),
+            ),
+          ),
+        );
+      }
+      return;
+    }
 
     if (!context.mounted) return;
     // 2. Open the Payment Verification & Instant Activation Dialog when they return from paying
@@ -777,14 +794,21 @@ class _DirectPaymentCheckoutDialogState extends State<_DirectPaymentCheckoutDial
                     style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
                   ),
                   onPressed: () async {
-                    final bool ok = await ImsMonetizationEngine.launchDirectPaymentPage(
+                    final String upiRes = await ImsMonetizationEngine.launchDirectPaymentPage(
                       amountInr: widget.amountInr,
                       planTitle: widget.planTitle,
                     );
-                    if (!ok && mounted) {
+                    if (upiRes == 'SUCCESS') {
+                      final Duration dur = widget.tierCode == 'MONTHLY'
+                          ? const Duration(days: 31)
+                          : (widget.tierCode == 'ANNUAL' ? const Duration(days: 366) : const Duration(days: 3650));
+                      await ImsMonetizationEngine.unlockVipForDurationInternal(dur);
+                      widget.onUnlocked();
+                      if (mounted) Navigator.pop(context);
+                    } else if (mounted) {
                       setState(() {
-                        _feedback = 'ℹ️ Opening payment gateway... After paying ₹${widget.amountInr}, enter your 12-digit UPI Ref / UTR below to unlock!';
-                        _isSuccess = true;
+                        _feedback = '⚠️ UPI Payment was not completed ($upiRes). Complete ₹${widget.amountInr} payment in GPay/PhonePe or enter your 6-digit Hardware VIP Key below!';
+                        _isSuccess = false;
                       });
                     }
                   },
@@ -820,7 +844,7 @@ class _DirectPaymentCheckoutDialogState extends State<_DirectPaymentCheckoutDial
 
               // STEP 3: Instant Activation via 12-Digit UPI UTR / Transaction ID or 6-Digit VIP Key
               const Text(
-                '✅ Paid ₹? Enter 12-Digit UPI UTR / Ref No. or VIP Key for Instant Unlock:',
+                '🔑 Or Enter 6-Digit Hardware-Bound VIP Key (From WhatsApp / Owner Vault):',
                 style: TextStyle(fontSize: 10.8, fontWeight: FontWeight.w900, color: Colors.amberAccent),
               ),
               const SizedBox(height: 6),
@@ -832,7 +856,7 @@ class _DirectPaymentCheckoutDialogState extends State<_DirectPaymentCheckoutDial
                       style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900, letterSpacing: 1.1),
                       decoration: InputDecoration(
                         isDense: true,
-                        hintText: '12-Digit UPI UTR or 6-Digit Key',
+                        hintText: 'Enter 6-Digit Hardware VIP Key',
                         filled: true,
                         fillColor: const Color(0xFF141E33),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
@@ -870,7 +894,7 @@ class _DirectPaymentCheckoutDialogState extends State<_DirectPaymentCheckoutDial
                         }
                       } else {
                         setState(() {
-                          _feedback = '❌ Enter your valid 12-digit UPI UTR / Ref ID or 6-digit VIP Key!';
+                          _feedback = '❌ Invalid Key! Complete UPI payment directly or tap Get Key on WhatsApp below.';
                           _isSuccess = false;
                         });
                       }

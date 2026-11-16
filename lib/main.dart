@@ -1146,10 +1146,14 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                             ),
                             SizedBox(height: 3),
                             Text(
-                              '• 100% Ad-Free Stage & Wedding Performance Mode
-'
-                              '• Unlimited 320kbps Offline Batch Downloads & Custom Folders
-'
+                              '• 100% Ad-Free Stage & Wedding Performance Mode',
+                              style: TextStyle(fontSize: 10.5, color: Colors.white70, height: 1.3),
+                            ),
+                            Text(
+                              '• Unlimited 320kbps Offline Batch Downloads & Custom Folders',
+                              style: TextStyle(fontSize: 10.5, color: Colors.white70, height: 1.3),
+                            ),
+                            Text(
                               '• Full Studio Karaoke Vocal Cut, Pitch Shift & 192kbps Recording',
                               style: TextStyle(fontSize: 10.5, color: Colors.white70, height: 1.3),
                             ),

@@ -297,10 +297,7 @@ class ImsMonetizationEngine {
         : '919483776820';
     final String shortHw = hwDeviceId.length > 16 ? hwDeviceId.substring(0, 16) : hwDeviceId;
     final String msg = Uri.encodeComponent(
-      'Hello Inchara Master Sounds! I want to activate *$planName (₹$amountInr)* in IMS Pro Studio.\n'
-      'My Device Hardware ID: *$shortHw*\n'
-      'Tier: *$tierCode*\n'
-      'Please send my 6-digit VIP Unlock Code!',
+      'Hello Inchara Master Sounds! I want to activate *$planName (₹$amountInr)* in IMS Pro Studio. My Device Hardware ID: *$shortHw* (Tier: *$tierCode*). Please send my 6-digit VIP Unlock Code!',
     );
     final String waUrl = 'https://wa.me/$phone?text=$msg';
     try {

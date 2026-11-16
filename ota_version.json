@@ -1,7 +1,6 @@
 {
-  "buildNumber": 1,
-  "versionName": "9999.0",
-  "apkUrl": "",
-  "notes": "IMS Pro Studio v9999.0 Flagship OTA Building..."
+  "buildNumber": 10000001,
+  "versionName": "10000.0",
+  "apkUrl": "https://github.com/GajananPatagar/dj-player/releases/download/v10000001/app-release.apk",
+  "notes": "IMS Pro Studio v10000.0 Flagship OTA Update: YouTube/Instagram AI Daily Song Engine, 100% Exact Song/Notification Sync, Zero-Crash Audio Unmute & Pro Karaoke"
 }
-

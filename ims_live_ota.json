@@ -1,27 +1,21 @@
 {
   "otaChannel": "IMS_LIVE_IN_APP_OTA",
-  "versionLabel": "IMS v10000.0 AI Flagship",
+  "versionLabel": "IMS v15.0.0 Commercial Play Store Edition",
   "activationPin": "1681",
   "forceRelockToken": 1,
   "defaultEqMode": "NORMAL_FLAT_0DB",
-  "liveAnnouncement": "✨ IMS Pro v10000.0 • AI Daily Mix Engine & 320K Master Active",
+  "adsensePublisherId": "ca-pub-1729380220130058",
+  "paymentsAccountId": "5387-7398-7907-9564",
+  "paymentsProfileId": "5967-2551-0049",
+  "organisationName": "INCHARA MASTER SOUNDS",
+  "merchantUpiId": "9483776820@ybl",
+  "merchantWhatsapp": "919483776820",
+  "sponsorBannerTitle": "🔊 Inchara Master Sounds • Pro DJ & Stage Audio (Sirsi)",
+  "sponsorBannerSub": "Tap to Book Fire 57 & S8118 Pro Sound or Upgrade to VIP Ad-Free!",
+  "sponsorActionUrl": "https://wa.me/919483776820?text=Hi%20Inchara%20Master%20Sounds%2C%20I%20saw%20your%20ad%20in%20IMS%20Pro%20Studio!",
+  "liveAnnouncement": "✨ IMS Pro v10000.0 • AI Daily Mix, Live Ads & VIP Pro Passes Active",
   "extraOfflineCategories": [
-    "🎯 For You (AI Mix)",
-    "Marriage",
-    "Fashion Show",
-    "Devotional",
-    "Kannada",
-    "Hindi",
-    "DJ Bass & Party",
-    "Mass Entry",
-    "Janapada & Folk",
-    "Haldi & Sangeet",
-    "Reception & Party"
-  ],
-  "dailyTrendingBoostQueries": [
-    "Kannada 2026 Superhit Songs",
-    "Hindi 2026 Chartbusters",
-    "Indian Wedding Marriage Dance Hits",
-    "Fashion Show Ramp Walk Bass Music"
+    "🎯 For You (AI Mix)", "Marriage", "Fashion Show", "Devotional", "Kannada", "Hindi",
+    "DJ Bass & Party", "Mass Entry", "Janapada & Folk", "Haldi & Sangeet", "Reception & Party"
   ]
 }

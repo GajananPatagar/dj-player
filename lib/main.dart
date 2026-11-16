@@ -1079,7 +1079,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  isVip ? '👑 IMS VIP PRO STUDIO (ACTIVE)' : '💎 IMS GOOGLE ADSENSE & 1-HOUR VIP PASS',
+                                  isVip ? '👑 IMS VIP PRO STUDIO (ACTIVE)' : '💎 IMS VIP PRO STUDIO & 1-HOUR FREE PASS',
                                   style: const TextStyle(fontSize: 14.0, fontWeight: FontWeight.w900, color: Colors.amberAccent),
                                 ),
                                 ValueListenableBuilder<int>(
@@ -1093,7 +1093,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                                             ? '⏱️ 1-Hr VIP Left: ${m.toString().padLeft(2, "0")}m ${s.toString().padLeft(2, "0")}s'
                                             : '🔒 1-Hr VIP Expired (Watch 1 Ad = +1 Hour)');
                                     return Text(
-                                      '$timeStr • 18-Bit Key 0x2D396 Shield ON',
+                                      '$timeStr • Hardware ID: $shortHw',
                                       style: TextStyle(
                                         fontSize: 10,
                                         fontWeight: FontWeight.w800,
@@ -1158,12 +1158,12 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '✨ Google AdSense Account (ca-pub-1729380220130058) • 18-Bit Encrypted:',
+                              '✨ Unlock Full Commercial DJ & Event Studio Benefits:',
                               style: TextStyle(fontSize: 11.2, fontWeight: FontWeight.w900, color: Colors.white),
                             ),
                             SizedBox(height: 3),
                             Text(
-                              '• Watch 1 AdSense Ad = Unlock 1 Full Hour (60m) of Song & DJ Playback',
+                              '• Watch 1 Sponsored Video Ad = Unlock 1 Full Hour (60m) of Song & DJ Playback',
                               style: TextStyle(fontSize: 10.5, color: Color(0xFF00E676), fontWeight: FontWeight.w700, height: 1.3),
                             ),
                             Text(
@@ -1171,7 +1171,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                               style: TextStyle(fontSize: 10.5, color: Colors.white70, height: 1.3),
                             ),
                             Text(
-                              '• 18-Bit Anti-Extraction Shield (Key 185238 / 101101001110010110) Active',
+                              '• 100% Ad-Free Stage Mode, 320kbps Offline Vaults & 192kbps Studio Recording',
                               style: TextStyle(fontSize: 10.5, color: Colors.amberAccent, height: 1.3),
                             ),
                           ],
@@ -1188,7 +1188,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                           ),
                           icon: const Icon(Icons.play_circle_fill_rounded, size: 22),
                           label: const Text(
-                            '🎬 Watch 1 AdSense Ad → Unlock 1 Hour VIP Access Free',
+                            '🎬 Watch 1 Sponsored Video Ad → Unlock 1 Hour VIP Free',
                             style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
                           ),
                           onPressed: () {
@@ -1196,7 +1196,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                               context,
                               onRewardGranted: () {
                                 setModalState(() {
-                                  statusMsg = '✅ +1 Hour (60m 00s) VIP Access Unlocked via Google AdSense (ca-pub-1729380220130058)!';
+                                  statusMsg = '✅ +1 Hour (60m 00s) Full VIP Access Unlocked!';
                                   isSuccessMsg = true;
                                 });
                               },
@@ -1207,7 +1207,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                       const SizedBox(height: 10),
                       _vipPlanTile(
                         title: '⚡ Monthly Pro DJ Pass',
-                        subtitle: 'Google AdSense Publisher Account (ca-pub-1729380220130058 • INCHARA MASTER SOUNDS)',
+                        subtitle: 'Tap to Pay ₹49 via GPay / PhonePe / Paytm / UPI • 30-Day Full Ad-Free Studio',
                         price: '₹49 / Month',
                         color: const Color(0xFF00E5FF),
                         onTap: () {
@@ -1229,7 +1229,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                       const SizedBox(height: 7),
                       _vipPlanTile(
                         title: '🔥 Annual Wedding & Event Master',
-                        subtitle: 'Google AdSense Publisher Account (ca-pub-1729380220130058 • 365-Day VIP)',
+                        subtitle: 'Tap to Pay ₹299 via GPay / PhonePe / Paytm / UPI • 365-Day Wedding & Event Master',
                         price: '₹299 / Year',
                         color: const Color(0xFF00E676),
                         onTap: () {
@@ -1251,7 +1251,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                       const SizedBox(height: 7),
                       _vipPlanTile(
                         title: '👑 Lifetime Studio VIP License',
-                        subtitle: 'Google AdSense Account • 18-Bit Hardware License ($shortHw)',
+                        subtitle: 'Tap to Pay ₹499 via GPay / PhonePe / Paytm / UPI • Lifetime Bound to $shortHw',
                         price: '₹499 Lifetime',
                         color: Colors.amberAccent,
                         onTap: () {

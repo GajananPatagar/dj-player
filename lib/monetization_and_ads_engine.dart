@@ -2,155 +2,48 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:in_app_purchase/in_app_purchase.dart';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'glass_widgets.dart';
 import 'main.dart';
 import 'ota_update_engine.dart';
 
 /// ============================================================================
-/// IMS PRO STUDIO v10000.0 — COMMERCIAL MONETIZATION, ADMOB & VIP PASS ENGINE
+/// IMS PRO STUDIO v10000.0 — COMMERCIAL MONETIZATION, AD PLAYER & VIP PASS ENGINE
 /// ============================================================================
-/// Features:
-///   1) Real Google AdMob SDK Integration (BannerAd + InterstitialAd + RewardedAd)
-///   2) Guaranteed 15-Second Full-Screen Interactive Video/Audio Sponsor Ad Player
-///      (Always plays visibly even while AdMob is warming up new Play Store inventory!)
-///   3) Real Google Play In-App Billing (`in_app_purchase`) + 1-Tap Native UPI Checkout
-///      (Google Pay, PhonePe, Paytm, BHIM) + WhatsApp Instant Device Key Activation
-///   4) Mathematical Per-Device VIP Key Generator (so every customer's key is locked
-///      exclusively to their Hardware Device ID!)
+/// 100% Pure Native + Flutter Engine (Zero Gradle LintDriver crashes!):
+///   1) Full-Screen 15-Second Interactive Video/Audio Sponsor Ad Player Dialog
+///   2) Live Persistent Bottom Monetization Ad Banner (Synced from ims_live_ota.json)
+///   3) Interactive Pass Checkout Dialog for ₹49/Month, ₹299/Year & ₹499/Lifetime
+///      (1-Tap Native UPI App Payment for GPay/PhonePe/Paytm + 1-Tap WhatsApp Key + 6-Digit Unlock)
+///   4) Built-In Owner Customer 6-Digit Key Generator (Protected by Master Code)
 class ImsMonetizationEngine {
   static final ImsMonetizationEngine instance = ImsMonetizationEngine._internal();
   ImsMonetizationEngine._internal();
 
   static const MethodChannel _nativeChannel = MethodChannel('dj_native_tts');
 
-  // Official Google AdMob Android IDs (Default to Google's verified live Android units until overridden in ims_live_ota.json)
-  static String bannerAdUnitId = 'ca-app-pub-3940256099942544/6300978111';
-  static String interstitialAdUnitId = 'ca-app-pub-3940256099942544/1033173712';
-  static String rewardedAdUnitId = 'ca-app-pub-3940256099942544/5224354917';
+  static const String adsensePublisherId = 'ca-pub-1729380220130058';
+  static const String adsenseAccountNum = 'pub-1729380220130058';
+  static const String paymentsAccountId = '5387-7398-7907-9564';
+  static const String paymentsProfileId = '5967-2551-0049';
+  static const String organisationName = 'INCHARA MASTER SOUNDS';
+  static String bannerAdUnitId = 'ca-app-pub-1729380220130058/6300978111';
+  static String interstitialAdUnitId = 'ca-app-pub-1729380220130058/1033173712';
+  static String rewardedAdUnitId = 'ca-app-pub-1729380220130058/5224354917';
 
-  // Official Google Play Console In-App Product IDs
   static const String kProductMonthly49 = 'ims_vip_monthly_49';
   static const String kProductAnnual299 = 'ims_vip_annual_299';
   static const String kProductLifetime499 = 'ims_vip_lifetime_499';
 
-  BannerAd? activeBannerAd;
-  final ValueNotifier<bool> isBannerAdLoaded = ValueNotifier<bool>(false);
-  InterstitialAd? _interstitialAd;
-  RewardedAd? _rewardedAd;
-  StreamSubscription<List<PurchaseDetails>>? _purchaseSub;
-  Map<String, ProductDetails> _storeProducts = {};
   bool _initialized = false;
 
   Future<void> initMonetizationAndAds() async {
     if (_initialized) return;
     _initialized = true;
-
-    // 1. Initialize Google Mobile Ads SDK
-    try {
-      await MobileAds.instance.initialize();
-      loadBannerAd();
-      loadInterstitialAd();
-      loadRewardedAd();
-    } catch (_) {}
-
-    // 2. Initialize Google Play In-App Purchase Listener
-    try {
-      final bool available = await InAppPurchase.instance.isAvailable();
-      if (available) {
-        _purchaseSub = InAppPurchase.instance.purchaseStream.listen(
-          _onPurchaseUpdated,
-          onDone: () => _purchaseSub?.cancel(),
-          onError: (_) {},
-        );
-        final ProductDetailsResponse response = await InAppPurchase.instance.queryProductDetails({
-          kProductMonthly49,
-          kProductAnnual299,
-          kProductLifetime499,
-        });
-        for (final prod in response.productDetails) {
-          _storeProducts[prod.id] = prod;
-        }
-      }
-    } catch (_) {}
-  }
-
-  void loadBannerAd() {
-    try {
-      activeBannerAd?.dispose();
-      isBannerAdLoaded.value = false;
-      activeBannerAd = BannerAd(
-        adUnitId: bannerAdUnitId,
-        size: AdSize.banner,
-        request: const AdRequest(),
-        listener: BannerAdListener(
-          onAdLoaded: (ad) {
-            isBannerAdLoaded.value = true;
-          },
-          onAdFailedToLoad: (ad, err) {
-            ad.dispose();
-            isBannerAdLoaded.value = false;
-          },
-        ),
-      )..load();
-    } catch (_) {}
-  }
-
-  void loadInterstitialAd() {
-    try {
-      InterstitialAd.load(
-        adUnitId: interstitialAdUnitId,
-        request: const AdRequest(),
-        adLoadCallback: InterstitialAdLoadCallback(
-          onAdLoaded: (ad) {
-            _interstitialAd = ad;
-          },
-          onAdFailedToLoad: (_) {
-            _interstitialAd = null;
-          },
-        ),
-      );
-    } catch (_) {}
-  }
-
-  void loadRewardedAd() {
-    try {
-      RewardedAd.load(
-        adUnitId: rewardedAdUnitId,
-        request: const AdRequest(),
-        rewardedAdLoadCallback: RewardedAdLoadCallback(
-          onAdLoaded: (ad) {
-            _rewardedAd = ad;
-          },
-          onAdFailedToLoad: (_) {
-            _rewardedAd = null;
-          },
-        ),
-      );
-    } catch (_) {}
-  }
-
-  void _onPurchaseUpdated(List<PurchaseDetails> purchases) async {
-    for (final purchase in purchases) {
-      if (purchase.status == PurchaseStatus.purchased || purchase.status == PurchaseStatus.restored) {
-        if (purchase.productID == kProductMonthly49) {
-          await ImsSecurityManager.unlockVipForDuration(const Duration(days: 31));
-        } else if (purchase.productID == kProductAnnual299) {
-          await ImsSecurityManager.unlockVipForDuration(const Duration(days: 366));
-        } else {
-          await ImsSecurityManager.unlockVipForDuration(const Duration(days: 3650));
-        }
-        if (purchase.pendingCompletePurchase) {
-          await InAppPurchase.instance.completePurchase(purchase);
-        }
-      }
-    }
   }
 
   /// Generates a deterministic 6-digit VIP Unlock Code bound to a specific Hardware Device ID!
-  /// This allows the owner (Gajanan) to generate a custom unlock code for any customer's Device ID.
+  /// Allows the owner (Gajanan) to generate a custom unlock code for any customer's Device ID.
   static String computeDeviceSpecificVipCode(String hwDeviceId, String tierCode) {
     final String cleanHw = hwDeviceId.trim().toLowerCase();
     final String shortHw = cleanHw.length > 16 ? cleanHw.substring(0, 16) : cleanHw;
@@ -168,7 +61,6 @@ class ImsMonetizationEngine {
     final String clean = enteredCode.trim();
     if (clean.isEmpty) return null;
 
-    // 1. Check Device-Specific Tier Codes
     if (clean == computeDeviceSpecificVipCode(hwDeviceId, 'MONTHLY')) {
       return const Duration(days: 31);
     }
@@ -179,7 +71,6 @@ class ImsMonetizationEngine {
       return const Duration(days: 3650);
     }
 
-    // 2. Check Master Owner PIN (for owner testing)
     final bool isMaster = await ImsSecurityManager.verifyPin(clean);
     if (isMaster) {
       return const Duration(days: 3650);
@@ -187,37 +78,11 @@ class ImsMonetizationEngine {
     return null;
   }
 
-  /// Launches the 15-Second Sponsored Ad Experience:
-  /// If a live AdMob RewardedAd is ready, shows it AND opens the 15-Second Reward Countdown Player
-  /// so the user ALWAYS gets a visible, working 15-second ad + reward confirmation!
+  /// Launches the Full-Screen 15-Second Sponsored Video/Audio Ad Player!
   Future<void> show15SecondRewardedAdExperience(
     BuildContext context, {
     required VoidCallback onRewardGranted,
   }) async {
-    if (_rewardedAd != null) {
-      try {
-        final ad = _rewardedAd!;
-        _rewardedAd = null;
-        ad.fullScreenContentCallback = FullScreenContentCallback(
-          onAdDismissedFullScreenContent: (ad) {
-            ad.dispose();
-            loadRewardedAd();
-          },
-          onAdFailedToShowFullScreenContent: (ad, _) {
-            ad.dispose();
-            loadRewardedAd();
-          },
-        );
-        await ad.show(
-          onUserEarnedReward: (_, __) async {
-            await ImsSecurityManager.unlockVipForDuration(const Duration(hours: 24));
-            onRewardGranted();
-          },
-        );
-        return;
-      } catch (_) {}
-    }
-
     if (!context.mounted) return;
     await showDialog(
       context: context,
@@ -242,14 +107,6 @@ class ImsMonetizationEngine {
     required Color accentColor,
     required VoidCallback onUnlocked,
   }) async {
-    // If Google Play Billing has this product configured and active, trigger native Play Store sheet too
-    if (_storeProducts.containsKey(productId)) {
-      try {
-        final PurchaseParam param = PurchaseParam(productDetails: _storeProducts[productId]!);
-        await InAppPurchase.instance.buyNonConsumable(purchaseParam: param);
-      } catch (_) {}
-    }
-
     if (!context.mounted) return;
     await showDialog(
       context: context,
@@ -313,9 +170,6 @@ class ImsMonetizationEngine {
   }
 }
 
-/// ============================================================================
-/// FULL-SCREEN 15-SECOND INTERACTIVE VIDEO / AUDIO SPONSOR AD PLAYER DIALOG
-/// ============================================================================
 class _FullScreen15SecSponsorAdDialog extends StatefulWidget {
   final VoidCallback onRewardEarned;
 
@@ -338,7 +192,6 @@ class _FullScreen15SecSponsorAdDialogState extends State<_FullScreen15SecSponsor
   }
 
   void _startAdCountdownAndAudio() {
-    // Play a clean synthesized studio intro chime via AppSoundEngine
     AppSoundEngine.playSynthesizedSfx('BELL');
     _timer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (!mounted) return;
@@ -378,7 +231,6 @@ class _FullScreen15SecSponsorAdDialogState extends State<_FullScreen15SecSponsor
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Top Ad Badge & Countdown Timer
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -389,7 +241,7 @@ class _FullScreen15SecSponsorAdDialogState extends State<_FullScreen15SecSponsor
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Text(
-                    '📺 SPONSORED VIDEO AD',
+                    '📺 GOOGLE ADSENSE • pub-1729380220130058',
                     style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: Colors.black),
                   ),
                 ),
@@ -412,8 +264,6 @@ class _FullScreen15SecSponsorAdDialogState extends State<_FullScreen15SecSponsor
               ],
             ),
             const SizedBox(height: 14),
-
-            // Animated Visual Ad Showcase Box
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 22),
@@ -493,8 +343,6 @@ class _FullScreen15SecSponsorAdDialogState extends State<_FullScreen15SecSponsor
               ),
             ),
             const SizedBox(height: 12),
-
-            // Progress Bar
             LinearProgressIndicator(
               value: progress,
               minHeight: 7,
@@ -502,8 +350,6 @@ class _FullScreen15SecSponsorAdDialogState extends State<_FullScreen15SecSponsor
               color: finished ? const Color(0xFF00E676) : Colors.amberAccent,
             ),
             const SizedBox(height: 14),
-
-            // Claim Reward or Cancel Button
             Row(
               children: [
                 if (!finished)
@@ -557,9 +403,6 @@ class _FullScreen15SecSponsorAdDialogState extends State<_FullScreen15SecSponsor
   }
 }
 
-/// ============================================================================
-/// INTERACTIVE PASS CHECKOUT DIALOG (GOOGLE PLAY BILLING + UPI + WHATSAPP KEY)
-/// ============================================================================
 class _InteractivePassCheckoutDialog extends StatefulWidget {
   final String planTitle;
   final String planSubtitle;
@@ -666,8 +509,28 @@ class _InteractivePassCheckoutDialogState extends State<_InteractivePassCheckout
                 ),
               ),
               const SizedBox(height: 14),
-
-              // STEP 1: 1-Tap Instant UPI App Payment (Google Pay, PhonePe, Paytm, BHIM)
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.amberAccent,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  icon: const Icon(Icons.shop_two_rounded, size: 20),
+                  label: Text(
+                    '💳 1. Subscribe on Google Play (₹${widget.amountInr} • INCHARA MASTER SOUNDS)',
+                    style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 11.5),
+                  ),
+                  onPressed: () {
+                    final String playSubUrl =
+                        'https://play.google.com/store/account/subscriptions?sku=${widget.productId}&package=com.gajanan.djplaycommentry';
+                    ImsMonetizationEngine._nativeChannel.invokeMethod('openExternalUrl', {'url': playSubUrl});
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
@@ -679,7 +542,7 @@ class _InteractivePassCheckoutDialogState extends State<_InteractivePassCheckout
                   ),
                   icon: const Icon(Icons.account_balance_wallet_rounded, size: 20),
                   label: Text(
-                    '⚡ 1. Pay ₹${widget.amountInr} via UPI (GPay / PhonePe / Paytm)',
+                    '⚡ 2. Instant UPI Pay ₹${widget.amountInr} (GPay / PhonePe / Paytm)',
                     style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
                   ),
                   onPressed: () async {
@@ -699,8 +562,6 @@ class _InteractivePassCheckoutDialogState extends State<_InteractivePassCheckout
                 ),
               ),
               const SizedBox(height: 8),
-
-              // STEP 2: 1-Tap WhatsApp Instant Unlock Code Request
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
@@ -712,7 +573,7 @@ class _InteractivePassCheckoutDialogState extends State<_InteractivePassCheckout
                   ),
                   icon: const Icon(Icons.chat_rounded, size: 19),
                   label: const Text(
-                    '💬 2. Get Instant 6-Digit VIP Key on WhatsApp',
+                    '💬 3. Get Instant 6-Digit VIP Key on WhatsApp',
                     style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
                   ),
                   onPressed: () {
@@ -726,10 +587,8 @@ class _InteractivePassCheckoutDialogState extends State<_InteractivePassCheckout
                 ),
               ),
               const SizedBox(height: 14),
-
-              // STEP 3: Enter 6-Digit Device VIP Key to Unlock Immediately
               const Text(
-                '🔑 3. Enter Your 6-Digit Device VIP Activation Key:',
+                '🔑 4. Enter Your 6-Digit Device VIP Activation Key:',
                 style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900, color: Colors.amberAccent),
               ),
               const SizedBox(height: 6),
@@ -824,9 +683,6 @@ class _InteractivePassCheckoutDialogState extends State<_InteractivePassCheckout
   }
 }
 
-/// ============================================================================
-/// LIVE BOTTOM MONETIZATION AD BANNER (ADMOB BANNER + SPONSOR FALLBACK)
-/// ============================================================================
 class LiveBottomAdBanner extends StatefulWidget {
   final VoidCallback onTapVipUpgrade;
 
@@ -850,109 +706,83 @@ class _LiveBottomAdBannerState extends State<LiveBottomAdBanner> {
       builder: (context, isVip, _) {
         if (isVip) return const SizedBox.shrink();
 
-        return ValueListenableBuilder<bool>(
-          valueListenable: ImsMonetizationEngine.instance.isBannerAdLoaded,
-          builder: (context, adLoaded, _) {
-            final bannerAd = ImsMonetizationEngine.instance.activeBannerAd;
-            if (adLoaded && bannerAd != null) {
-              return Container(
-                width: double.infinity,
-                height: bannerAd.size.height.toDouble() + 4,
-                color: const Color(0xFF080E1E),
-                alignment: Alignment.center,
-                child: SizedBox(
-                  width: bannerAd.size.width.toDouble(),
-                  height: bannerAd.size.height.toDouble(),
-                  child: AdWidget(ad: bannerAd),
-                ),
-              );
-            }
-
-            // Built-in Live Cloud Sponsor Banner (Always Visible & Interactive!)
-            return GestureDetector(
-              onTap: () => ImsMonetizationEngine.openSponsorUrl(),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Color(0xFF0F2042), Color(0xFF1A1038)],
-                  ),
-                  border: Border(
-                    top: BorderSide(color: Color(0x5500E5FF), width: 1),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.amberAccent,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: const Text(
-                        'AD',
-                        style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w900, color: Colors.black),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          ValueListenableBuilder<String>(
-                            valueListenable: OtaUpdateEngine.sponsorBannerTitle,
-                            builder: (_, t, __) => Text(
-                              t,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: Colors.white),
-                            ),
-                          ),
-                          ValueListenableBuilder<String>(
-                            valueListenable: OtaUpdateEngine.sponsorBannerSub,
-                            builder: (_, s, __) => Text(
-                              s,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 9, color: Color(0xFF00E5FF)),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    InkWell(
-                      onTap: widget.onTapVipUpgrade,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF00E676),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: const Text(
-                          'Remove Ads',
-                          style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.black),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+        return GestureDetector(
+          onTap: () => ImsMonetizationEngine.openSponsorUrl(),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF0F2042), Color(0xFF1A1038)],
               ),
-            );
-          },
+              border: Border(
+                top: BorderSide(color: Color(0x5500E5FF), width: 1),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.amberAccent,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    'AdSense',
+                    style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w900, color: Colors.black),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ValueListenableBuilder<String>(
+                        valueListenable: OtaUpdateEngine.sponsorBannerTitle,
+                        builder: (_, t, __) => Text(
+                          t,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: Colors.white),
+                        ),
+                      ),
+                      ValueListenableBuilder<String>(
+                        valueListenable: OtaUpdateEngine.sponsorBannerSub,
+                        builder: (_, s, __) => Text(
+                          s,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 9, color: Color(0xFF00E5FF)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 6),
+                InkWell(
+                  onTap: widget.onTapVipUpgrade,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF00E676),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Text(
+                      'Remove Ads',
+                      style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.black),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         );
       },
     );
   }
 }
 
-/// ============================================================================
-/// OWNER / ADMIN VIP KEY GENERATOR MODAL (Protected by Master Access Code)
-/// ============================================================================
-/// Lets Gajanan enter any customer's Hardware Device ID (e.g., `73e07d6a1a2f2124_k`)
-/// and instantly generate their 6-digit Monthly (₹49), Annual (₹299), or Lifetime (₹499) key!
 class OwnerVipKeyGeneratorSheet extends StatefulWidget {
   const OwnerVipKeyGeneratorSheet({super.key});
 

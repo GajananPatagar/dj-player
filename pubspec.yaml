@@ -13,8 +13,6 @@ dependencies:
   audioplayers: any
   shared_preferences: any
   path_provider: any
-  in_app_purchase: any
-  google_mobile_ads: any
 
 flutter:
   uses-material-design: true

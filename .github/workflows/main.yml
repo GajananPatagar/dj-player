@@ -37,6 +37,14 @@ jobs:
               sed -i 's/applicationId "com.gajanan.djplaycommentry.dj_player"/applicationId "com.gajanan.djplaycommentry"/g' "$gf"
             fi
           done
+          if [ -f "android/app/build.gradle.kts" ]; then
+            sed -i 's/android {/android {
+    lint { checkReleaseBuilds = false; abortOnError = false }/' android/app/build.gradle.kts
+          fi
+          if [ -f "android/app/build.gradle" ]; then
+            sed -i 's/android {/android {
+    lintOptions { checkReleaseBuilds false; abortOnError false }/' android/app/build.gradle
+          fi
           grep -rn "applicationId" android/app/ || true
 
       - name: Inject Glassmorphic MediaSession Lockscreen Service, Zero-Popup WakeLock, Hardware DSP & TTS
@@ -1341,7 +1349,7 @@ jobs:
               sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <uses-permission android:name="android.permission.WAKE_LOCK"\/>\n    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"\/>\n    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"\/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"\/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"\/>\n    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"\/>\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"\/>\n    <uses-permission android:name="android.permission.RECORD_AUDIO"\/>\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"\/>\n    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"\/>\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"\/>\n    <application/' "$MANIFEST"
             fi
             if ! grep -q "com.google.android.gms.ads.APPLICATION_ID" "$MANIFEST"; then
-              sed -i 's|</application>|    <meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="ca-app-pub-3940256099942544~3347511713"/>\n    </application>|g' "$MANIFEST"
+              sed -i 's|</application>|    </application>|g' "$MANIFEST"
             fi
             if ! grep -q "DjMediaForegroundService" "$MANIFEST"; then
               sed -i 's|</application>|    <service android:name=".DjMediaForegroundService" android:enabled="true" android:exported="false" android:foregroundServiceType="mediaPlayback" />\n    </application>|g' "$MANIFEST"

@@ -18,4 +18,5 @@ flutter:
   uses-material-design: true
   assets:
     - assets/icon.png
+    - assets/ims_18bit_vault.enc
 

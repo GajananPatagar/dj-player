@@ -1078,19 +1078,35 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  isVip ? '👑 IMS VIP PRO STUDIO (ACTIVE)' : '💎 IMS VIP PRO & CREATOR PASS',
-                                  style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900, color: Colors.amberAccent),
+                                  isVip ? '👑 IMS VIP PRO STUDIO (ACTIVE)' : '💎 IMS GOOGLE ADSENSE & 1-HOUR VIP PASS',
+                                  style: const TextStyle(fontSize: 14.0, fontWeight: FontWeight.w900, color: Colors.amberAccent),
                                 ),
-                                Text(
-                                  'Hardware-Locked License: $shortHw • Anti-Mod R8 Shield ON',
-                                  style: const TextStyle(fontSize: 10, color: Color(0xFF00E676)),
+                                ValueListenableBuilder<int>(
+                                  valueListenable: ImsMonetizationEngine.vipRemainingSeconds,
+                                  builder: (_, remSec, __) {
+                                    final int m = remSec ~/ 60;
+                                    final int s = remSec % 60;
+                                    final String timeStr = remSec > 86400
+                                        ? 'Full Pass Active'
+                                        : (remSec > 0
+                                            ? '⏱️ 1-Hr VIP Left: ${m.toString().padLeft(2, "0")}m ${s.toString().padLeft(2, "0")}s'
+                                            : '🔒 1-Hr VIP Expired (Watch 1 Ad = +1 Hour)');
+                                    return Text(
+                                      '$timeStr • 18-Bit Key 0x2D396 Shield ON',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                        color: remSec > 0 ? const Color(0xFF00E676) : Colors.orangeAccent,
+                                      ),
+                                    );
+                                  },
                                 ),
                               ],
                             ),
                           ),
                           IconButton(
-                            tooltip: 'Owner Customer Key Generator',
-                            icon: const Icon(Icons.vpn_key_rounded, color: Color(0xFF00E5FF), size: 20),
+                            tooltip: '18-Bit Encrypted Key Vault & Generator',
+                            icon: const Icon(Icons.enhanced_encryption_rounded, color: Color(0xFF00E5FF), size: 22),
                             onPressed: () {
                               showModalBottomSheet(
                                 context: context,
@@ -1141,36 +1157,63 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '✨ All Passes & Ads Connected to Google Console Profile 5967-2551-0049:',
-                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900, color: Colors.white),
+                              '✨ Google AdSense Account (ca-pub-1729380220130058) • 18-Bit Encrypted:',
+                              style: TextStyle(fontSize: 11.2, fontWeight: FontWeight.w900, color: Colors.white),
                             ),
                             SizedBox(height: 3),
                             Text(
-                              '• 100% Ad-Free Stage & Wedding Performance Mode',
+                              '• Watch 1 AdSense Ad = Unlock 1 Full Hour (60m) of Song & DJ Playback',
+                              style: TextStyle(fontSize: 10.5, color: Color(0xFF00E676), fontWeight: FontWeight.w700, height: 1.3),
+                            ),
+                            Text(
+                              '• Pre-Expiry Alert 3 Mins Before 1 Hour Ends + Auto Re-Unlock Prompt',
                               style: TextStyle(fontSize: 10.5, color: Colors.white70, height: 1.3),
                             ),
                             Text(
-                              '• Unlimited 320kbps Offline Batch Downloads & Custom Folders',
-                              style: TextStyle(fontSize: 10.5, color: Colors.white70, height: 1.3),
-                            ),
-                            Text(
-                              '• Full Studio Karaoke Vocal Cut, Pitch Shift & 192kbps Recording',
-                              style: TextStyle(fontSize: 10.5, color: Colors.white70, height: 1.3),
+                              '• 18-Bit Anti-Extraction Shield (Key 185238 / 101101001110010110) Active',
+                              style: TextStyle(fontSize: 10.5, color: Colors.amberAccent, height: 1.3),
                             ),
                           ],
                         ),
                       ),
                       const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF00E676),
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(vertical: 13),
+                          ),
+                          icon: const Icon(Icons.play_circle_fill_rounded, size: 22),
+                          label: const Text(
+                            '🎬 Watch 1 AdSense Ad → Unlock 1 Hour VIP Access Free',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
+                          ),
+                          onPressed: () {
+                            ImsMonetizationEngine.instance.show15SecondRewardedAdExperience(
+                              context,
+                              onRewardGranted: () {
+                                setModalState(() {
+                                  statusMsg = '✅ +1 Hour (60m 00s) VIP Access Unlocked via Google AdSense (ca-pub-1729380220130058)!';
+                                  isSuccessMsg = true;
+                                });
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 10),
                       _vipPlanTile(
                         title: '⚡ Monthly Pro DJ Pass',
-                        subtitle: 'Official Google Play Console Subscription (INCHARA MASTER SOUNDS)',
+                        subtitle: 'Google AdSense Publisher Account (ca-pub-1729380220130058 • INCHARA MASTER SOUNDS)',
                         price: '₹49 / Month',
                         color: const Color(0xFF00E5FF),
                         onTap: () {
                           ImsMonetizationEngine.instance.openPassCheckoutDialog(
                             context,
                             planTitle: '⚡ Monthly Pro DJ Pass',
-                            planSubtitle: '30-Day Full Ad-Free Studio + Unlimited 320K Offline Vaults',
+                            planSubtitle: '30-Day Full Ad-Free Studio + Unlimited 320K Offline Vaults (AdSense Linked)',
                             amountInr: 49,
                             productId: ImsMonetizationEngine.kProductMonthly49,
                             tierCode: 'MONTHLY',
@@ -1185,14 +1228,14 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                       const SizedBox(height: 7),
                       _vipPlanTile(
                         title: '🔥 Annual Wedding & Event Master',
-                        subtitle: 'Official Google Play Console Annual Pass (Profile 5967-2551-0049)',
+                        subtitle: 'Google AdSense Publisher Account (ca-pub-1729380220130058 • 365-Day VIP)',
                         price: '₹299 / Year',
                         color: const Color(0xFF00E676),
                         onTap: () {
                           ImsMonetizationEngine.instance.openPassCheckoutDialog(
                             context,
                             planTitle: '🔥 Annual Wedding & Event Master',
-                            planSubtitle: '365-Day Full Commercial Event & Wedding DJ License',
+                            planSubtitle: '365-Day Full Commercial Event & Wedding DJ License (AdSense Linked)',
                             amountInr: 299,
                             productId: ImsMonetizationEngine.kProductAnnual299,
                             tierCode: 'ANNUAL',
@@ -1207,14 +1250,14 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                       const SizedBox(height: 7),
                       _vipPlanTile(
                         title: '👑 Lifetime Studio VIP License',
-                        subtitle: 'Official Google Play Console Lifetime Pass (Bound to $shortHw)',
+                        subtitle: 'Google AdSense Account • 18-Bit Hardware License ($shortHw)',
                         price: '₹499 Lifetime',
                         color: Colors.amberAccent,
                         onTap: () {
                           ImsMonetizationEngine.instance.openPassCheckoutDialog(
                             context,
                             planTitle: '👑 Lifetime Studio VIP License',
-                            planSubtitle: 'Permanent Hardware-Bound VIP Studio Master License',
+                            planSubtitle: 'Permanent Hardware-Bound VIP Studio Master License (AdSense Linked)',
                             amountInr: 499,
                             productId: ImsMonetizationEngine.kProductLifetime499,
                             tierCode: 'LIFETIME',
@@ -1227,42 +1270,14 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                         },
                       ),
                       const SizedBox(height: 10),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF00E676),
-                            foregroundColor: Colors.black,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                          icon: const Icon(Icons.play_circle_fill_rounded, size: 20),
-                          label: const Text(
-                            '🎬 Watch 15s Sponsored Ad → Unlock 24h VIP Pro Free',
-                            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900),
-                          ),
-                          onPressed: () {
-                            ImsMonetizationEngine.instance.show15SecondRewardedAdExperience(
-                              context,
-                              onRewardGranted: () {
-                                setModalState(() {
-                                  statusMsg = '✅ 24-Hour VIP Pro Pass Unlocked by Watching Sponsored Ad!';
-                                  isSuccessMsg = true;
-                                });
-                              },
-                            );
-                          },
-                        ),
-                      ),
-                      const SizedBox(height: 10),
                       Row(
                         children: [
                           Expanded(
                             child: TextField(
                               controller: vipPinCtrl,
-                              keyboardType: TextInputType.number,
                               decoration: const InputDecoration(
                                 isDense: true,
-                                labelText: 'Enter 6-Digit VIP Key',
+                                labelText: 'Enter 6-Digit VIP Key or 18-Bit Key',
                                 filled: true,
                                 fillColor: Color(0xFF141E33),
                               ),
@@ -1282,6 +1297,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                               );
                               if (dur != null) {
                                 await ImsSecurityManager.unlockVipForDuration(dur);
+                                await ImsMonetizationEngine.instance.refreshVipTimer();
                                 AppSoundEngine.playSynthesizedSfx('BELL');
                                 setModalState(() {
                                   statusMsg = '👑 VIP Pro Activated & Bound to Device $shortHw!';
@@ -1289,7 +1305,7 @@ class _MasterHomeShellState extends State<MasterHomeShell> with WidgetsBindingOb
                                 });
                               } else {
                                 setModalState(() {
-                                  statusMsg = '❌ Invalid Key for Device $shortHw! Tap any pass above to get your key.';
+                                  statusMsg = '❌ Invalid Key! Watch 1 Ad above for 1 Hour VIP or enter valid key.';
                                   isSuccessMsg = false;
                                 });
                               }

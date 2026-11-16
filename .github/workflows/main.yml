@@ -30,18 +30,14 @@ jobs:
       - name: Generate Fresh Android V2 Scaffold First & Lock Package Name to com.gajanan.djplaycommentry
         run: |
           rm -rf android
-          flutter create --platforms=android --org com.gajanan.djplaycommentry --project-name dj_player .
-          for gf in android/app/build.gradle android/app/build.gradle.kts; do
-            if [ -f "$gf" ]; then
-              sed -i 's/applicationId = "com.gajanan.djplaycommentry.dj_player"/applicationId = "com.gajanan.djplaycommentry"/g' "$gf"
-              sed -i 's/applicationId "com.gajanan.djplaycommentry.dj_player"/applicationId "com.gajanan.djplaycommentry"/g' "$gf"
-            fi
-          done
+          flutter create --platforms=android --org com.gajanan --project-name dj_player .
           if [ -f "android/app/build.gradle.kts" ]; then
+            sed -i 's/com.gajanan.dj_player/com.gajanan.djplaycommentry/g' android/app/build.gradle.kts
           fi
           if [ -f "android/app/build.gradle" ]; then
+            sed -i 's/com.gajanan.dj_player/com.gajanan.djplaycommentry/g' android/app/build.gradle
           fi
-          grep -rn "applicationId" android/app/ || true
+          find android -type f \( -name "*.kt" -o -name "*.java" -o -name "*.xml" -o -name "*.gradle" -o -name "*.kts" \) -exec sed -i 's/com.gajanan.dj_player/com.gajanan.djplaycommentry/g' {} +
 
       - name: Inject Glassmorphic MediaSession Lockscreen Service, Zero-Popup WakeLock, Hardware DSP & TTS
         run: |

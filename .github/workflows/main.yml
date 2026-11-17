@@ -85,23 +85,6 @@ jobs:
               private var cachedArtUrl: String = ""
               private var cachedArtBitmap: Bitmap? = null
 
-              private var pendingUpiResult: MethodChannel.Result? = null
-
-              override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-                  super.onActivityResult(requestCode, resultCode, data)
-                  if (requestCode == 9001) {
-                      val cb = pendingUpiResult
-                      pendingUpiResult = null
-                      if (cb != null) {
-                          val resp = (data?.getStringExtra("response") ?: "").uppercase()
-                          val isSuccess = (resultCode == android.app.Activity.RESULT_OK) &&
-                              (resp.contains("STATUS=SUCCESS") || resp.contains("RESPONSECODE=00")) &&
-                              !resp.contains("STATUS=FAILURE") && !resp.contains("STATUS=SUBMITTED")
-                          cb.success(if (isSuccess) "SUCCESS" else "CANCELLED_OR_FAILED")
-                      }
-                  }
-              }
-
               override fun onCreate() {
                   super.onCreate()
                   acquireLocks()
@@ -1136,21 +1119,89 @@ jobs:
                                       val wv = WebView(this@MainActivity).apply {
                                           settings.javaScriptEnabled = true
                                           settings.domStorageEnabled = true
+                                          settings.mediaPlaybackRequiresUserGesture = false
+                                          settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
+                                          android.webkit.CookieManager.getInstance().setAcceptCookie(true)
+                                          android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
                                           webViewClient = WebViewClient()
-                                          loadUrl("https://gajananpatagar.github.io/dj-player/")
+                                          loadUrl("https://gajananpatagar.github.io/dj-player/index.html?t=" + System.currentTimeMillis())
                                       }
+
                                       if (showPopup) {
-                                          android.app.AlertDialog.Builder(this@MainActivity)
-                                              .setTitle("🎬 Sponsored Showcase")
-                                              .setView(wv)
-                                              .setPositiveButton("Close") { d, _ -> d.dismiss() }
-                                              .show()
+                                          var replied = false
+                                          val dlg = android.app.Dialog(this@MainActivity, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+                                          val root = android.widget.LinearLayout(this@MainActivity).apply {
+                                              orientation = android.widget.LinearLayout.VERTICAL
+                                              setBackgroundColor(android.graphics.Color.parseColor("#070D19"))
+                                          }
+                                          val header = android.widget.LinearLayout(this@MainActivity).apply {
+                                              orientation = android.widget.LinearLayout.HORIZONTAL
+                                              setPadding(32, 28, 32, 28)
+                                              setBackgroundColor(android.graphics.Color.parseColor("#0F172A"))
+                                              gravity = android.view.Gravity.CENTER_VERTICAL
+                                          }
+                                          val statusTv = android.widget.TextView(this@MainActivity).apply {
+                                              text = "⏳ Google AdSense Live Ad • 15s left for +1 Hr VIP"
+                                              setTextColor(android.graphics.Color.parseColor("#FFD740"))
+                                              textSize = 13f
+                                              layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                                          }
+                                          val actionBtn = android.widget.Button(this@MainActivity).apply {
+                                              text = "Wait 15s..."
+                                              isEnabled = false
+                                              setBackgroundColor(android.graphics.Color.parseColor("#334155"))
+                                              setTextColor(android.graphics.Color.WHITE)
+                                          }
+                                          header.addView(statusTv)
+                                          header.addView(actionBtn)
+                                          root.addView(header, android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.MATCH_PARENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT))
+                                          root.addView(wv, android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+                                          dlg.setContentView(root)
+                                          dlg.setCancelable(false)
+
+                                          var secLeft = 15
+                                          val timerHandler = Handler(Looper.getMainLooper())
+                                          val tick = object : Runnable {
+                                              override fun run() {
+                                                  if (!dlg.isShowing) return
+                                                  if (secLeft > 0) {
+                                                      statusTv.text = "⏳ Google AdSense Live Ad • " + secLeft + "s left for +1 Hr VIP"
+                                                      actionBtn.text = "Wait " + secLeft + "s"
+                                                      secLeft -= 1
+                                                      timerHandler.postDelayed(this, 1000L)
+                                                  } else {
+                                                      statusTv.text = "✅ Google AdSense Ad Complete! (+1 Hr VIP)"
+                                                      statusTv.setTextColor(android.graphics.Color.parseColor("#00E676"))
+                                                      actionBtn.text = "CLAIM +1 HR VIP ✕"
+                                                      actionBtn.isEnabled = true
+                                                      actionBtn.setBackgroundColor(android.graphics.Color.parseColor("#00E676"))
+                                                      actionBtn.setTextColor(android.graphics.Color.BLACK)
+                                                  }
+                                              }
+                                          }
+                                          actionBtn.setOnClickListener {
+                                              if (!replied) {
+                                                  replied = true
+                                                  result.success(true)
+                                              }
+                                              dlg.dismiss()
+                                          }
+                                          dlg.setOnDismissListener {
+                                              if (!replied) {
+                                                  replied = true
+                                                  result.success(secLeft <= 0)
+                                              }
+                                          }
+                                          dlg.show()
+                                          timerHandler.post(tick)
                                       } else {
                                           addContentView(wv, android.view.ViewGroup.LayoutParams(1, 1))
+                                          result.success(true)
                                       }
-                                  } catch (_: Exception) {}
+                                  } catch (_: Exception) {
+                                      result.success(true)
+                                  }
                               }
-                              result.success(true)
                           }
                           "openExternalUrl" -> {
                               val urlStr = call.argument<String>("url") ?: ""

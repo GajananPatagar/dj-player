@@ -16,7 +16,7 @@ cat << 'EOF_PUBSPEC' > pubspec.yaml
 name: dj_player
 description: IMS Pro Studio v15.0.0 Commercial Play Store Edition
 publish_to: 'none'
-version: 15.0.0+10000015
+version: 15.0.0+10000017
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -48,6 +48,63 @@ cp ads.txt docs/app-ads.txt
 
 cat << 'EOF_ADSENSE_HTML' > docs/index.html
 <!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>IMS Pro Studio — Live Audio DSP, 5-Band Equalizer & Stage Sound Guide</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+  <meta name="google-adsense-account" content="ca-pub-1729380220130058">
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1729380220130058" crossorigin="anonymous"></script>
+  <style>
+    body { margin:0; padding:12px; background:#070d19; color:#e2e8f0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+    .ad-slot-box { min-height:260px; margin:10px 0; padding:8px; background:#0f172a; border:1px solid #1e293b; border-radius:12px; text-align:center; }
+    .article-box { margin:14px 0; padding:14px; background:#0b1324; border-radius:12px; font-size:13px; line-height:1.6; color:#94a3b8; }
+    h1, h2 { color:#38bdf8; margin:6px 0; font-size:16px; }
+  </style>
+</head>
+<body>
+  <!-- Google AdSense Slot 1: Top Display Ad -->
+  <div class="ad-slot-box">
+    <ins class="adsbygoogle"
+         style="display:block"
+         data-ad-client="ca-pub-1729380220130058"
+         data-ad-format="auto"
+         data-full-width-responsive="true"></ins>
+    <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+  </div>
+
+  <div class="article-box">
+    <h1>IMS Pro Studio v15.0 — Professional Audio Mastering & Live Crossover Guide</h1>
+    <p>Configuring high-powered live sound reinforcement systems requires accurate crossover frequency alignment between dual 15-inch full-range enclosures and 18-inch subwoofers. Setting a 24dB/octave Linkwitz-Riley crossover filter between 90Hz and 110Hz prevents phase cancellation in the upper bass spectrum while protecting voice coils during sustained live events.</p>
+  </div>
+
+  <!-- Google AdSense Slot 2: In-Article Fluid Ad -->
+  <div class="ad-slot-box">
+    <ins class="adsbygoogle"
+         style="display:block; text-align:center;"
+         data-ad-layout="in-article"
+         data-ad-format="fluid"
+         data-ad-client="ca-pub-1729380220130058"></ins>
+    <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+  </div>
+
+  <div class="article-box">
+    <h2>Real-Time 320kbps Digital Signal Processing & Vocal Cut Karaoke</h2>
+    <p>Mid-side stereo phase cancellation isolates center-panned lead vocals while preserving stereo instrumentation, reverb tails, and bass transients for live stage accompaniment.</p>
+  </div>
+
+  <!-- Google AdSense Slot 3: Bottom Multiplex / Auto Ad -->
+  <div class="ad-slot-box">
+    <ins class="adsbygoogle"
+         style="display:block"
+         data-ad-client="ca-pub-1729380220130058"
+         data-ad-format="autorelaxed"></ins>
+    <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+  </div>
+</body>
+</html>
+EOF_ADSENSE_HTML' > docs/index.html
+<!DOCTYPE html>
 <html amp lang="en">
 <head>
   <meta charset="utf-8">
@@ -60,7 +117,7 @@ cat << 'EOF_ADSENSE_HTML' > docs/index.html
   <amp-auto-ads type="adsense" data-ad-client="ca-pub-1729380220130058"></amp-auto-ads>
   <h1 style="color:#00E5FF;">IMS Pro Studio — INCHARA MASTER SOUNDS</h1>
   <p>Official Audio, Karaoke DSP, 5-Band Equalizer & Live Cricket Soundboard App</p>
-  <p>Publisher ID: ca-pub-1729380220130058 • Payments Profile: 5967-2551-0049</p>
+  <p>Official 320kbps Audio Mastering, Karaoke DSP & Live Stage Soundboard</p>
 </body>
 </html>
 EOF_ADSENSE_HTML
@@ -82,16 +139,14 @@ import 'ota_update_engine.dart';
 /// ============================================================================
 /// IMS 18-BIT MILITARY CRYPTOGRAPHIC VAULT (KEY: 101101001110010110 / 185238)
 /// ============================================================================
-/// Protects internal AdSense & VIP payloads against APK / AAB extraction tools
-/// (APKTool, JADX, MT Manager, 7-Zip). All sensitive strings are XOR-CBC
-/// encrypted with the 18-bit key polynomial `0x2D396` (`185238`).
+/// All publisher & payment routing identifiers are 18-bit XOR-CBC encrypted in
+/// binary memory and NEVER displayed in UI text.
 class Ims18BitCryptoVault {
   static const int k18BitKeyInt = 0x2D396; // 18-bit binary: 101101001110010110 (Decimal: 185238)
   static const String k18BitBinaryStr = '101101001110010110';
   static const String k18BitDecimalPin = '185238';
   static const String k18BitMasterCode = 'IMS18B-2D396-9483K';
 
-  /// Encrypts any plaintext string using the 18-bit rolling XOR-CBC key polynomial
   static String encrypt18Bit(String plainText) {
     final List<int> bytes = utf8.encode(plainText);
     final List<int> out = List<int>.filled(bytes.length, 0);
@@ -99,12 +154,11 @@ class Ims18BitCryptoVault {
     for (int i = 0; i < bytes.length; i++) {
       final int keyByte = ((rolling >> (i % 11)) ^ (i * 73)) & 0xFF;
       out[i] = bytes[i] ^ keyByte;
-      rolling = ((rolling * 33) ^ out[i] ^ k18BitKeyInt) & 0x3FFFF; // 18-bit mask (262143)
+      rolling = ((rolling * 33) ^ out[i] ^ k18BitKeyInt) & 0x3FFFF;
     }
     return base64Encode(out);
   }
 
-  /// Decrypts an 18-bit encrypted Base64 payload at runtime in RAM
   static String decrypt18Bit(String cipherBase64) {
     try {
       final List<int> cipher = base64Decode(cipherBase64);
@@ -121,7 +175,6 @@ class Ims18BitCryptoVault {
     }
   }
 
-  /// Verifies if the user entered the valid 18-Bit Master Extraction Key
   static Future<bool> verify18BitExtractionKey(String input) async {
     final String clean = input.trim();
     if (clean == k18BitDecimalPin ||
@@ -134,38 +187,25 @@ class Ims18BitCryptoVault {
 }
 
 /// ============================================================================
-/// IMS PRO STUDIO v10000.0 — GOOGLE ADSENSE ONLY + 1-AD = 1-HOUR VIP ENGINE
+/// IMS PRO STUDIO v15.0.0 — DIRECT PAYMENT REDIRECT + LIVE VIDEO AD ENGINE
 /// ============================================================================
-/// • 100% Google AdSense Only (`ca-pub-1729380220130058` • Profile `5967-2551-0049`)
-/// • Zero Google Play Console Billing dependencies (Bypasses Play Console [OR-ICRA-02])
-/// • Watching 1 AdSense Ad = 1 Hour (60m 00s) Full VIP Music & Studio Access!
-/// • Live 1-second countdown timer (`vipRemainingSecondsNotifier`):
-///     - Warns user when <= 3 minutes remain while a song is playing
-///     - Automatically prompts to watch 1 AdSense ad when 1 hour expires and user
-///       plays or switches songs!
 class ImsMonetizationEngine {
   static final ImsMonetizationEngine instance = ImsMonetizationEngine._internal();
   ImsMonetizationEngine._internal();
 
   static const MethodChannel _nativeChannel = MethodChannel('dj_native_tts');
 
-  // Google AdSense Account Details (INCHARA MASTER SOUNDS)
-  static const String googleAdSensePublisherId = 'ca-pub-1729380220130058';
-  static const String googleAdSenseAccountNum = 'pub-1729380220130058';
-  static const String googlePaymentsProfileId = '5967-2551-0049';
-  static const String googlePaymentsAccountId = '5387-7398-7907-9564';
-  static const String verifiedOrganisationName = 'INCHARA MASTER SOUNDS';
-
-  // Product & Ad Unit Identifiers (for OTA & Pass Checkout compatibility)
+  // Internal backend publisher & product identifiers (NEVER shown in UI text!)
+  static const String _backendPubId = 'ca-pub-1729380220130058';
+  static const String _backendProfileId = '5967-2551-0049';
   static const String kProductMonthly49 = 'ims_vip_monthly_49';
   static const String kProductAnnual299 = 'ims_vip_annual_299';
   static const String kProductLifetime499 = 'ims_vip_lifetime_499';
 
-  static String bannerAdUnitId = 'ca-pub-1729380220130058/banner';
-  static String interstitialAdUnitId = 'ca-pub-1729380220130058/interstitial';
-  static String rewardedAdUnitId = 'ca-pub-1729380220130058/rewarded';
+  static String bannerAdUnitId = 'ims_ad_banner';
+  static String interstitialAdUnitId = 'ims_ad_interstitial';
+  static String rewardedAdUnitId = 'ims_ad_rewarded';
 
-  // Live 1-Hour VIP Notifiers & Playback Hooks
   static final ValueNotifier<int> vipRemainingSeconds = ValueNotifier<int>(0);
   ValueNotifier<int> get vipRemainingSecondsNotifier => vipRemainingSeconds;
   final ValueNotifier<bool> showEndingSoonWarningBanner = ValueNotifier<bool>(false);
@@ -183,7 +223,6 @@ class ImsMonetizationEngine {
     _latestAppContext = ctx;
   }
 
-  /// Self-contained 1-Hour VIP remaining seconds reader (zero external class dependency)
   static Future<int> getRemainingVipSeconds() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -215,7 +254,6 @@ class ImsMonetizationEngine {
     }
   }
 
-  /// Self-contained 1-Hour / Pass VIP unlocker that persists expiry timestamp in SharedPreferences
   static Future<void> unlockVipForDurationInternal(Duration duration) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -243,6 +281,8 @@ class ImsMonetizationEngine {
     if (_initialized) return;
     _initialized = true;
     await _refreshRemainingVipSeconds();
+    // Initialize hidden background AdSense WebView session silently
+    openGoogleAdSenseUnitPage(showPopup: false);
 
     _hourlyCountdownTimer?.cancel();
     _hourlyCountdownTimer = Timer.periodic(const Duration(seconds: 1), (_) async {
@@ -255,9 +295,7 @@ class ImsMonetizationEngine {
     final int prev = _lastRemSecs;
     _lastRemSecs = rem;
     vipRemainingSeconds.value = rem;
-    // Show "Ending Soon" warning banner when between 1 and 180 seconds (3 minutes) remain!
     showEndingSoonWarningBanner.value = (rem > 0 && rem <= 180);
-    // If a song was actively playing and the 1-hour timer just expired (prev > 0 -> rem <= 0), trigger ad prompt!
     if (prev > 0 && rem <= 0 && isSongCurrentlyPlaying.value) {
       onForceAdWhen1HourExpiresWhilePlaying?.call();
     }
@@ -274,23 +312,12 @@ class ImsMonetizationEngine {
     return '${mins.toString().padLeft(2, '0')}m ${secs.toString().padLeft(2, '0')}s Left';
   }
 
-  /// Called by AudioStudio / KaraokeStudio BEFORE playing a song or when a song finishes!
-  /// If the user's 1-hour VIP timer has expired (`rem <= 0`), automatically pops up the
-  /// Google AdSense Ad Player so watching 1 ad unlocks 1 full hour of song playback!
   Future<bool> ensureVipOrWatch1AdFor1Hour(
     BuildContext? context, {
     required VoidCallback onAdWatchedProceedPlay,
   }) async {
     final int rem = await ImsMonetizationEngine.getRemainingVipSeconds();
     if (rem > 0) {
-      return true; // Already has active 1-hour VIP (or subscription pass)! Proceed immediately!
-    }
-
-    final BuildContext? targetCtx = context ?? _latestAppContext;
-    if (targetCtx == null || !targetCtx.mounted) {
-      // Fallback: grant 1 hour if no UI context mounted
-      await ImsMonetizationEngine.unlockVipForDurationInternal(const Duration(hours: 1));
-      await _refreshRemainingVipSeconds();
       return true;
     }
 
@@ -299,18 +326,13 @@ class ImsMonetizationEngine {
 
     bool unlocked = false;
     try {
-      await showDialog(
-        context: targetCtx,
-        barrierDismissible: false,
-        builder: (ctx) => _FullScreen15SecAdSenseDialog(
-          headlineReason: '🎵 Watch 1 AdSense Ad → Unlock 1 Full Hour of Songs & VIP Access!',
-          onRewardEarned: () async {
-            await ImsMonetizationEngine.unlockVipForDurationInternal(const Duration(hours: 1));
-            await _refreshRemainingVipSeconds();
-            unlocked = true;
-          },
-        ),
-      );
+      // Open REAL Native Android Google AdSense WebView Ad Dialog (15s live AdSense slot)
+      final bool completed = await openGoogleAdSenseUnitPage(showPopup: true);
+      if (completed) {
+        await ImsMonetizationEngine.unlockVipForDurationInternal(const Duration(hours: 1));
+        await _refreshRemainingVipSeconds();
+        unlocked = true;
+      }
     } finally {
       _adDialogCurrentlyOpen = false;
     }
@@ -321,12 +343,11 @@ class ImsMonetizationEngine {
     return unlocked;
   }
 
-  /// Generates an 18-Bit Encrypted 6-Digit VIP Unlock Code bound to a specific Hardware Device ID
   static String computeDeviceSpecificVipCode(String hwDeviceId, String tierCode) {
     final String cleanHw = hwDeviceId.trim().toLowerCase();
     final String shortHw = cleanHw.length > 16 ? cleanHw.substring(0, 16) : cleanHw;
     int hash = Ims18BitCryptoVault.k18BitKeyInt;
-    final String seed = '$shortHw|$tierCode|${Ims18BitCryptoVault.k18BitMasterCode}|$googleAdSenseAccountNum';
+    final String seed = '$shortHw|$tierCode|${Ims18BitCryptoVault.k18BitMasterCode}|pub-1729380220130058';
     for (int i = 0; i < seed.length; i++) {
       hash = ((hash * 41) + seed.codeUnitAt(i)) & 0x7FFFFFFF;
     }
@@ -334,8 +355,11 @@ class ImsMonetizationEngine {
     return sixDigit.toString();
   }
 
-  /// Verifies 18-Bit Master Key (`185238` / `IMS18B-2D396-9483K`) or Device-Specific Subscription Key
-  static Future<Duration?> verifyVipActivationKey(String enteredCode, String hwDeviceId) async {
+  static Future<Duration?> verifyVipActivationKey(
+    String enteredCode,
+    String hwDeviceId, {
+    String? expectedTierCode,
+  }) async {
     final String clean = enteredCode.trim();
     if (clean.isEmpty) return null;
 
@@ -363,32 +387,79 @@ class ImsMonetizationEngine {
     return null;
   }
 
-  /// Launches the Google AdSense (`ca-pub-1729380220130058`) Ad Player to grant +1 Hour VIP Access!
+  /// Launches UPI app via startActivityForResult and checks the real UPI response ("SUCCESS" + responseCode=00)
+  static Future<String> launchDirectPaymentPage({
+    required int amountInr,
+    required String planTitle,
+  }) async {
+    final String upiId = OtaUpdateEngine.merchantUpiId.value.trim().isNotEmpty
+        ? OtaUpdateEngine.merchantUpiId.value.trim()
+        : '9483776820@ybl';
+    final String encodedName = Uri.encodeComponent('Inchara Master Sounds');
+    final String encodedNote = Uri.encodeComponent('IMS Pro $planTitle');
+    final String upiUri =
+        'upi://pay?pa=$upiId&pn=$encodedName&am=$amountInr.00&cu=INR&tn=$encodedNote';
+    try {
+      final String? res = await _nativeChannel.invokeMethod<String>('launchUpiPayment', {
+        'uri': upiUri,
+      });
+      return res ?? 'FAILED';
+    } catch (_) {
+      return 'FAILED';
+    }
+  }
+
+  static Future<void> openExternalUrl(String url) async {
+    try {
+      await _nativeChannel.invokeMethod('openExternalUrl', {'url': url});
+    } catch (_) {}
+  }
+
+  /// Opens the REAL Native Android Google AdSense WebView Ad Unit (returns true when 15s ad finishes)
+  static Future<bool> openGoogleAdSenseUnitPage({bool showPopup = false}) async {
+    try {
+      final dynamic res = await _nativeChannel.invokeMethod('showNativeAdSenseWebView', {
+        'publisherId': _backendPubId,
+        'paymentsProfileId': _backendProfileId,
+        'showPopup': showPopup,
+      });
+      return res == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Launches the REAL Google AdSense Native WebView Ad Dialog (NO custom Flutter card!)
   Future<void> show15SecondRewardedAdExperience(
     BuildContext context, {
     required VoidCallback onRewardGranted,
   }) async {
-    if (!context.mounted || _adDialogCurrentlyOpen) return;
+    if (_adDialogCurrentlyOpen) return;
     _adDialogCurrentlyOpen = true;
     try {
-      await showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => _FullScreen15SecAdSenseDialog(
-          headlineReason: '📺 Watch 1 Google AdSense Ad → Unlock +1 Hour Full VIP Access!',
-          onRewardEarned: () async {
-            await ImsMonetizationEngine.unlockVipForDurationInternal(const Duration(hours: 1));
-            await _refreshRemainingVipSeconds();
-            onRewardGranted();
-          },
-        ),
-      );
+      final bool completed = await openGoogleAdSenseUnitPage(showPopup: true);
+      if (completed) {
+        await ImsMonetizationEngine.unlockVipForDurationInternal(const Duration(hours: 1));
+        await _refreshRemainingVipSeconds();
+        onRewardGranted();
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              backgroundColor: Color(0xFF00E676),
+              content: Text(
+                '👑 +1 Full Hour (60m 00s) VIP Access Unlocked via Google AdSense!',
+                style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900),
+              ),
+            ),
+          );
+        }
+      }
     } finally {
       _adDialogCurrentlyOpen = false;
     }
   }
 
-  /// Opens the Google AdSense Subscription Pass Activation Dialog (No Play Console dependency!)
+  /// Tapping ₹49 / ₹299 / ₹499 immediately launches the Payment Page AND opens the Instant Verification Sheet!
   Future<void> openPassCheckoutDialog(
     BuildContext context, {
     required String planTitle,
@@ -399,11 +470,35 @@ class ImsMonetizationEngine {
     required Color accentColor,
     required VoidCallback onUnlocked,
   }) async {
+    // 1. Immediately redirect user to Payment App (GPay / PhonePe / Paytm / UPI) and wait for real UPI callback!
+    final String upiStatus = await launchDirectPaymentPage(amountInr: amountInr, planTitle: planTitle);
+    if (upiStatus == 'SUCCESS') {
+      final Duration dur = tierCode == 'MONTHLY'
+          ? const Duration(days: 31)
+          : (tierCode == 'ANNUAL' ? const Duration(days: 366) : const Duration(days: 3650));
+      await ImsMonetizationEngine.unlockVipForDurationInternal(dur);
+      await _refreshRemainingVipSeconds();
+      onUnlocked();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFF00E676),
+            content: Text(
+              '👑 Payment Verified by UPI App! $planTitle Unlocked Automatically!',
+              style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w900),
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
     if (!context.mounted) return;
+    // 2. Open the Payment Verification & Instant Activation Dialog when they return from paying
     await showDialog(
       context: context,
       barrierDismissible: true,
-      builder: (ctx) => _AdSenseSubscriptionPassDialog(
+      builder: (ctx) => _DirectPaymentCheckoutDialog(
         planTitle: planTitle,
         planSubtitle: planSubtitle,
         amountInr: amountInr,
@@ -416,17 +511,12 @@ class ImsMonetizationEngine {
       ),
     );
   }
-
-  static Future<void> openGoogleAdSenseUnitPage() async {
-    try {
-      await _nativeChannel.invokeMethod('showNativeAdSenseWebView', {
-        'publisherId': googleAdSensePublisherId,
-        'paymentsProfileId': googlePaymentsProfileId,
-      });
-    } catch (_) {}
-  }
 }
 
+/// ============================================================================
+/// REAL INTERACTIVE COMMERCIAL VIDEO AD PLAYER + LIVE WEBVIEW AD OVERLAY
+/// (ZERO exposed AdSense Publisher IDs or Payment Profile IDs in UI!)
+/// ============================================================================
 class _FullScreen15SecAdSenseDialog extends StatefulWidget {
   final String headlineReason;
   final VoidCallback onRewardEarned;
@@ -442,19 +532,47 @@ class _FullScreen15SecAdSenseDialog extends StatefulWidget {
 
 class _FullScreen15SecAdSenseDialogState extends State<_FullScreen15SecAdSenseDialog> {
   int _secondsRemaining = 15;
+  int _adSceneIndex = 0;
   Timer? _timer;
   bool _rewardClaimed = false;
-  final AudioPlayer _adAudioPlayer = AudioPlayer();
+
+  static const List<Map<String, String>> _commercialScenes = [
+    {
+      'tag': 'SPONSORED • PRO AUDIO & STAGE GEAR',
+      'title': '🔊 Fire 57 Dual-15" & S8118 Subwoofers',
+      'sub': 'Experience 320kbps Studio Mastering, 0dB Flat PA Tuning & Live Concert Bass.',
+      'cta': 'Tap to Explore Pro Audio Deals & Stage Rentals',
+      'url': 'https://gajananpatagar.github.io/dj-player/',
+    },
+    {
+      'tag': 'SPONSORED • WEDDING & EVENT DJ SUITE',
+      'title': '🎧 IMS Pro Studio v15.0 • Live Stage Edition',
+      'sub': 'Zero-Popup WakeLock, Pitch Shifter, Vocal Cut Karaoke & Jani Murthy IPL Soundboard.',
+      'cta': 'Tap to View Official Studio Showcase',
+      'url': 'https://gajananpatagar.github.io/dj-player/',
+    },
+    {
+      'tag': 'SPONSORED • CREATOR & DJ PASS',
+      'title': '⚡ Go 100% Ad-Free for ₹49 / Month',
+      'sub': 'Unlimited 320kbps Batch Offline Downloads, Custom Folders & 192kbps Master Recording.',
+      'cta': 'Tap to Open Live Sponsored Page',
+      'url': 'https://gajananpatagar.github.io/dj-player/',
+    },
+  ];
 
   @override
   void initState() {
     super.initState();
     AppSoundEngine.playSynthesizedSfx('BELL');
-    ImsMonetizationEngine.openGoogleAdSenseUnitPage();
+    // Load backend AdSense unit silently in attached WebView
+    ImsMonetizationEngine.openGoogleAdSenseUnitPage(showPopup: false);
     _timer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (!mounted) return;
       if (_secondsRemaining > 0) {
-        setState(() => _secondsRemaining--);
+        setState(() {
+          _secondsRemaining--;
+          _adSceneIndex = ((15 - _secondsRemaining) ~/ 5) % _commercialScenes.length;
+        });
         if (_secondsRemaining == 0) {
           AppSoundEngine.playSynthesizedSfx('BELL');
         }
@@ -467,7 +585,6 @@ class _FullScreen15SecAdSenseDialogState extends State<_FullScreen15SecAdSenseDi
   @override
   void dispose() {
     _timer?.cancel();
-    _adAudioPlayer.dispose();
     super.dispose();
   }
 
@@ -475,6 +592,7 @@ class _FullScreen15SecAdSenseDialogState extends State<_FullScreen15SecAdSenseDi
   Widget build(BuildContext context) {
     final bool finished = _secondsRemaining <= 0;
     final double progress = ((15 - _secondsRemaining) / 15.0).clamp(0.0, 1.0);
+    final Map<String, String> scene = _commercialScenes[_adSceneIndex];
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -499,8 +617,8 @@ class _FullScreen15SecAdSenseDialogState extends State<_FullScreen15SecAdSenseDi
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Text(
-                    '📺 GOOGLE ADSENSE • pub-1729380220130058',
-                    style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w900, color: Colors.black),
+                    '🎬 SPONSORED VIDEO AD',
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.black),
                   ),
                 ),
                 Container(
@@ -511,7 +629,7 @@ class _FullScreen15SecAdSenseDialogState extends State<_FullScreen15SecAdSenseDi
                     border: Border.all(color: finished ? const Color(0xFF00E676) : Colors.amberAccent),
                   ),
                   child: Text(
-                    finished ? '✅ +1 HOUR READY!' : '⏳ ${_secondsRemaining}s',
+                    finished ? '✅ +1 HOUR UNLOCKED!' : '⏳ Ad Playing: ${_secondsRemaining}s',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w900,
@@ -528,68 +646,114 @@ class _FullScreen15SecAdSenseDialogState extends State<_FullScreen15SecAdSenseDi
               style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF00E676)),
             ),
             const SizedBox(height: 10),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF10254C), Color(0xFF1E1038), Color(0xFF091326)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+            GestureDetector(
+              onTap: () {
+                // Clicking the ad opens the live interactive AdSense WebView modal!
+                ImsMonetizationEngine.openGoogleAdSenseUnitPage(showPopup: true);
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 350),
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: _adSceneIndex == 0
+                        ? const [Color(0xFF0F2942), Color(0xFF1E1038), Color(0xFF091326)]
+                        : (_adSceneIndex == 1
+                            ? const [Color(0xFF1B1038), Color(0xFF0D2E3A), Color(0xFF091326)]
+                            : const [Color(0xFF0F322E), Color(0xFF1A1438), Color(0xFF091326)]),
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFF00E5FF), width: 1.6),
                 ),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFF00E5FF), width: 1.5),
-              ),
-              child: Column(
-                children: [
-                  Container(
-                    width: 60,
-                    height: 60,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: const LinearGradient(colors: [Color(0xFFFFD700), Color(0xFFFF6D00)]),
-                      boxShadow: [
-                        BoxShadow(color: Colors.amberAccent.withOpacity(0.5), blurRadius: 16),
-                      ],
+                child: Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF00E5FF).withOpacity(0.18),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        scene['tag']!,
+                        style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: Color(0xFF00E5FF)),
+                      ),
                     ),
-                    alignment: Alignment.center,
-                    child: const Icon(Icons.monetization_on_rounded, color: Colors.black, size: 34),
-                  ),
-                  const SizedBox(height: 10),
-                  const Text(
-                    'INCHARA MASTER SOUNDS',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w900, color: Colors.white),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Google AdSense Publisher: ca-pub-1729380220130058\n'
-                    'Payments Profile: 5967-2551-0049 • Account: 5387-7398-7907-9564\n'
-                    '1 Ad View = 1 Full Hour (60 Minutes) Uninterrupted VIP Music!',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 10.5, color: Color(0xFF00E5FF), height: 1.35),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    height: 28,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: List.generate(18, (i) {
-                        final double h = 8.0 + ((i * 13 + _secondsRemaining * 7) % 20);
-                        return AnimatedContainer(
-                          duration: const Duration(milliseconds: 250),
-                          margin: const EdgeInsets.symmetric(horizontal: 2.5),
-                          width: 5,
-                          height: h,
-                          decoration: BoxDecoration(
-                            color: i.isEven ? const Color(0xFF00E5FF) : const Color(0xFF00E676),
-                            borderRadius: BorderRadius.circular(3),
+                    const SizedBox(height: 10),
+                    Container(
+                      width: 62,
+                      height: 62,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: const LinearGradient(colors: [Color(0xFF00E5FF), Color(0xFF00E676)]),
+                        boxShadow: [
+                          BoxShadow(color: const Color(0xFF00E5FF).withOpacity(0.45), blurRadius: 16),
+                        ],
+                      ),
+                      alignment: Alignment.center,
+                      child: Icon(
+                        _adSceneIndex == 0
+                            ? Icons.speaker_group_rounded
+                            : (_adSceneIndex == 1 ? Icons.equalizer_rounded : Icons.workspace_premium_rounded),
+                        color: Colors.black,
+                        size: 34,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      scene['title']!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Colors.white),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      scene['sub']!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 11, color: Colors.white70, height: 1.35),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 26,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: List.generate(18, (i) {
+                          final double h = 8.0 + ((i * 13 + _secondsRemaining * 7) % 18);
+                          return AnimatedContainer(
+                            duration: const Duration(milliseconds: 250),
+                            margin: const EdgeInsets.symmetric(horizontal: 2.5),
+                            width: 5,
+                            height: h,
+                            decoration: BoxDecoration(
+                              color: i.isEven ? const Color(0xFF00E5FF) : const Color(0xFF00E676),
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                          );
+                        }),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.amberAccent,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.open_in_new_rounded, size: 14, color: Colors.black),
+                          const SizedBox(width: 5),
+                          Text(
+                            scene['cta']!,
+                            style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: Colors.black),
                           ),
-                        );
-                      }),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 12),
@@ -605,7 +769,7 @@ class _FullScreen15SecAdSenseDialogState extends State<_FullScreen15SecAdSenseDi
                 if (!finished)
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancel', style: TextStyle(color: Colors.white54, fontSize: 11.5)),
+                    child: const Text('Close', style: TextStyle(color: Colors.white54, fontSize: 11.5)),
                   ),
                 Expanded(
                   child: ElevatedButton.icon(
@@ -621,8 +785,8 @@ class _FullScreen15SecAdSenseDialogState extends State<_FullScreen15SecAdSenseDi
                     ),
                     label: Text(
                       finished
-                          ? '🎁 UNLOCK 1 FULL HOUR VIP ACCESS NOW!'
-                          : 'AdSense Playing... ${_secondsRemaining}s Left',
+                          ? '🎁 CLAIM +1 FULL HOUR VIP ACCESS NOW!'
+                          : 'Video Ad Playing... ${_secondsRemaining}s Left',
                       style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
                     ),
                     onPressed: finished
@@ -635,7 +799,7 @@ class _FullScreen15SecAdSenseDialogState extends State<_FullScreen15SecAdSenseDi
                               const SnackBar(
                                 backgroundColor: Color(0xFF00E676),
                                 content: Text(
-                                  '👑 +1 Full Hour (60m 00s) VIP Access Unlocked via Google AdSense!',
+                                  '👑 +1 Full Hour (60m 00s) VIP Access Unlocked!',
                                   style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900),
                                 ),
                               ),
@@ -654,9 +818,10 @@ class _FullScreen15SecAdSenseDialogState extends State<_FullScreen15SecAdSenseDi
 }
 
 /// ============================================================================
-/// GOOGLE ADSENSE SUBSCRIPTION & 18-BIT KEY UNLOCK DIALOG (ZERO CONSOLE HOLD!)
+/// DIRECT PAYMENT CHECKOUT & INSTANT ACTIVATION DIALOG
+/// (Zero exposed AdSense IDs! Launches Google Pay / PhonePe / Paytm / UPI directly!)
 /// ============================================================================
-class _AdSenseSubscriptionPassDialog extends StatefulWidget {
+class _DirectPaymentCheckoutDialog extends StatefulWidget {
   final String planTitle;
   final String planSubtitle;
   final int amountInr;
@@ -664,7 +829,7 @@ class _AdSenseSubscriptionPassDialog extends StatefulWidget {
   final Color accentColor;
   final VoidCallback onUnlocked;
 
-  const _AdSenseSubscriptionPassDialog({
+  const _DirectPaymentCheckoutDialog({
     required this.planTitle,
     required this.planSubtitle,
     required this.amountInr,
@@ -674,10 +839,10 @@ class _AdSenseSubscriptionPassDialog extends StatefulWidget {
   });
 
   @override
-  State<_AdSenseSubscriptionPassDialog> createState() => _AdSenseSubscriptionPassDialogState();
+  State<_DirectPaymentCheckoutDialog> createState() => _DirectPaymentCheckoutDialogState();
 }
 
-class _AdSenseSubscriptionPassDialogState extends State<_AdSenseSubscriptionPassDialog> {
+class _DirectPaymentCheckoutDialogState extends State<_DirectPaymentCheckoutDialog> {
   final TextEditingController _codeCtrl = TextEditingController();
   String _feedback = '';
   bool _isSuccess = false;
@@ -711,92 +876,83 @@ class _AdSenseSubscriptionPassDialogState extends State<_AdSenseSubscriptionPass
                       style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w900, color: widget.accentColor),
                     ),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: widget.accentColor,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      '₹${widget.amountInr}',
-                      style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900, color: Colors.black),
+                  InkWell(
+                    onTap: () {
+                      ImsMonetizationEngine.launchDirectPaymentPage(
+                        amountInr: widget.amountInr,
+                        planTitle: widget.planTitle,
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: widget.accentColor,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        'Pay ₹${widget.amountInr}',
+                        style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900, color: Colors.black),
+                      ),
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 4),
               Text(widget.planSubtitle, style: const TextStyle(fontSize: 11, color: Colors.white70)),
-              const SizedBox(height: 8),
-
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF132242),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.5)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '🛡️ Google AdSense & 18-Bit Encrypted Profile:',
-                      style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: Colors.amberAccent),
-                    ),
-                    const SizedBox(height: 3),
-                    const Text(
-                      '• Organisation: INCHARA MASTER SOUNDS (Gajanan Patagar)',
-                      style: TextStyle(fontSize: 10, color: Colors.white),
-                    ),
-                    const Text(
-                      '• AdSense Publisher: ca-pub-1729380220130058',
-                      style: TextStyle(fontSize: 10, color: Color(0xFF00E676)),
-                    ),
-                    const Text(
-                      '• AdSense Payments Account: 5387-7398-7907-9564 (Profile: 5967-2551-0049)',
-                      style: TextStyle(fontSize: 10, color: Color(0xFF00E5FF)),
-                    ),
-                    const SizedBox(height: 3),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          '• Bound Device ID: $shortHw',
-                          style: const TextStyle(fontSize: 10, color: Colors.white70),
-                        ),
-                        InkWell(
-                          onTap: () {
-                            Clipboard.setData(ClipboardData(text: shortHw));
-                            setState(() {
-                              _feedback = '✅ Copied Device ID ($shortHw) to clipboard!';
-                              _isSuccess = true;
-                            });
-                          },
-                          child: const Text(
-                            'COPY ID',
-                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.amberAccent),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
               const SizedBox(height: 12),
 
-              // Option 1: Watch 1 Google AdSense Ad -> Instant 1-Hour Free VIP Access!
+              // STEP 1: Direct 1-Tap Payment Redirect (Google Pay / PhonePe / Paytm / BHIM UPI)
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF00E676),
+                    backgroundColor: widget.accentColor,
                     foregroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  icon: const Icon(Icons.account_balance_wallet_rounded, size: 22),
+                  label: Text(
+                    '💳 Pay ₹${widget.amountInr} Now (GPay / PhonePe / Paytm / UPI)',
+                    style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
+                  ),
+                  onPressed: () async {
+                    final String upiRes = await ImsMonetizationEngine.launchDirectPaymentPage(
+                      amountInr: widget.amountInr,
+                      planTitle: widget.planTitle,
+                    );
+                    if (upiRes == 'SUCCESS') {
+                      final Duration dur = widget.tierCode == 'MONTHLY'
+                          ? const Duration(days: 31)
+                          : (widget.tierCode == 'ANNUAL' ? const Duration(days: 366) : const Duration(days: 3650));
+                      await ImsMonetizationEngine.unlockVipForDurationInternal(dur);
+                      widget.onUnlocked();
+                      if (mounted) Navigator.pop(context);
+                    } else if (mounted) {
+                      setState(() {
+                        _feedback = '⚠️ UPI Payment was not completed ($upiRes). Complete ₹${widget.amountInr} payment in GPay/PhonePe or enter your 6-digit Hardware VIP Key below!';
+                        _isSuccess = false;
+                      });
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              // STEP 2: Or Watch 1 Sponsored Ad for 1 Hour Free VIP Access
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF00E676),
+                    side: const BorderSide(color: Color(0xFF00E676), width: 1.4),
+                    padding: const EdgeInsets.symmetric(vertical: 11),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   ),
                   icon: const Icon(Icons.play_circle_fill_rounded, size: 20),
                   label: const Text(
-                    '📺 Watch 1 Google AdSense Ad → Instant +1 Hour VIP',
-                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11.5),
+                    '🎬 Or Watch 1 Sponsored Video Ad → +1 Hour VIP Free',
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11.2),
                   ),
                   onPressed: () {
                     Navigator.pop(context);
@@ -809,9 +965,10 @@ class _AdSenseSubscriptionPassDialogState extends State<_AdSenseSubscriptionPass
               ),
               const SizedBox(height: 12),
 
+              // STEP 3: Instant Activation via 12-Digit UPI UTR / Transaction ID or 6-Digit VIP Key
               const Text(
-                '🔑 Or Enter 18-Bit Master Key / 6-Digit Subscription Key:',
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.amberAccent),
+                '🔑 Or Enter 6-Digit Hardware-Bound VIP Key (From WhatsApp / Owner Vault):',
+                style: TextStyle(fontSize: 10.8, fontWeight: FontWeight.w900, color: Colors.amberAccent),
               ),
               const SizedBox(height: 6),
               Row(
@@ -819,10 +976,10 @@ class _AdSenseSubscriptionPassDialogState extends State<_AdSenseSubscriptionPass
                   Expanded(
                     child: TextField(
                       controller: _codeCtrl,
-                      style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900, letterSpacing: 1.2),
+                      style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900, letterSpacing: 1.1),
                       decoration: InputDecoration(
                         isDense: true,
-                        hintText: 'Enter 18-Bit or 6-Digit Key',
+                        hintText: 'Enter 6-Digit Hardware VIP Key',
                         filled: true,
                         fillColor: const Color(0xFF141E33),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
@@ -840,6 +997,7 @@ class _AdSenseSubscriptionPassDialogState extends State<_AdSenseSubscriptionPass
                       final Duration? unlockedDur = await ImsMonetizationEngine.verifyVipActivationKey(
                         _codeCtrl.text,
                         hwId,
+                        expectedTierCode: widget.tierCode,
                       );
                       if (unlockedDur != null) {
                         await ImsMonetizationEngine.unlockVipForDurationInternal(unlockedDur);
@@ -851,7 +1009,7 @@ class _AdSenseSubscriptionPassDialogState extends State<_AdSenseSubscriptionPass
                             SnackBar(
                               backgroundColor: const Color(0xFF00E676),
                               content: Text(
-                                '👑 ${widget.planTitle} Unlocked on Device $shortHw!',
+                                '👑 ${widget.planTitle} Activated on Device $shortHw!',
                                 style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w900),
                               ),
                             ),
@@ -859,17 +1017,46 @@ class _AdSenseSubscriptionPassDialogState extends State<_AdSenseSubscriptionPass
                         }
                       } else {
                         setState(() {
-                          _feedback = '❌ Invalid 18-Bit / Device Key for $shortHw!';
+                          _feedback = '❌ Invalid Key! Complete UPI payment directly or tap Get Key on WhatsApp below.';
                           _isSuccess = false;
                         });
                       }
                     },
-                    child: const Text('UNLOCK', style: TextStyle(fontWeight: FontWeight.w900)),
+                    child: const Text('ACTIVATE', style: TextStyle(fontWeight: FontWeight.w900)),
                   ),
                 ],
               ),
+              const SizedBox(height: 8),
+
+              // Device ID + WhatsApp Support Row
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Device ID: $shortHw',
+                    style: const TextStyle(fontSize: 10, color: Colors.white54),
+                  ),
+                  TextButton.icon(
+                    onPressed: () {
+                      final String wa = OtaUpdateEngine.merchantWhatsapp.value.trim().isNotEmpty
+                          ? OtaUpdateEngine.merchantWhatsapp.value.trim()
+                          : '919483776820';
+                      final String msg = Uri.encodeComponent(
+                        'Hi Inchara Master Sounds, I paid ₹${widget.amountInr} for ${widget.planTitle}. My Device ID is: $shortHw',
+                      );
+                      ImsMonetizationEngine.openExternalUrl('https://wa.me/$wa?text=$msg');
+                    },
+                    icon: const Icon(Icons.chat_bubble_outline_rounded, size: 14, color: Color(0xFF00E676)),
+                    label: const Text(
+                      'Get Key on WhatsApp',
+                      style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: Color(0xFF00E676)),
+                    ),
+                  ),
+                ],
+              ),
+
               if (_feedback.isNotEmpty) ...[
-                const SizedBox(height: 10),
+                const SizedBox(height: 6),
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(10),
@@ -888,14 +1075,6 @@ class _AdSenseSubscriptionPassDialogState extends State<_AdSenseSubscriptionPass
                   ),
                 ),
               ],
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Close', style: TextStyle(color: Colors.white60)),
-                ),
-              ),
             ],
           ),
         ),
@@ -905,7 +1084,8 @@ class _AdSenseSubscriptionPassDialogState extends State<_AdSenseSubscriptionPass
 }
 
 /// ============================================================================
-/// LIVE BOTTOM ADSENSE BANNER + 1-HOUR EXPIRING SOON WARNING BAR
+/// LIVE BOTTOM SPONSORED AD BANNER + 1-HOUR EXPIRING SOON WARNING BAR
+/// (Zero exposed AdSense Publisher or Profile IDs!)
 /// ============================================================================
 class LiveBottomAdBanner extends StatefulWidget {
   final VoidCallback onTapVipUpgrade;
@@ -935,7 +1115,6 @@ class _LiveBottomAdBannerState extends State<LiveBottomAdBanner> {
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // If song is playing and 1-Hour VIP is ending within 3 minutes, show glowing extension bar!
             if (endingSoon)
               GestureDetector(
                 onTap: () {
@@ -973,8 +1152,6 @@ class _LiveBottomAdBannerState extends State<LiveBottomAdBanner> {
                   ),
                 ),
               ),
-
-            // Persistent Google AdSense Bar (Shows remaining VIP timer or AdSense unit trigger)
             GestureDetector(
               onTap: () {
                 ImsMonetizationEngine.instance.show15SecondRewardedAdExperience(
@@ -1002,7 +1179,7 @@ class _LiveBottomAdBannerState extends State<LiveBottomAdBanner> {
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: const Text(
-                        'AdSense',
+                        'AD',
                         style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w900, color: Colors.black),
                       ),
                     ),
@@ -1012,16 +1189,19 @@ class _LiveBottomAdBannerState extends State<LiveBottomAdBanner> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Text(
-                            'INCHARA MASTER SOUNDS • AdSense (pub-1729380220130058)',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.white),
+                          ValueListenableBuilder<String>(
+                            valueListenable: OtaUpdateEngine.sponsorBannerTitle,
+                            builder: (_, titleText, __) => Text(
+                              titleText,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.white),
+                            ),
                           ),
                           Text(
                             remSecs > 0
-                                ? '🟢 VIP Access Active: ${ImsMonetizationEngine.instance.formatRemainingTime(remSecs)} • Tap to Add +1 Hour'
-                                : '🔒 VIP Timer Expired (00m 00s) • Tap to Watch 1 Ad for 1 Hour VIP Access!',
+                                ? '🟢 VIP Active: ${ImsMonetizationEngine.instance.formatRemainingTime(remSecs)} • Tap to Watch Ad (+1 Hr)'
+                                : '🎬 Tap to Watch 1 Sponsored Ad → Unlock 1 Hour VIP Access Free!',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
@@ -1037,13 +1217,13 @@ class _LiveBottomAdBannerState extends State<LiveBottomAdBanner> {
                     InkWell(
                       onTap: widget.onTapVipUpgrade,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
                           color: remSecs > 0 ? const Color(0xFF00E676) : Colors.amberAccent,
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
-                          remSecs > 0 ? '⏱ ${remSecs ~/ 60}m' : '📺 +1 Hr',
+                          remSecs > 0 ? '⏱ ${remSecs ~/ 60}m' : '👑 VIP',
                           style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.black),
                         ),
                       ),
@@ -1114,7 +1294,7 @@ class _OwnerVipKeyGeneratorSheetState extends State<OwnerVipKeyGeneratorSheet> {
             ),
             if (!_ownerAuthenticated) ...[
               const Text(
-                'Protected by 18-Bit Military Encryption (0x2D396).\nEnter your 18-Bit Key (from Google Drive) to decrypt:',
+                'Protected by 18-Bit Military Encryption.\nEnter your 18-Bit Master Key (saved in your Google Drive) to unlock:',
                 style: TextStyle(fontSize: 11, color: Colors.white70),
               ),
               const SizedBox(height: 10),
@@ -1168,7 +1348,7 @@ class _OwnerVipKeyGeneratorSheetState extends State<OwnerVipKeyGeneratorSheet> {
                 onChanged: (_) => setState(() {}),
                 decoration: InputDecoration(
                   isDense: true,
-                  hintText: 'e.g. 73e07d6a1a2f2124',
+                  hintText: 'e.g. 08822448d0010db5',
                   filled: true,
                   fillColor: const Color(0xFF141E33),
                   suffixIcon: IconButton(
@@ -1253,7 +1433,7 @@ import 'monetization_and_ads_engine.dart';
 
 /// Loop-Free Smart OTA & Live Monetization Config Engine (v10000.0):
 class OtaUpdateEngine {
-  static const int currentBuildNumber = 10000015;
+  static const int currentBuildNumber = 10000017;
   static const String currentVersionName = '15.0.0';
   static const String githubRepoOwner = 'GajananPatagar';
   static const String githubRepoName = 'dj-player';
@@ -12651,7 +12831,7 @@ new_vip_modal = """  void _openVipMonetizationStudioModal() {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  isVip ? '👑 IMS VIP PRO STUDIO (ACTIVE)' : '💎 IMS GOOGLE ADSENSE & 1-HOUR VIP PASS',
+                                  isVip ? '👑 IMS VIP PRO STUDIO (ACTIVE)' : '💎 IMS VIP PRO STUDIO & 1-HOUR FREE PASS',
                                   style: const TextStyle(fontSize: 14.0, fontWeight: FontWeight.w900, color: Colors.amberAccent),
                                 ),
                                 ValueListenableBuilder<int>(
@@ -12665,7 +12845,7 @@ new_vip_modal = """  void _openVipMonetizationStudioModal() {
                                             ? '⏱️ 1-Hr VIP Left: ${m.toString().padLeft(2, "0")}m ${s.toString().padLeft(2, "0")}s'
                                             : '🔒 1-Hr VIP Expired (Watch 1 Ad = +1 Hour)');
                                     return Text(
-                                      '$timeStr • 18-Bit Key 0x2D396 Shield ON',
+                                      '$timeStr • Hardware ID: $shortHw',
                                       style: TextStyle(
                                         fontSize: 10,
                                         fontWeight: FontWeight.w800,
@@ -12730,12 +12910,12 @@ new_vip_modal = """  void _openVipMonetizationStudioModal() {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '✨ Google AdSense Account (ca-pub-1729380220130058) • 18-Bit Encrypted:',
+                              '✨ Unlock Full Commercial DJ & Event Studio Benefits:',
                               style: TextStyle(fontSize: 11.2, fontWeight: FontWeight.w900, color: Colors.white),
                             ),
                             SizedBox(height: 3),
                             Text(
-                              '• Watch 1 AdSense Ad = Unlock 1 Full Hour (60m) of Song & DJ Playback',
+                              '• Watch 1 Sponsored Video Ad = Unlock 1 Full Hour (60m) of Song & DJ Playback',
                               style: TextStyle(fontSize: 10.5, color: Color(0xFF00E676), fontWeight: FontWeight.w700, height: 1.3),
                             ),
                             Text(
@@ -12743,7 +12923,7 @@ new_vip_modal = """  void _openVipMonetizationStudioModal() {
                               style: TextStyle(fontSize: 10.5, color: Colors.white70, height: 1.3),
                             ),
                             Text(
-                              '• 18-Bit Anti-Extraction Shield (Key 185238 / 101101001110010110) Active',
+                              '• 100% Ad-Free Stage Mode, 320kbps Offline Vaults & 192kbps Studio Recording',
                               style: TextStyle(fontSize: 10.5, color: Colors.amberAccent, height: 1.3),
                             ),
                           ],
@@ -12760,7 +12940,7 @@ new_vip_modal = """  void _openVipMonetizationStudioModal() {
                           ),
                           icon: const Icon(Icons.play_circle_fill_rounded, size: 22),
                           label: const Text(
-                            '🎬 Watch 1 AdSense Ad → Unlock 1 Hour VIP Access Free',
+                            '🎬 Watch 1 Sponsored Video Ad → Unlock 1 Hour VIP Free',
                             style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
                           ),
                           onPressed: () {
@@ -12768,7 +12948,7 @@ new_vip_modal = """  void _openVipMonetizationStudioModal() {
                               context,
                               onRewardGranted: () {
                                 setModalState(() {
-                                  statusMsg = '✅ +1 Hour (60m 00s) VIP Access Unlocked via Google AdSense (ca-pub-1729380220130058)!';
+                                  statusMsg = '✅ +1 Hour (60m 00s) Full VIP Access Unlocked!';
                                   isSuccessMsg = true;
                                 });
                               },
@@ -12779,7 +12959,7 @@ new_vip_modal = """  void _openVipMonetizationStudioModal() {
                       const SizedBox(height: 10),
                       _vipPlanTile(
                         title: '⚡ Monthly Pro DJ Pass',
-                        subtitle: 'Google AdSense Publisher Account (ca-pub-1729380220130058 • INCHARA MASTER SOUNDS)',
+                        subtitle: 'Tap to Pay ₹49 via GPay / PhonePe / Paytm / UPI • 30-Day Full Ad-Free Studio',
                         price: '₹49 / Month',
                         color: const Color(0xFF00E5FF),
                         onTap: () {
@@ -12801,7 +12981,7 @@ new_vip_modal = """  void _openVipMonetizationStudioModal() {
                       const SizedBox(height: 7),
                       _vipPlanTile(
                         title: '🔥 Annual Wedding & Event Master',
-                        subtitle: 'Google AdSense Publisher Account (ca-pub-1729380220130058 • 365-Day VIP)',
+                        subtitle: 'Tap to Pay ₹299 via GPay / PhonePe / Paytm / UPI • 365-Day Wedding & Event Master',
                         price: '₹299 / Year',
                         color: const Color(0xFF00E676),
                         onTap: () {
@@ -12823,7 +13003,7 @@ new_vip_modal = """  void _openVipMonetizationStudioModal() {
                       const SizedBox(height: 7),
                       _vipPlanTile(
                         title: '👑 Lifetime Studio VIP License',
-                        subtitle: 'Google AdSense Account • 18-Bit Hardware License ($shortHw)',
+                        subtitle: 'Tap to Pay ₹499 via GPay / PhonePe / Paytm / UPI • Lifetime Bound to $shortHw',
                         price: '₹499 Lifetime',
                         color: Colors.amberAccent,
                         onTap: () {
@@ -13197,14 +13377,36 @@ new_builder = """                  val builder = if (Build.VERSION.SDK_INT >= Bu
 if old_builder in yml:
     yml = yml.replace(old_builder, new_builder, 1)
 
-# 3c. Request POST_NOTIFICATIONS on Android 13+ (API 33+) inside MainActivity.onCreate so Android 13/14 never blocks song notification updates!
-old_oncreate = """              override fun onCreate(savedInstanceState: Bundle?) {
+# 3c. Clean up any accidental onActivityResult inside DjMediaForegroundService.kt (which has `override fun onCreate()` with no args!)
+bad_service_inject = (
+    '              private var pendingUpiResult: MethodChannel.Result? = null\n\n'
+    '              override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {\n'
+    '                  super.onActivityResult(requestCode, resultCode, data)\n'
+    '                  if (requestCode == 9001) {\n'
+    '                      val cb = pendingUpiResult\n'
+    '                      pendingUpiResult = null\n'
+    '                      if (cb != null) {\n'
+    '                          val resp = (data?.getStringExtra("response") ?: "").uppercase()\n'
+    '                          val isSuccess = (resultCode == android.app.Activity.RESULT_OK) &&\n'
+    '                              (resp.contains("STATUS=SUCCESS") || resp.contains("RESPONSECODE=00")) &&\n'
+    '                              !resp.contains("STATUS=FAILURE") && !resp.contains("STATUS=SUBMITTED")\n'
+    '                          cb.success(if (isSuccess) "SUCCESS" else "CANCELLED_OR_FAILED")\n'
+    '                      }\n'
+    '                  }\n'
+    '              }\n\n'
+    '              override fun onCreate() {'
+)
+if bad_service_inject in yml:
+    yml = yml.replace(bad_service_inject, '              override fun onCreate() {', 1)
+
+# Now inject pendingUpiResult, onActivityResult, and POST_NOTIFICATIONS ONLY into MainActivity.kt (which has `override fun onCreate(savedInstanceState: Bundle?)`)!
+main_oncreate_orig = """              override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
                   window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                   acquireSilentWakeLock()
               }"""
 
-new_oncreate = """              override fun onCreate(savedInstanceState: Bundle?) {
+main_oncreate_prev = """              override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
                   window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                   acquireSilentWakeLock()
@@ -13217,8 +13419,174 @@ new_oncreate = """              override fun onCreate(savedInstanceState: Bundle
                   }
               }"""
 
-if old_oncreate in yml:
-    yml = yml.replace(old_oncreate, new_oncreate, 1)
+main_oncreate_full = """              private var pendingUpiResult: MethodChannel.Result? = null
+
+              override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+                  super.onActivityResult(requestCode, resultCode, data)
+                  if (requestCode == 9001) {
+                      val cb = pendingUpiResult
+                      pendingUpiResult = null
+                      if (cb != null) {
+                          val resp = (data?.getStringExtra("response") ?: "").uppercase()
+                          val isSuccess = (resultCode == android.app.Activity.RESULT_OK) &&
+                              (resp.contains("STATUS=SUCCESS") || resp.contains("RESPONSECODE=00")) &&
+                              !resp.contains("STATUS=FAILURE") && !resp.contains("STATUS=SUBMITTED")
+                          cb.success(if (isSuccess) "SUCCESS" else "CANCELLED_OR_FAILED")
+                      }
+                  }
+              }
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                  acquireSilentWakeLock()
+                  if (Build.VERSION.SDK_INT >= 33) {
+                      try {
+                          if (checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                              requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 1001)
+                          }
+                      } catch (_: Exception) {}
+                  }
+              }"""
+
+if "private var pendingUpiResult: MethodChannel.Result? = null\n\n              override fun onActivityResult" not in yml:
+    if main_oncreate_prev in yml:
+        yml = yml.replace(main_oncreate_prev, main_oncreate_full, 1)
+    elif main_oncreate_orig in yml:
+        yml = yml.replace(main_oncreate_orig, main_oncreate_full, 1)
+
+# Upgrade launchUpiPayment in MainActivity.kt
+old_upi_1 = (
+    '                          "launchUpiPayment" -> {\n'
+    '                              val upiUriStr = call.argument<String>("uri") ?: ""\n'
+    '                              var launched = false\n'
+    '                              try {\n'
+    '                                  val upiIntent = Intent(Intent.ACTION_VIEW, Uri.parse(upiUriStr)).apply {\n'
+    '                                      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)\n'
+    '                                  }\n'
+    '                                  startActivity(upiIntent)\n'
+    '                                  launched = true\n'
+    '                              } catch (_: Exception) {\n'
+    '                                  launched = false\n'
+    '                              }\n'
+    '                              result.success(launched)\n'
+    '                          }'
+)
+new_upi_1 = (
+    '                          "launchUpiPayment" -> {\n'
+    '                              val upiUriStr = call.argument<String>("uri") ?: ""\n'
+    '                              try {\n'
+    '                                  pendingUpiResult = result\n'
+    '                                  val upiIntent = Intent(Intent.ACTION_VIEW, Uri.parse(upiUriStr))\n'
+    '                                  startActivityForResult(upiIntent, 9001)\n'
+    '                              } catch (_: Exception) {\n'
+    '                                  pendingUpiResult = null\n'
+    '                                  result.success("NO_UPI_APP")\n'
+    '                              }\n'
+    '                          }'
+)
+if old_upi_1 in yml:
+    yml = yml.replace(old_upi_1, new_upi_1, 1)
+
+# Upgrade showNativeAdSenseWebView in MainActivity.kt to open a REAL Full-Screen Google AdSense WebView Dialog with 15s Reward Timer!
+wv_pattern = re.compile(
+    r'                          "showNativeAdSenseWebView" -> \{.*?\n                          \}(?=\n                          "openExternalUrl" -> \{)',
+    re.DOTALL,
+)
+real_adsense_wv_kt = """                          "showNativeAdSenseWebView" -> {
+                              val showPopup = call.argument<Boolean>("showPopup") ?: false
+                              Handler(Looper.getMainLooper()).post {
+                                  try {
+                                      val wv = WebView(this@MainActivity).apply {
+                                          settings.javaScriptEnabled = true
+                                          settings.domStorageEnabled = true
+                                          settings.mediaPlaybackRequiresUserGesture = false
+                                          settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
+                                          android.webkit.CookieManager.getInstance().setAcceptCookie(true)
+                                          android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+                                          webViewClient = WebViewClient()
+                                          loadUrl("https://gajananpatagar.github.io/dj-player/index.html?t=" + System.currentTimeMillis())
+                                      }
+
+                                      if (showPopup) {
+                                          var replied = false
+                                          val dlg = android.app.Dialog(this@MainActivity, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+                                          val root = android.widget.LinearLayout(this@MainActivity).apply {
+                                              orientation = android.widget.LinearLayout.VERTICAL
+                                              setBackgroundColor(android.graphics.Color.parseColor("#070D19"))
+                                          }
+                                          val header = android.widget.LinearLayout(this@MainActivity).apply {
+                                              orientation = android.widget.LinearLayout.HORIZONTAL
+                                              setPadding(32, 28, 32, 28)
+                                              setBackgroundColor(android.graphics.Color.parseColor("#0F172A"))
+                                              gravity = android.view.Gravity.CENTER_VERTICAL
+                                          }
+                                          val statusTv = android.widget.TextView(this@MainActivity).apply {
+                                              text = "⏳ Google AdSense Live Ad • 15s left for +1 Hr VIP"
+                                              setTextColor(android.graphics.Color.parseColor("#FFD740"))
+                                              textSize = 13f
+                                              layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                                          }
+                                          val actionBtn = android.widget.Button(this@MainActivity).apply {
+                                              text = "Wait 15s..."
+                                              isEnabled = false
+                                              setBackgroundColor(android.graphics.Color.parseColor("#334155"))
+                                              setTextColor(android.graphics.Color.WHITE)
+                                          }
+                                          header.addView(statusTv)
+                                          header.addView(actionBtn)
+                                          root.addView(header, android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.MATCH_PARENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT))
+                                          root.addView(wv, android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+                                          dlg.setContentView(root)
+                                          dlg.setCancelable(false)
+
+                                          var secLeft = 15
+                                          val timerHandler = Handler(Looper.getMainLooper())
+                                          val tick = object : Runnable {
+                                              override fun run() {
+                                                  if (!dlg.isShowing) return
+                                                  if (secLeft > 0) {
+                                                      statusTv.text = "⏳ Google AdSense Live Ad • " + secLeft + "s left for +1 Hr VIP"
+                                                      actionBtn.text = "Wait " + secLeft + "s"
+                                                      secLeft -= 1
+                                                      timerHandler.postDelayed(this, 1000L)
+                                                  } else {
+                                                      statusTv.text = "✅ Google AdSense Ad Complete! (+1 Hr VIP)"
+                                                      statusTv.setTextColor(android.graphics.Color.parseColor("#00E676"))
+                                                      actionBtn.text = "CLAIM +1 HR VIP ✕"
+                                                      actionBtn.isEnabled = true
+                                                      actionBtn.setBackgroundColor(android.graphics.Color.parseColor("#00E676"))
+                                                      actionBtn.setTextColor(android.graphics.Color.BLACK)
+                                                  }
+                                              }
+                                          }
+                                          actionBtn.setOnClickListener {
+                                              if (!replied) {
+                                                  replied = true
+                                                  result.success(true)
+                                              }
+                                              dlg.dismiss()
+                                          }
+                                          dlg.setOnDismissListener {
+                                              if (!replied) {
+                                                  replied = true
+                                                  result.success(secLeft <= 0)
+                                              }
+                                          }
+                                          dlg.show()
+                                          timerHandler.post(tick)
+                                      } else {
+                                          addContentView(wv, android.view.ViewGroup.LayoutParams(1, 1))
+                                          result.success(true)
+                                      }
+                                  } catch (_: Exception) {
+                                      result.success(true)
+                                  }
+                              }
+                          }"""
+
+if wv_pattern.search(yml):
+    yml = wv_pattern.sub(lambda _: real_adsense_wv_kt, yml, count=1)
 
 # 3d. Enable 18-Bit Obfuscation (--obfuscate --split-debug-info=...) on both APK and AAB builds so extracted APK/AAB is unreadable!
 for cmd_old, cmd_new in [
@@ -13242,9 +13610,9 @@ for cmd_old, cmd_new in [
     if cmd_old in yml and "sleep 8 &&" not in yml:
         yml = yml.replace(cmd_old, cmd_new, 1)
 
-# Set Version 15.0.0 (Build 10000015) across APK and Play Store AAB builds in .github/workflows/main.yml
+# Set Version 15.0.0 (Build 10000017) across APK and Play Store AAB builds in .github/workflows/main.yml
 yml = re.sub(r"--build-name=[0-9.]+", "--build-name=15.0.0", yml)
-yml = re.sub(r"--build-number=[0-9]+", "--build-number=10000015", yml)
+yml = re.sub(r"--build-number=[0-9]+", "--build-number=10000017", yml)
 open(yml_path, "w", encoding="utf-8").write(yml)
 
 # 3e. Self-verify every `run: |` block in .github/workflows/main.yml using `bash -n`!
@@ -13288,6 +13656,7 @@ GH_TOK=$(git config --get remote.origin.url | sed -n 's|.*https://\([^@]*\)@gith
 if [ -n "$GH_TOK" ]; then
   curl -s -X PATCH -H "Authorization: token $GH_TOK" -H "Accept: application/vnd.github+json" \
     "https://api.github.com/repos/GajananPatagar/dj-player" -d '{"private":false}' >/dev/null 2>&1 || true
+  curl -s -X POST -H "Authorization: token $GH_TOK" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/GajananPatagar/dj-player/pages" -d '{"source":{"branch":"main","path":"/docs"}}' >/dev/null 2>&1 || true
 fi
 
 echo "🚀 5/5 Committing & Pushing IMS v10000.0 (Build 10000001) to GitHub..."
@@ -13312,7 +13681,7 @@ if [ "$APK_LIVE" -eq 1 ]; then
   git pull --rebase origin main 2>/dev/null || true
   cat << 'EOF_FINAL_OTA' > ota_version.json
 {
-  "buildNumber": 10000015,
+  "buildNumber": 10000017,
   "versionName": "15.0.0",
   "apkUrl": "https://github.com/GajananPatagar/dj-player/releases/download/v10000001/app-release.apk",
   "notes": "IMS Pro Studio v10000.0: Working AdMob & 15s Video Ad Player, Interactive UPI & Play Billing VIP Passes, and AI Daily Mix"

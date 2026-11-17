@@ -193,30 +193,18 @@ class ImsMonetizationEngine {
       return true;
     }
 
-    final BuildContext? targetCtx = context ?? _latestAppContext;
-    if (targetCtx == null || !targetCtx.mounted) {
-      await ImsMonetizationEngine.unlockVipForDurationInternal(const Duration(hours: 1));
-      await _refreshRemainingVipSeconds();
-      return true;
-    }
-
     if (_adDialogCurrentlyOpen) return false;
     _adDialogCurrentlyOpen = true;
 
     bool unlocked = false;
     try {
-      await showDialog(
-        context: targetCtx,
-        barrierDismissible: false,
-        builder: (ctx) => _FullScreen15SecAdSenseDialog(
-          headlineReason: '🎵 Watch 1 Sponsored Ad → Unlock 1 Full Hour of Songs & VIP Access!',
-          onRewardEarned: () async {
-            await ImsMonetizationEngine.unlockVipForDurationInternal(const Duration(hours: 1));
-            await _refreshRemainingVipSeconds();
-            unlocked = true;
-          },
-        ),
-      );
+      // Open REAL Native Android Google AdSense WebView Ad Dialog (15s live AdSense slot)
+      final bool completed = await openGoogleAdSenseUnitPage(showPopup: true);
+      if (completed) {
+        await ImsMonetizationEngine.unlockVipForDurationInternal(const Duration(hours: 1));
+        await _refreshRemainingVipSeconds();
+        unlocked = true;
+      }
     } finally {
       _adDialogCurrentlyOpen = false;
     }
@@ -264,9 +252,6 @@ class ImsMonetizationEngine {
       return const Duration(days: 3650);
     }
 
-    // Strict anti-fraud check: Never accept arbitrary typed 12-digit numbers!
-    // Only accept cryptographic 6-digit Hardware-Bound VIP Keys or 18-Bit Master Key.
-
     final bool isMaster = await ImsSecurityManager.verifyPin(clean);
     if (isMaster) {
       return const Duration(days: 3650);
@@ -302,35 +287,45 @@ class ImsMonetizationEngine {
     } catch (_) {}
   }
 
-  static Future<void> openGoogleAdSenseUnitPage({bool showPopup = false}) async {
+  /// Opens the REAL Native Android Google AdSense WebView Ad Unit (returns true when 15s ad finishes)
+  static Future<bool> openGoogleAdSenseUnitPage({bool showPopup = false}) async {
     try {
-      await _nativeChannel.invokeMethod('showNativeAdSenseWebView', {
+      final dynamic res = await _nativeChannel.invokeMethod('showNativeAdSenseWebView', {
         'publisherId': _backendPubId,
         'paymentsProfileId': _backendProfileId,
         'showPopup': showPopup,
       });
-    } catch (_) {}
+      return res == true;
+    } catch (_) {
+      return false;
+    }
   }
 
+  /// Launches the REAL Google AdSense Native WebView Ad Dialog (NO custom Flutter card!)
   Future<void> show15SecondRewardedAdExperience(
     BuildContext context, {
     required VoidCallback onRewardGranted,
   }) async {
-    if (!context.mounted || _adDialogCurrentlyOpen) return;
+    if (_adDialogCurrentlyOpen) return;
     _adDialogCurrentlyOpen = true;
     try {
-      await showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => _FullScreen15SecAdSenseDialog(
-          headlineReason: '🎬 Watch 15s Sponsored Video Ad → Unlock +1 Hour Full VIP Access!',
-          onRewardEarned: () async {
-            await ImsMonetizationEngine.unlockVipForDurationInternal(const Duration(hours: 1));
-            await _refreshRemainingVipSeconds();
-            onRewardGranted();
-          },
-        ),
-      );
+      final bool completed = await openGoogleAdSenseUnitPage(showPopup: true);
+      if (completed) {
+        await ImsMonetizationEngine.unlockVipForDurationInternal(const Duration(hours: 1));
+        await _refreshRemainingVipSeconds();
+        onRewardGranted();
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              backgroundColor: Color(0xFF00E676),
+              content: Text(
+                '👑 +1 Full Hour (60m 00s) VIP Access Unlocked via Google AdSense!',
+                style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900),
+              ),
+            ),
+          );
+        }
+      }
     } finally {
       _adDialogCurrentlyOpen = false;
     }

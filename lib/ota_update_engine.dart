@@ -11,7 +11,7 @@ import 'monetization_and_ads_engine.dart';
 
 /// Loop-Free Smart OTA & Live Monetization Config Engine (v10000.0):
 class OtaUpdateEngine {
-  static const int currentBuildNumber = 10000016;
+  static const int currentBuildNumber = 10000017;
   static const String currentVersionName = '15.0.0';
   static const String githubRepoOwner = 'GajananPatagar';
   static const String githubRepoName = 'dj-player';
